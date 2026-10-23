@@ -44,6 +44,8 @@ DeepSeek V4 Flash 在宁夏 C500 6 节点，不在这次搬迁范围内。
 
 - 本机出网经过 127.0.0.1:7897 代理，Python 访问 HF 偶尔 TLS 断开，脚本已加重试
 - GitHub API 未登录每小时 60 次，脚本改读 releases.atom，不占额度
+- git 不走系统代理，直连 github.com 时常 SSL 断开（10-23 连续失败）。push 不上就加代理：
+  `git -c http.proxy=http://127.0.0.1:7897 pull --rebase origin litellm_zh_cn`，push 同理
 - 模力方舟 key：`--api-key` → `$GITEE_AI_API_KEY` / `$MOARK_API_KEY` → `dailyworkinmetax/comic-skill/opencode.json`（gitignored，
   在本目录或仓库目录的上一级找），不要复制进本目录
 - 2026-10-23 起本目录在 litellm-CN 仓库（`github.com/gjjjjjjjjjy/litellm-CN`，公开仓库）的 `litellm_zh_cn` 分支里，
