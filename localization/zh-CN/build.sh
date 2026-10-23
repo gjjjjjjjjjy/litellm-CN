@@ -32,7 +32,12 @@ docker run --rm \
   '
 
 cp -R "$build_root/ui/out" "$build_root/runtime/ui"
+mkdir -p "$build_root/runtime/backend"
+tar -C "$repo_root" --exclude=__pycache__ -cf - litellm | tar -C "$build_root/runtime/backend" -xf -
+source_version="$(sed -n 's/^version = "\(.*\)"$/\1/p' "$repo_root/pyproject.toml" | head -n 1)"
 cp "$patch_root/Dockerfile.runtime" "$build_root/runtime/Dockerfile"
-env -u HTTPS_PROXY -u HTTP_PROXY -u https_proxy -u http_proxy docker build --build-arg "LITELLM_BASE_IMAGE=$base_image" --tag litellm-local:zh-cn "$build_root/runtime"
+env -u HTTPS_PROXY -u HTTP_PROXY -u https_proxy -u http_proxy docker build \
+  --build-arg "LITELLM_BASE_IMAGE=$base_image" --build-arg "LITELLM_SOURCE_VERSION=$source_version" \
+  --tag litellm-local:zh-cn "$build_root/runtime"
 cp "$build_root/translation-report.json" "$patch_root/translation-report.json"
 printf '中文镜像已构建为 litellm-local:zh-cn，翻译报告位于 %s/translation-report.json\n' "$patch_root"

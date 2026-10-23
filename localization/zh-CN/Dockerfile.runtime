@@ -1,4 +1,12 @@
 ARG LITELLM_BASE_IMAGE
 FROM ${LITELLM_BASE_IMAGE}
+ARG LITELLM_SOURCE_VERSION
+RUN installed="$(python3 -c 'import importlib.metadata; print(importlib.metadata.version("litellm"))')"; \
+    if [ "$installed" != "$LITELLM_SOURCE_VERSION" ]; then \
+      echo "基础镜像中的 litellm $installed 与 Fork 源码版本 $LITELLM_SOURCE_VERSION 不一致，请使用同版本基础镜像" >&2; \
+      exit 1; \
+    fi
+COPY backend/ /opt/litellm-fork/
+ENV PYTHONPATH=/opt/litellm-fork
 COPY ui/ /opt/litellm-ui-zh-cn/
 ENV LITELLM_UI_PATH=/opt/litellm-ui-zh-cn
