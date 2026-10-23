@@ -14,7 +14,6 @@ import { extractErrorMessage } from "@/utils/errorUtils";
 import {
   formatPercentiles,
   formatRatio,
-  healthNodeLabel,
   isQosRange,
   QOS_RANGES,
   type QosHealthNode,
@@ -32,7 +31,7 @@ const nodeColumns: ColumnDef<QosHealthNode>[] = [
     header: "Node",
     cell: ({ row }) => (
       <div className="min-w-0">
-        <p className="truncate font-mono text-xs">{healthNodeLabel(row.original)}</p>
+        <p className="truncate font-mono text-xs">{row.original.api_base}</p>
         <p className="truncate text-xs text-muted-foreground">{row.original.upstream_model}</p>
       </div>
     ),

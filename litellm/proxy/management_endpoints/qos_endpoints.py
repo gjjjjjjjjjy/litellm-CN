@@ -19,6 +19,7 @@ from litellm.proxy.management_endpoints.qos_health import (
     DeploymentTarget,
     health_node,
     health_probe,
+    probe_key,
 )
 from litellm.types.llms.base import LiteLLMBaseModel
 from litellm.types.qos import (
@@ -404,13 +405,13 @@ def deployment_target_lookup(llm_router: "Router | None") -> Callable[[str], Dep
         if deployment is None:
             return None
         params: Final = deployment.litellm_params
-        if params.api_base is not None:
-            return DeploymentTarget(api_base=params.api_base, upstream_model=params.model)
-        _, provider, _, default_api_base = get_llm_provider(
+        upstream_model, provider, _, default_api_base = get_llm_provider(
             model=params.model, custom_llm_provider=params.custom_llm_provider
         )
+        if params.api_base is not None:
+            return DeploymentTarget(api_base=params.api_base, upstream_model=upstream_model)
         return DeploymentTarget(
-            api_base=provider if default_api_base is None else default_api_base, upstream_model=params.model
+            api_base=provider if default_api_base is None else default_api_base, upstream_model=upstream_model
         )
 
     return target_of
@@ -438,11 +439,15 @@ async def get_qos_health(
     )
     probes: Final = HEALTH_PROBE_ROWS.validate_python(await prisma_client.db.query_raw(HEALTH_PROBES_SQL, start, end))
     target_of: Final = deployment_target_lookup(llm_router)
+    model_ids: Final = () if llm_router is None else tuple(llm_router.get_model_ids())
+    current_probe_keys: Final = frozenset(
+        probe_key(target.api_base, target.upstream_model) for target in map(target_of, model_ids) if target is not None
+    )
     return QosHealthResponse(
         start_time=start,
         end_time=end,
-        nodes=tuple(health_node(row, target_of) for row in history),
-        probes=tuple(health_probe(row) for row in probes),
+        nodes=tuple(health_node(row, target) for row in history if (target := target_of(row.model_id)) is not None),
+        probes=tuple(health_probe(row) for row in probes if probe_key(row.api_base, row.model) in current_probe_keys),
     )
 
 
