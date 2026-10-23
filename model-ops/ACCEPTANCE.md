@@ -58,9 +58,11 @@
 
 **先判断随机数序列有没有变。** 同 seed 能不能逐张比，取决于新旧环境生成的初始噪声是否相同。公开测试里，两个后端随机数序列不同时，同 seed 出的图毫无关系（FlagOS 实测 Qwen-Image-2512 跨后端 PSNR 9.5 dB）；初始噪声对齐以后，Qwen-Image-2512 50 步约 35.4 dB，Qwen-Image-2.1 40 步约 37.8 dB；哪怕只有 0.0045% 的元素差一个最小精度单位，50 步后也会掉到 28.6 dB（https://github.com/flagos-ai/torch-fl 的 `tests/manual/qwen_image_2512`、`qwen_image_21`）。换 C600 至少要升到 MACA 3.7、torch 也会换版本（见 `models/IMAGE_MODELS.md`），随机数序列可能变。判断方法：看 `flat_gradient` 和 `landscape_mist` 两条的同 seed 对比，构图一致、PSNR 在 20 dB 以上，说明噪声相同，按上表逐张比；构图完全不同、PSNR 在 15 dB 以下，说明噪声变了，逐张指标没有意义，改用下面的按分布比较
 
+**最好的办法是让噪声在 CPU 上生成。** diffusers 官方建议用 CPU 上的 `torch.Generator` 生成初始噪声，CPU 随机数在不同机器之间更稳定；MLPerf 干脆把初始噪声做成固定文件随测试集下发。如果 GiEngine 能改成在 CPU 上生成噪声（或接受传入固定噪声），迁移前后同 seed 就一定是同一份噪声，逐张对比始终有效。这是要向 Gitee.AI 提的具体要求，最好在采基线之前就改好
+
 **噪声相同时。** 细小的算子差异会在几十步采样里放大，同 seed 出来的图构图一样但细节不同，SSIM 落到 0.7 到 0.9 也不一定是错。所以 SSIM 低本身不判不通过，判不通过要满足下面任一条：盲评里旧版明显更好（见第五节的判定表）；出现旧版没有的缺陷（全黑、全白、格纹、色带、文字错字）；精度探针 `flat_gradient`、`low_light` 出现色带或彩色噪点
 
-**噪声变了时，按分布比较。** 每个模型用全部 16 条提示词乘 2 个 seed，比整组的 CLIPScore 平均值（提示词遵循），加中文文字 OCR 正确数和盲评。建议初值：CLIPScore 平均值下降不超过 2%（相对值）。这个数参照的是 FlagRelease 对 Qwen-Image-2.1 的跨平台对齐结果：NVIDIA 原版在 T2I-100 上 33.66，沐曦 33.75、昇腾 33.31、NVIDIA FlagOS 版 33.26，COCO 上 25.34 对 25.11 到 25.76，它们都声称「已与官方对齐」，相互差在 ±2% 以内（https://huggingface.co/FlagRelease/Qwen-Image-2.1-BF16-metax-FlagOS）。FlagOS 对大模型用的规则是新旧得分差不超过 5%，对扩散模型没有公开门槛，沐曦 modelzoo 的 `--eval` 也只报 CLIP 分不设门槛。CLIPScore 需要 open_clip 和 torch，`compare_images.py` 还没加（计划中），在加上之前先靠 OCR、粗统计和盲评
+**噪声变了时，按分布比较。** 每个模型用全部 16 条提示词乘 2 个 seed，比整组的 CLIPScore 平均值（提示词遵循），加中文文字 OCR 正确数和盲评。建议初值：CLIPScore 平均值下降不超过 2%（相对值）。这个数参照的是 FlagRelease 对 Qwen-Image-2.1 的跨平台对齐结果：NVIDIA 原版在 T2I-100 上 33.66，沐曦 33.75、昇腾 33.31、NVIDIA FlagOS 版 33.26，COCO 上 25.34 对 25.11 到 25.76，它们都声称「已与官方对齐」，相互差在 ±2% 以内（https://huggingface.co/FlagRelease/Qwen-Image-2.1-BF16-metax-FlagOS）。FlagOS 对大模型用的规则是新旧得分差不超过 5%，对扩散模型没有公开门槛，沐曦 modelzoo 的 `--eval` 也只报 CLIP 分不设门槛。MLPerf 对 SDXL 的同类规则更严：非确定性系统两次运行之间 CLIP 分差不超过 1%、FID 不超过 2%，但它用的是 5000 条提示词。我们每个模型只有 32 张图，按单张 CLIPScore 标准差约 3 分估算，平均值的标准误约 0.5 分，约占平均值（30 分左右）的 1.7%；新旧两边用同一批提示词配对比较能降低一些，但仍和 2% 处在同一量级，所以 2% 只是初值；要判得更准，按分布比较时换成 200 条以上的公开提示词集（如 DPG-Bench 或 Qwen-Image-Bench 的子集）。CLIPScore 需要 open_clip 和 torch，`compare_images.py` 还没加（计划中），在加上之前先靠 OCR、粗统计和盲评。逐张对比还可以加 LPIPS（BSD 许可，CPU 可跑）：vLLM-Omni 的经验划分是小于 0.01 看不出、小于 0.05 轻微、小于 0.10 可接受、大于 0.10 明显不同
 
 **门槛怎么校准。** 第一次迁移前，先拿两组「已知等价」的数据定出正常波动范围：同一硬件隔一周重采一次（应当逐字节相同，不同就说明平台悄悄改了东西）；多家共用的模型如果能拿到不同厂商卡上的输出，它们之间的差异就是「跨硬件正常漂移」的参考值。迁移后的差异落在这个范围内算正常
 
@@ -112,7 +114,7 @@ TTS 和图像最大的不同是：大多数 TTS 是自回归采样，模力方�
 
 **音色相似度用 SIM。** 参考音频和合成音频分别过说话人验证模型取向量，算余弦相似度（seed-tts-eval 用 WavLM-large 微调的说话人模型）。需要 torch，计划中
 
-**自然度用 MOS。** 自动预测用 UTMOS 一类模型（计划中），人工用 5 分制 MOS 或新旧对比的 CMOS，小规模内部评审每条至少 3 人
+**自然度用 MOS。** 常用的 UTMOS 只在英文数据上训练过，没找到中文验证，不能直接用来判中文 TTS。中文先用 DNSMOS（微软，ONNX 模型，MIT 许可，CPU 可跑）看噪声和失真，再加人工评分：5 分制 MOS，或者新旧对比的 CMOS（ITU-T P.800 的 CCR 法，-3 到 +3，比 MOS 更容易看出小差别）。小规模内部评审每条至少 3 人；要得到可靠的 MOS，P.808 建议每个条件至少 60 票
 
 | 指标 | 新上线通过标准（建议初值） |
 |---|---|
@@ -132,6 +134,8 @@ TTS 和图像最大的不同是：大多数 TTS 是自回归采样，模力方�
 | 响度 | 变化 ≤ 1 LU |
 | SIM（有了以后） | 下降 ≤ 0.02 |
 | 盲评 CMOS | 新版不明显差于旧版（第五节判定表） |
+
+这些数比公开资料里任何一个都严。唯一找到的 TTS 数值门槛是 vLLM-Omni 的绝对下限（Qwen3-Omni：WER ≤ 0.03、SIM ≥ 0.75、UTMOS ≥ 3.10），分别比它实测的基线低 0.074 SIM 和 0.25 UTMOS。所以上表的门槛要先按 SGLang 的「噪声底」思路校准：迁移前在现网把同一批文本跑两轮，量出旧环境自己两轮之间的波动，迁移后的变化落在这个波动内就算等价，门槛取「建议初值」和「实测波动」中较宽的那个
 
 有 seed 的（CosyVoice3、ACE-Step）先试同 seed 是否逐字节可复现，可复现就逐条比，再按上表兜底。自部署的 vllm-omni 接口有 `seed` 字段，在内部地址上测时可以固定
 
@@ -165,6 +169,8 @@ TTS 和图像最大的不同是：大多数 TTS 是自回归采样，模力方�
 
 和图像一样，同 seed 迁移前后各生成一次。每秒抽 1 帧逐帧算 SSIM，再看首帧一致性有没有变差、帧数和时长有没有变。帧级差异的判定沿用 2.4 的思路：差异大不直接判错，以盲评和新缺陷为准。视频单条成本高（Wan2.2 每条 ¥1.5），建议每个模型 8 条提示词乘 1 个 seed
 
+有公开参考的两处：MLPerf 的 Wan2.2-T2V 要求 VBench（6 个维度的平均）不低于 BF16 参考值的 99%，用固定初始噪声；vLLM-Omni 给 MiniMax-H3 的 FP8 对 BF16 回归测试门槛是视频 LPIPS ≤ 0.20、音频频谱余弦相似度 ≥ 0.80、音频 RMS 比值在 0.5 到 2.0 之间。H3 迁移可以直接借用后者作为初值。口型同步用 syncnet_python（MIT，可在 CPU 上跑）算 LSE-C / LSE-D，同一模型在不同论文里分数差很多，只和自己的迁移前基线比
+
 ### 4.5 性能
 
 每 5 秒视频的生成时间、排队时间、成功率。迁移后生成时间不比迁移前慢 15% 以上（建议初值）
@@ -183,7 +189,15 @@ TTS 和图像最大的不同是：大多数 TTS 是自回归采样，模力方�
 | 50 | 32 |
 | 100 | 59 |
 
-显著性水平 0.05。看不出差别的票占多数本身就是好结果，说明迁移没有带来可察觉的变化
+显著性水平 0.05（单侧）。这张表只能发现「新版明显更差」，不能证明「两者等价」：票数少时没发现差别，很可能只是检测力不够。要正式证明迁移没有变差，用非劣效设计，先定一个容忍边界 m（旧版在有偏好的票里胜出的比例不能达到 m），再按下表凑够票数：
+
+| 容忍边界 m | 需要的有偏好票数 | 旧版胜出不超过这个数就通过 |
+|---|---|---|
+| 0.70 | 39 | 22 |
+| 0.65 | 68 | 37 |
+| 0.60 | 158 | 84 |
+
+单侧显著性 0.05，两者真等价时有 80% 的把握通过（数据见第九节来源）。内部验收建议先用 m = 0.70，每个模型凑 39 票以上。看不出差别的票占多数本身就是好结果，说明迁移没有带来可察觉的变化
 
 ## 六、工具
 
@@ -208,4 +222,27 @@ TTS 和图像最大的不同是：大多数 TTS 是自回归采样，模力方�
 
 ## 八、还没定的
 
-迁移范围要确认：只是沐曦集群内 C500 换 C600，还是也包括把别家卡上的模型搬到沐曦。迁移时间表要确认，基线必须赶在迁移之前采。文中的「建议初值」要在第一次迁移时用实测数据校准，有公开参考的地方会补上来源
+迁移范围要确认：只是沐曦集群内 C500 换 C600，还是也包括把别家卡上的模型搬到沐曦。迁移时间表要确认，基线必须赶在迁移之前采。要向 Gitee.AI 提出让 GiEngine 在 CPU 上生成初始噪声（或接受固定噪声），并返回服务节点。文中的「建议初值」要在第一次迁移时用实测数据校准
+
+## 九、公开参考与依据（2026-10-23 调研）
+
+**结论先说：** 没有任何标准组织、芯片厂商（包括沐曦）、智源 FlagOS 或云厂商公布过「换硬件后生成类模型输出等价」的数值门槛。现有做法分三类：MLPerf 的两层规则（先要求逐字节一致，非确定性系统允许指标在规定百分比内波动）；推理框架按每种加速卡单独设门槛，取值略低于该卡的实测值；SGLang 的「噪声底」规则，新平台的漂移要落在参考环境自身正常波动的范围内。本文的「建议初值」就是按这三种思路定的
+
+| 来源 | 比的是什么 | 公开门槛 |
+|---|---|---|
+| MLPerf Inference SDXL | 5000 条 COCO 提示词，固定初始噪声，20 步 | FID 23.01 到 23.95，CLIP 31.686 到 31.813（相当于参考值 FID ±2%、CLIP ±0.2%）。非确定性系统两次运行之间 CLIP 差 ≤ 1%、FID 差 ≤ 2%（TEST01） |
+| MLPerf Inference Wan2.2-T2V | 248 条提示词，固定噪声，VBench 6 维平均 | ≥ BF16 参考值的 99% |
+| MLPerf Inference Whisper | 准确率 | ≥ 参考值的 99% |
+| vLLM-Omni，Qwen-Image 对 diffusers | 512²，20 步，seed 42，同一张卡 | CUDA H100：SSIM ≥ 0.98、PSNR ≥ 34.6；昇腾 A3、ROCm MI325：SSIM ≥ 0.95、PSNR ≥ 27.0。代码注释写明每种加速卡分开设，不放宽 CUDA 的门槛 |
+| vLLM-Omni，其他扩散模型 | 同上 | 通用图像 SSIM 0.97 / PSNR 30，视频 0.95 / 30；量化后 LPIPS 图像 ≤ 0.15、视频 ≤ 0.20 |
+| vLLM-Omni，MiniMax-H3 FP8 对 BF16 | 音视频 | 视频 LPIPS ≤ 0.20，音频频谱余弦 ≥ 0.80，RMS 比 0.5 到 2.0 |
+| vLLM-Omni，TTS | Seed-TTS 英文 1088 句，绝对下限 | Qwen3-Omni：WER ≤ 0.03、SIM ≥ 0.75、UTMOS ≥ 3.10 |
+| SGLang Diffusion | CLIP 图像向量余弦、SSIM、PSNR | 图像默认 CLIP ≥ 0.92、SSIM ≥ 0.95、PSNR ≥ 28；视频 0.90 / 0.92 / 24；音频频谱相似度 ≥ 0.95、RMS 差 ≤ 2 dB。Intel XPU 因为随机数序列不同，CLIP 0.98 但 SSIM 只有 0.79、PSNR 15.7 |
+| FlagRelease（智源） | Qwen-Image-2.1 跨平台 CLIPScore | 声称「已对齐」，没有给门槛；各平台相差 ±2% 以内 |
+| 华为 MindIE SD | CLIP score 加 HPSv2 | 明说「由于生成的图片存在随机性，所以精度验证将使用 CLIP-score」，没给门槛 |
+
+主要链接：MLPerf `inference/tools/submission/submission_checker/constants.py` 和 `compliance/TEST01/README.md`（github.com/mlcommons/inference）；vLLM-Omni `tests/e2e/accuracy/test_qwen_image.py`、`tests/e2e/accuracy/qwen3_omni/test_qwen3_omni.py`、`tests/diffusion/models/minimax_h3/test_minimax_h3_quantization_quality.py`（github.com/vllm-project/vllm-omni，commit 1015af98）；SGLang `python/sglang/multimodal_gen/test/test_utils.py`（commit 8b9f7241）；FlagRelease `Qwen-Image-2.1-BF16-metax-FlagOS` 模型卡；diffusers 文档 `using-diffusers/reusing_seeds`
+
+**评测工具的许可证要注意。** 公司内部验收属于商用场景，下面这些不宜直接用：pyiqa（PolyForm Noncommercial，VBench 的 imaging_quality 维度也依赖它）、VBench 的 motion_smoothness 和 camera_motion 依赖的模型（CC BY-NC）、DOVER 和 FAST-VQA（S-Lab 非商用）、NISQA 权重（CC BY-NC-SA）、ImageBind（CC BY-NC-SA）、Wav2Lip。数据集里 WenetSpeech、OneIG-Bench、GenEval 2、MovieGenBench 是非商用，Seed-TTS-eval 仓库没有许可证文件。可放心用的有：torchmetrics、open_clip（MIT）、ImageReward 和 HPSv2（Apache-2.0）、LPIPS（BSD）、PaddleOCR（Apache-2.0，Mac 上只能用 CPU，默认模型版本会变，要锁版本）、DNSMOS（MIT）、pyloudnorm（MIT）、syncnet_python（MIT）
+
+**在 Mac 上跑。** 多数 PyTorch 指标能用 CPU；seed-tts-eval、GenEval、VBench-2.0、Wav2Lip 的评测脚本写死了 CUDA，要改代码或放到 GPU 机器上跑
