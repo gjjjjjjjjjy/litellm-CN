@@ -1,47 +1,52 @@
 # QosLLM 公网部署
 
-服务器镜像只提供 Python 运行环境，应用代码（后端和中文前端）放在服务器部署目录的 `runtime/` 中，以只读方式挂载进网关容器。镜像包只在首次部署、升级上游版本或 Python 依赖变化时上传一次，日常更新由本机 `sync.sh` 编译后用 rsync 只传变化的文件。服务器需要 Docker、Docker Compose 插件和 rsync。服务由三个容器组成：PostgreSQL、QosLLM 网关和 Caddy。只有 Caddy 对外开放 80 和 443 端口，80 只负责跳转到 HTTPS。网关和数据库只在 Docker 内部网络中可访问，数据库端口不对外开放
+在本机构建完整的 `linux/amd64` 应用镜像并推送到镜像仓库，服务器拉取指定版本后运行。前后端都包含在镜像中，数据库和证书保存在独立的 Docker 卷中。服务器需要 Docker 和 Docker Compose 插件，Node 与 npm 在本机的构建容器内运行
 
-## 基础镜像
+服务由 PostgreSQL、QosLLM 网关和 Caddy 组成。只有 Caddy 对外开放 80 和 443，网关和数据库使用 Docker 内部网络
 
-首次部署、升级上游 LiteLLM 版本或 Python 依赖变化时，在本机打包镜像并上传
+## 本机发布
 
-在本机仓库根目录运行，输出目录需要已存在。本机仅需 Docker、Bash、tar 和 gzip，Node 与 npm 在 Docker 容器中运行
+多人合作时，先把经过测试的改动合并到 `litellm_zh_cn`，再从该提交构建一次发布镜像。先用 `docker login` 登录镜像仓库，密码在终端交互输入
 
 ```bash
 git pull --ff-only origin litellm_zh_cn
-./deploy/qosllm/build-image.sh ../qosllm-linux-amd64.tar.gz
-scp -i ~/.ssh/aliyun ../qosllm-linux-amd64.tar.gz root@<服务器公网IP>:/root/service/
+docker login <仓库域名> --username <仓库用户名>
+./deploy/qosllm/publish.sh <仓库域名>/<命名空间>/qosllm
 ```
 
-Apple Silicon Mac 在 ARM 容器中编译静态前端，再为 x86 服务器打包 `linux/amd64` 后端镜像。服务器镜像名为 `litellm-local:zh-cn-amd64`，本机开发使用的 `litellm-local:zh-cn` 保持独立
+`publish.sh` 使用当前 Git 提交中的文件，镜像标签为该提交的 12 位编号。未提交文件、`.env` 和本机数据库都不会被打包。脚本执行中文翻译检查、TypeScript 检查、前端编译、镜像打包和推送，并打印完整镜像地址
 
-前端依赖需要通过代理下载时，给打包命令传入容器可访问的代理地址，例如
+前端依赖需要通过代理下载时，给发布命令传入容器可访问的代理地址，例如
 
 ```bash
 HTTPS_PROXY=http://host.docker.internal:7897 \
 HTTP_PROXY=http://host.docker.internal:7897 \
-./deploy/qosllm/build-image.sh ../qosllm-linux-amd64.tar.gz
+./deploy/qosllm/publish.sh <仓库域名>/<命名空间>/qosllm
 ```
 
-后端基础镜像由 Docker BuildKit 下载，需要单独保证 Docker 的镜像仓库网络可用。打包过程会显示依赖安装、翻译检查、前端编译和镜像导出的日志，结束后删除临时构建文件
+后端基础镜像由 Docker BuildKit 下载，需要保证 Docker 的镜像仓库网络可用。镜像仓库按层复用内容，服务器已有的层无需重复传输。修改前端仍需要在本机重新编译，服务器只拉取和运行
 
 ## 首次部署
 
-在云服务器的安全组和防火墙中只放行 22、80 和 443。在服务器上导入本机上传的镜像包，再获取部署配置
+在云服务器的安全组和防火墙中只放行 22、80 和 443。服务器先获取部署文件并登录镜像仓库
 
 ```bash
-docker load -i /root/service/qosllm-linux-amd64.tar.gz
-git clone -b litellm_zh_cn <你的 Fork 地址> litellm
-cd litellm/deploy/qosllm
+git clone -b litellm_zh_cn <你的 Fork 地址> litellm-CN
+cd litellm-CN/deploy/qosllm
+docker login <仓库域名> --username <仓库用户名>
 ./start.sh
 ```
 
-第一次运行会生成 `.env`，其中的主密钥、加密盐和数据库密码都是随机值。编辑 `.env`，把 `SERVER_IP` 填成服务器公网 IP。然后按下面的“日常更新”在本机运行一次 `sync.sh`，它会把应用代码同步到服务器并启动服务。镜像缺失或架构错误时脚本会报错，按提示重新导入镜像包
+第一次运行会生成 `.env`，其中的主密钥、加密盐和数据库密码都是随机值。编辑 `.env`，设置 `SERVER_IP` 为服务器公网 IP，设置 `LITELLM_IMAGE` 为本机发布脚本打印的完整镜像地址
 
-首次启动还需要 `postgres:16` 和 `caddy:2.8.4` 镜像。服务器无法访问 Docker Hub 时，可以在本机拉取对应的 `linux/amd64` 镜像，用 `docker image save --platform linux/amd64` 导出后上传并导入
+```bash
+docker compose pull --policy always litellm
+./start.sh
+```
 
-`.env` 要单独备份。`LITELLM_SALT_KEY` 用来加密保存在数据库中的服务商密钥，丢失或修改后这些密钥将无法解密
+首次启动还需要 `postgres:16` 和 `caddy:2.8.4` 镜像，已有部署继续使用原来的镜像和数据卷
+
+`.env` 要单独备份。`LITELLM_SALT_KEY` 用来加密数据库中的服务商密钥，已有部署应保留其原值
 
 ## HTTPS 证书
 
@@ -79,35 +84,24 @@ docker compose cp caddy:/data/caddy/pki/authorities/local/root.crt ./qosllm-root
 
 ## 日常更新
 
-在本机 `~/.ssh/config` 中给服务器起一个别名，之后的命令都用它连接
-
-```
-Host qosllm
-  HostName <服务器公网IP>
-  User root
-  IdentityFile ~/.ssh/aliyun
-```
-
-服务器先拉取部署脚本和配置，本机再同步应用代码。`sync.sh` 在本机编译中文前端、整理后端代码，用 rsync 只传输内容有变化的文件，然后重建网关容器并等待它就绪
+在本机测试并发布镜像后，服务器拉取部署文件，修改 `.env` 中的 `LITELLM_IMAGE` 为该次发布的完整地址，再运行
 
 ```bash
-ssh qosllm 'cd /root/service/litellm-CN && git pull --ff-only'
 git pull --ff-only origin litellm_zh_cn
-./deploy/qosllm/sync.sh qosllm /root/service/litellm-CN/deploy/qosllm
+docker compose pull --policy always litellm
+./start.sh
 ```
 
-只改了 Python 后端时加 `--backend-only`，跳过约 5 分钟的前端编译，服务器上的前端保持不变
+拉取新镜像期间原服务继续运行，`start.sh` 通过 Compose 让网关使用新镜像，并等待健康检查通过。普通启动继续运行 `./start.sh`，复用已拉取的镜像，镜像版本和配置均未变化时不会重建容器
+
+只改部署配置时无需编译镜像。`compose.yaml` 或 `.env` 的改动运行 `./start.sh` 生效，`config.yaml` 的改动运行 `docker compose restart litellm` 生效
+
+服务器不挂载应用源码目录。后台模型和服务商配置保存在数据库中，Git 更新或镜像拉取不会覆盖它们。数据库卷为 `qosllm_postgres_data`，证书卷为 `qosllm_caddy_data`，保留这些卷和现有 `.env`。升级上游版本前备份数据库
 
 ```bash
-./deploy/qosllm/sync.sh --backend-only qosllm /root/service/litellm-CN/deploy/qosllm
+./start.sh
+./stop.sh
+docker compose logs -f litellm
 ```
 
-只改了部署配置时不用同步代码，服务器上 `git pull` 后，`compose.yaml` 的改动运行 `./start.sh` 生效，`config.yaml` 的改动运行 `docker compose restart litellm` 生效。`sync.sh` 会先核对服务器镜像中的 litellm 版本，与源码版本不一致时停止同步，这时需要按“基础镜像”重新上传镜像包
-
-```bash
-./start.sh            # 启动
-./stop.sh             # 停止，数据保留在 Docker 卷中
-docker compose logs -f litellm   # 查看网关日志
-```
-
-数据库保存在 `qosllm_postgres_data` 卷中，证书保存在 `qosllm_caddy_data` 卷中。`docker compose down -v` 会删除这些卷，执行前请先备份
+无法使用镜像仓库时，`build-image.sh` 仍可在本机导出完整包，上传并用 `docker load -i` 导入。此时把服务器 `.env` 中的 `LITELLM_IMAGE` 设为 `litellm-local:zh-cn-amd64`，再运行 `./start.sh`
