@@ -1,8 +1,9 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import CompareUI from "./CompareUI";
 import { makeOpenAIChatCompletionRequest } from "@/components/llm_calls/chat_completion";
+import { apiClient } from "@/components/networking";
 
 vi.mock("@/components/llm_calls/fetch_models", () => ({
   fetchAvailableModels: vi.fn().mockResolvedValue([{ model_group: "gpt-4" }, { model_group: "gpt-3.5-turbo" }]),
@@ -40,12 +41,29 @@ vi.mock("../chat_ui/ChatImageUtils", () => ({
   }),
 }));
 
+vi.mock("@/components/networking", () => ({ apiClient: { get: vi.fn() } }));
+
 vi.mock("./components/ComparisonPanel", () => ({
-  ComparisonPanel: ({ comparison, onRemove }: { comparison: any; onRemove: () => void }) => (
+  ComparisonPanel: ({
+    comparison,
+    onRemove,
+    selectorOptions,
+  }: {
+    comparison: any;
+    onRemove: () => void;
+    selectorOptions: { value: string; label: string }[];
+  }) => (
     <div data-testid={`comparison-panel-${comparison.id}`}>
       <button data-testid={`remove-${comparison.id}`} onClick={onRemove}>
         Remove
       </button>
+      <ul aria-label={`options-${comparison.id}`}>
+        {selectorOptions.map((option) => (
+          <li key={option.value} data-value={option.value}>
+            {option.label}
+          </li>
+        ))}
+      </ul>
     </div>
   ),
 }));
@@ -89,8 +107,49 @@ beforeEach(() => {
 });
 
 describe("CompareUI", () => {
+  it("offers each provider of a model served by several, so they can be compared side by side", async () => {
+    vi.mocked(apiClient.get).mockResolvedValue({
+      models: [
+        {
+          model_group: "gpt-4",
+          deployments: [
+            {
+              model_id: "node-moark",
+              provider: "moark",
+              vendor: "moark",
+              api_base: "https://api.moark.com/v1",
+              upstream_model: "gpt-4",
+            },
+            {
+              model_id: "node-gitee",
+              provider: "openai",
+              vendor: "ai.gitee.com",
+              api_base: "https://ai.gitee.com/v1",
+              upstream_model: "gpt-4",
+            },
+          ],
+        },
+      ],
+    });
+    render(<CompareUI accessToken="test-token" disabledPersonalKeyCreation={false} showProviders />);
+
+    const options = within(screen.getByRole("list", { name: "options-1" }));
+    expect(await options.findByText("gpt-4 · Moark (Gitee AI)")).toHaveAttribute("data-value", "node-moark");
+    expect(options.getByText("gpt-4 · ai.gitee.com")).toHaveAttribute("data-value", "node-gitee");
+    expect(options.getByText("gpt-4 · All providers")).toHaveAttribute("data-value", "gpt-4");
+    expect(options.getByText("gpt-3.5-turbo")).toHaveAttribute("data-value", "gpt-3.5-turbo");
+    expect(apiClient.get).toHaveBeenCalledWith("/qos/targets", { accessToken: "test-token" });
+  });
+
+  it("does not ask for providers on behalf of users who cannot see them", async () => {
+    render(<CompareUI accessToken="test-token" disabledPersonalKeyCreation={false} showProviders={false} />);
+
+    expect(await within(screen.getByRole("list", { name: "options-1" })).findByText("gpt-4")).toBeInTheDocument();
+    expect(apiClient.get).not.toHaveBeenCalled();
+  });
+
   it("should render", () => {
-    render(<CompareUI accessToken="test-token" disabledPersonalKeyCreation={false} />);
+    render(<CompareUI accessToken="test-token" disabledPersonalKeyCreation={false} showProviders={false} />);
     expect(screen.getByTestId("comparison-panel-1")).toBeInTheDocument();
     expect(screen.getByTestId("comparison-panel-2")).toBeInTheDocument();
     expect(screen.getByTestId("message-input")).toBeInTheDocument();
@@ -98,7 +157,9 @@ describe("CompareUI", () => {
 
   it("adds a comparison when Add Comparison button is clicked", async () => {
     const user = userEvent.setup();
-    const { container } = render(<CompareUI accessToken="test-token" disabledPersonalKeyCreation={false} />);
+    const { container } = render(
+      <CompareUI accessToken="test-token" disabledPersonalKeyCreation={false} showProviders={false} />,
+    );
 
     // Verify initial state: 2 comparison panels
     expect(screen.getByTestId("comparison-panel-1")).toBeInTheDocument();
@@ -121,7 +182,7 @@ describe("CompareUI", () => {
 
   it("should handle image upload and send message with attachment", async () => {
     const user = userEvent.setup();
-    render(<CompareUI accessToken="test-token" disabledPersonalKeyCreation={false} />);
+    render(<CompareUI accessToken="test-token" disabledPersonalKeyCreation={false} showProviders={false} />);
 
     const file = new File(["test content"], "test-image.png", { type: "image/png" });
 
