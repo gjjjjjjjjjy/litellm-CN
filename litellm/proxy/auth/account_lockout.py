@@ -1,13 +1,17 @@
 """
 Per-account lockout for Admin UI password sign-in.
 
-The failure count and lock time live in ``LiteLLM_UserTable.metadata`` and are changed by single
-UPDATE statements, so concurrent failed sign-ins on several workers cannot lose an increment.
-A locked account stays locked until a proxy admin unlocks it.
+Every third consecutive failure locks the account for a short time; the tenth locks it until a proxy admin
+unlocks it. The count, the temporary lock expiry and the permanent lock time live in
+``LiteLLM_UserTable.metadata`` and are changed by single UPDATE statements, so concurrent failed sign-ins
+on several workers cannot lose an increment. A successful sign-in or an admin unlock clears all three.
 """
 
+import math
 from collections.abc import Mapping
-from typing import TYPE_CHECKING, Final
+from dataclasses import dataclass
+from datetime import datetime
+from typing import TYPE_CHECKING, Final, TypeAlias
 
 from pydantic import ConfigDict, TypeAdapter
 
@@ -16,53 +20,96 @@ from litellm.types.llms.base import LiteLLMBaseModel
 if TYPE_CHECKING:
     from litellm.proxy.utils import PrismaClient
 
-LOGIN_LOCKOUT_THRESHOLD: Final = 3
+TEMPORARY_LOCK_EVERY: Final = 3
+TEMPORARY_LOCK_MINUTES: Final = 15
+PERMANENT_LOCK_AFTER: Final = 10
 FAILED_ATTEMPTS_KEY: Final = "login_failed_attempts"
+LOCKED_UNTIL_KEY: Final = "login_locked_until"
 LOCKED_AT_KEY: Final = "login_locked_at"
 ACCOUNT_LOCKED_MESSAGE: Final = (
-    f"This account is locked after {LOGIN_LOCKOUT_THRESHOLD} failed sign-in attempts. "
-    "Ask an administrator to unlock it."
+    f"This account is locked after {PERMANENT_LOCK_AFTER} failed sign-in attempts. Ask an administrator to unlock it."
 )
+
+_UTC_TIMESTAMP: Final = """to_char({value}, 'YYYY-MM-DD"T"HH24:MI:SS"Z"')"""
+_NEXT_COUNT: Final = f"COALESCE((metadata->>'{FAILED_ATTEMPTS_KEY}')::int, 0) + 1"
 
 RECORD_FAILED_LOGIN_SQL: Final = f"""
 UPDATE "LiteLLM_UserTable"
-SET metadata = COALESCE(metadata, '{{}}'::jsonb)
-    || jsonb_build_object('{FAILED_ATTEMPTS_KEY}', COALESCE((metadata->>'{FAILED_ATTEMPTS_KEY}')::int, 0) + 1)
+SET metadata = metadata
+    || jsonb_build_object('{FAILED_ATTEMPTS_KEY}', {_NEXT_COUNT})
     || CASE
-        WHEN COALESCE((metadata->>'{FAILED_ATTEMPTS_KEY}')::int, 0) + 1 >= $2
-        THEN jsonb_build_object('{LOCKED_AT_KEY}', to_char(now() AT TIME ZONE 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'))
+        WHEN {_NEXT_COUNT} >= $2
+        THEN jsonb_build_object('{LOCKED_AT_KEY}', {_UTC_TIMESTAMP.format(value="now() AT TIME ZONE 'utc'")})
+        WHEN ({_NEXT_COUNT}) % $3 = 0
+        THEN jsonb_build_object(
+            '{LOCKED_UNTIL_KEY}',
+            {_UTC_TIMESTAMP.format(value="now() AT TIME ZONE 'utc' + make_interval(mins => $4::int)")}
+        )
         ELSE '{{}}'::jsonb
     END
 WHERE user_id = $1
-RETURNING (metadata->>'{FAILED_ATTEMPTS_KEY}')::int AS failed_attempts
+RETURNING metadata
 """
 
 CLEAR_LOGIN_FAILURES_SQL: Final = f"""
 UPDATE "LiteLLM_UserTable"
-SET metadata = metadata - '{FAILED_ATTEMPTS_KEY}' - '{LOCKED_AT_KEY}'
-WHERE user_id = $1 AND (metadata ? '{FAILED_ATTEMPTS_KEY}' OR metadata ? '{LOCKED_AT_KEY}')
+SET metadata = metadata - '{FAILED_ATTEMPTS_KEY}' - '{LOCKED_UNTIL_KEY}' - '{LOCKED_AT_KEY}'
+WHERE user_id = $1 AND metadata ?| array['{FAILED_ATTEMPTS_KEY}', '{LOCKED_UNTIL_KEY}', '{LOCKED_AT_KEY}']
 """
 
 
-class _FailedAttempts(LiteLLMBaseModel):
+@dataclass(frozen=True, slots=True)
+class PermanentLock:
+    pass
+
+
+@dataclass(frozen=True, slots=True)
+class TemporaryLock:
+    until: datetime
+
+    def message(self, now: datetime) -> str:
+        minutes: Final = max(math.ceil((self.until - now).total_seconds() / 60), 1)
+        return f"Too many failed sign-in attempts. Try again in {minutes} minutes."
+
+
+AccountLock: TypeAlias = PermanentLock | TemporaryLock | None
+
+
+class _LockFields(LiteLLMBaseModel):
     model_config = ConfigDict(frozen=True)
 
-    failed_attempts: int
+    login_locked_at: str | None = None
+    login_locked_until: datetime | None = None
 
 
-_FAILED_ATTEMPTS: Final = TypeAdapter(list[_FailedAttempts])
+class _UpdatedRow(LiteLLMBaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    metadata: Mapping[str, object]
 
 
-def is_account_locked(metadata: object) -> bool:
-    return isinstance(metadata, Mapping) and metadata.get(LOCKED_AT_KEY) is not None
+_UPDATED_ROWS: Final = TypeAdapter(list[_UpdatedRow])
 
 
-async def record_failed_login(prisma_client: "PrismaClient", user_id: str) -> bool:
-    """Count one failed password sign-in and return whether the account is now locked."""
-    (row,) = _FAILED_ATTEMPTS.validate_python(
-        await prisma_client.db.query_raw(RECORD_FAILED_LOGIN_SQL, user_id, LOGIN_LOCKOUT_THRESHOLD)
+def account_lock(metadata: object, now: datetime) -> AccountLock:
+    if not isinstance(metadata, Mapping):
+        return None
+    fields: Final = _LockFields.model_validate(metadata)
+    if fields.login_locked_at is not None:
+        return PermanentLock()
+    if fields.login_locked_until is not None and fields.login_locked_until > now:
+        return TemporaryLock(until=fields.login_locked_until)
+    return None
+
+
+async def record_failed_login(prisma_client: "PrismaClient", user_id: str, now: datetime) -> AccountLock:
+    """Count one failed password sign-in and return the lock it leaves the account in."""
+    (row,) = _UPDATED_ROWS.validate_python(
+        await prisma_client.db.query_raw(
+            RECORD_FAILED_LOGIN_SQL, user_id, PERMANENT_LOCK_AFTER, TEMPORARY_LOCK_EVERY, TEMPORARY_LOCK_MINUTES
+        )
     )
-    return row.failed_attempts >= LOGIN_LOCKOUT_THRESHOLD
+    return account_lock(row.metadata, now)
 
 
 async def clear_login_failures(prisma_client: "PrismaClient", user_id: str) -> None:
