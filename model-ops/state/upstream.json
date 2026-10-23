@@ -1,0 +1,401 @@
+{
+ "updated": "2026-10-23 14:42",
+ "snapshot": {
+  "models": {
+   "qwen3.8-27b": {
+    "main": {
+     "sha": "1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0",
+     "lastModified": "2026-08-14T15:00:01.000Z",
+     "downloads": 7758670
+    },
+    "official_variants": [
+     "Qwen/Qwen3.8-27B",
+     "Qwen/Qwen3.8-27B-FP8"
+    ],
+    "community_top20": [
+     "0bserverx/Qwen3.8-27B-Heretic-Abliterated-Uncensored-GGUF",
+     "DavidAU/Qwen3.8-27B-TURBO-Fable-Cold-Fusion-735-882-Heretic-Uncensored-NEO-CODER-MAX-MTP-GGUF",
+     "HauhauCS/Qwen3.8-27B-Uncensored-HauhauCS-Aggressive-MTP-GGUF",
+     "ISTA-DASLab/Qwen3.8-27B-GSQ-RCO-GGUF",
+     "JonathanColetti/Qwen3.8-27B-Uncensored-GGUF",
+     "Qwen/Qwen3.8-27B",
+     "Qwen/Qwen3.8-27B-FP8",
+     "byteshape/Qwen3.8-27B-GGUF",
+     "cdiamond/Qwen3.8-27B-iMatrix-NVFP4-MTP-GGUF",
+     "ggml-org/Qwen3.8-27B-GGUF",
+     "huihui-ai/Huihui-Qwen3.8-27B-abliterated-GGUF",
+     "lmstudio-community/Qwen3.8-27B-GGUF",
+     "lmstudio-community/Qwen3.8-27B-MLX-4bit",
+     "lmstudio-community/Qwen3.8-27B-MLX-5bit",
+     "lmstudio-community/Qwen3.8-27B-MLX-6bit",
+     "lmstudio-community/Qwen3.8-27B-MLX-8bit",
+     "peculiar-ragdoll/Dirk-Qwen3.8-27B-GGUF",
+     "ukisai/Swift-1.5-Qwen3.8-27B-GSQ-RCO-GGUF",
+     "unsloth/Qwen3.8-27B-GGUF",
+     "unsloth/Qwen3.8-27B-NVFP4"
+    ],
+    "discussions": {
+     "218": "Is there an official list of supported languages?",
+     "217": "Add Modality Maturity Index results",
+     "216": "Is there any Official fix for the Chat-Template for Claude Code ?",
+     "215": "test",
+     "213": "Qwen3.8-27B-Flash-MTP-GGUF--5.79 GB. Code ~70-90 t/s, editing ~100-200 t/s.",
+     "212": "Intermittent Persian language-instruction failures after tool results — Alibaba via OpenRouter",
+     "211": "谢谢Qwen 送了个万能老婆给我",
+     "210": "New MEDIUM MoE model",
+     "209": "Please, please, release a 35b MOE version of 3.8",
+     "208": "jailbreak mode?",
+     "207": "Тедди",
+     "206": "Idea for a future Qwen 27B: nine 1M-token agents on one RTX 5090",
+     "205": "Add official Agents Last Exam evaluation results",
+     "204": "testing",
+     "203": "Update chat_template.jinja"
+    },
+    "modelscope": true,
+    "ms:metax-tech/Qwen3.8-27B-W8A8": {
+     "exists": true,
+     "updated": "2026-08-25 08:55",
+     "size_gb": 36.4
+    },
+    "gitee_listed": [
+     "qwen3.8-27b"
+    ]
+   },
+   "qwen-image-2.1": {
+    "main": {
+     "sha": "d26bb61231c349cf6b7896fa83353113880e1ba3",
+     "lastModified": "2026-09-30T02:14:09.000Z",
+     "downloads": 176590
+    },
+    "alt:FlagRelease/Qwen-Image-2.1-BF16-metax-FlagOS": {
+     "sha": "1aeeb8c992e899aff581647c9279ebf6d76f9012",
+     "lastModified": "2026-09-22T02:02:29.000Z",
+     "downloads": 12
+    },
+    "official_variants": [
+     "Qwen/Qwen-Image-2.1",
+     "Qwen/Qwen-Image-2.1-PE-I2I",
+     "Qwen/Qwen-Image-2.1-PE-T2I",
+     "Qwen/Qwen-Image-2.1-Turbo"
+    ],
+    "community_top20": [
+     "Abiray/Qwen-Image-2.1-GGUF",
+     "Abiray/Qwen-Image-2.1-viggle-4-steps-turbo-GGUF",
+     "AtomicChat/Qwen-Image-2.1-Turbo-GGUF",
+     "AtomicChat/Qwen-Image-2.1-Turbo-Uncensored-GGUF",
+     "Comfy-Org/Qwen-Image-2.1",
+     "DogukanUrker/Qwen-Image-2.1-Turbo-GGUF",
+     "Noctaluna/Noct-Q-Uncensored-Qwen-Image-2.1",
+     "Qwen/Qwen-Image-2.1",
+     "Viggle/Qwen-Image-2.1-viggle-turbo",
+     "abenzerps/Qwen-Image-2.1-Uncensored-Quantized",
+     "leejet/Qwen-Image-2.1-GGUF",
+     "lightx2v/Qwen-Image-2.1-Lightning",
+     "madebyollin/texture-fix-vae-for-qwen-image-2.1",
+     "pottokao/Qwen-Image-2.1-PE-I2I-Heretic-GGUF",
+     "pottokao/Qwen-Image-2.1-Text-Encoder-Heretic-GGUF",
+     "unsloth/Qwen-Image-2.1",
+     "unsloth/Qwen-Image-2.1-FP8",
+     "unsloth/Qwen-Image-2.1-GGUF",
+     "unsloth/Qwen-Image-2.1-Turbo-FP8",
+     "unsloth/Qwen-Image-2.1-Turbo-GGUF"
+    ],
+    "discussions": {
+     "64": "Qwen Image 2.1 Edit: 8 Real-World Image Editing Stress Tests in ComfyUI",
+     "63": "Qwen Image 2.1 now runs locally in your Browser in just 4GB VRAM!",
+     "62": "Upload meta.txt",
+     "61": "Pervasive etched textures from noise patterns",
+     "60": "对模型生成的图像进行编辑不遵循提示词",
+     "59": "Request: DOI",
+     "58": "Update README.md",
+     "57": "What is the performance of complex text modification?",
+     "56": "Qwen 2.1 image quality issue — noisy and muddy results",
+     "55": "Update README.md",
+     "54": "Running on <4gb Vram.",
+     "53": "Upload я.jpg",
+     "52": "Commercial Use of Qwen-Image-2.1 Outputs — Clear Answer Needed #2",
+     "51": "Qwen-Image-2.1  on Android  in 200s — MNN + OpenCL (int4 DiT, Turbo 6 step & Tiny VAE)",
+     "50": "Just needing help"
+    },
+    "modelscope": true,
+    "gitee_listed": []
+   },
+   "qwen3-omni-30b-a3b-instruct": {
+    "main": {
+     "sha": "26291f793822fb6be9555850f06dfe95f2d7e695",
+     "lastModified": "2025-09-22T14:17:52.000Z",
+     "downloads": 703699
+    },
+    "official_variants": [
+     "Qwen/Qwen3-Omni-30B-A3B-Captioner",
+     "Qwen/Qwen3-Omni-30B-A3B-Instruct",
+     "Qwen/Qwen3-Omni-30B-A3B-Thinking"
+    ],
+    "community_top20": [
+     "Intel/Qwen3-Omni-30B-A3B-Instruct-int4-AutoRound",
+     "Qwen/Qwen3-Omni-30B-A3B-Instruct",
+     "YihongJin/Qwen3-Omni-30B-A3B-Instruct-NVFP4-W4A16-awq",
+     "YihongJin/Qwen3-Omni-30B-A3B-Instruct-NVFP4-W4A4-experts-mse",
+     "YihongJin/Qwen3-Omni-30B-A3B-Instruct-NVFP4-W4A4-full-thinker-awqclip",
+     "cyankiwi/Qwen3-Omni-30B-A3B-Instruct-AWQ-4bit",
+     "cyankiwi/Qwen3-Omni-30B-A3B-Instruct-AWQ-8bit",
+     "ggml-org/Qwen3-Omni-30B-A3B-Instruct-GGUF",
+     "grapeV-ai/Qwen3-Omni-30B-A3B-Instruct-GGUF",
+     "mlx-community/Qwen3-Omni-30B-A3B-Instruct-4bit",
+     "mlx-community/Qwen3-Omni-30B-A3B-Instruct-8bit",
+     "mradermacher/Huihui-Qwen3-Omni-30B-A3B-Instruct-abliterated-GGUF",
+     "mradermacher/Huihui-Qwen3-Omni-30B-A3B-Instruct-abliterated-i1-GGUF",
+     "mradermacher/MANGO-Qwen3-Omni-30B-A3B-Instruct-GGUF",
+     "mradermacher/MANGO-Qwen3-Omni-30B-A3B-Instruct-i1-GGUF",
+     "pherber3/Qwen3-Omni-30B-A3B-Instruct-4bit-mlx",
+     "sammysun0711/Qwen3-Omni-30B-A3B-Instruct-FP8-Dynamic",
+     "shunyang90/Qwen3-Omni-30B-A3B-Instruct-NVFP4",
+     "yuekai/qwen3_omni_30b_a3b_instruct_dflash_block8",
+     "yuekai/qwen3_omni_30b_a3b_instruct_eagle3_audio"
+    ],
+    "discussions": {
+     "43": "Add Modality Maturity Index results",
+     "42": "[GGUF] Qwen3-Omni 30B Thinker GGUF Quantization (CPU-MoE offloading for 6GB VRAM)",
+     "41": "[GGUF] Qwen3-Omni 30B Thinker GGUF Quantization (CPU-MoE offloading for 6GB VRAM)",
+     "40": "[GGUF] Qwen3-Omni 30B Thinker GGUF Quantization (CPU-MoE offloading for 6GB VRAM)",
+     "39": "[GGUF] Qwen3-Omni 30B Thinker GGUF Quantization (CPU-MoE offloading for 6GB VRAM)",
+     "38": "Feature Proposal: Qwen Omni + Wan2.2 Animate Bridge Connector for Video Generation",
+     "37": "Plans for releasing Qwen3.8-Omni open weights ?",
+     "36": "Qwen3-Omni-30B-A3B-Instruct",
+     "35": "Smaller version such as 8b or 4b will it be released a dn when?",
+     "34": "Plans for omni 3.5 or 3.6",
+     "33": "from transformers import Qwen3OmniMoeForConditionalGeneration, Qwen3OmniMoeProcessor 报错",
+     "32": "Fine Tuning on other languages",
+     "31": "Directly using audio binary data",
+     "30": "Vllm Export URL not found",
+     "29": "Which input/output modes does vLLM implementation support now?"
+    },
+    "modelscope": true,
+    "gitee_listed": []
+   },
+   "minimax-h3": {
+    "main": {
+     "sha": "42ed227ee7df40d41602854ae760620d6eb651fe",
+     "lastModified": "2026-08-13T01:46:29.000Z",
+     "downloads": 5011999
+    },
+    "official_variants": [
+     "MiniMaxAI/MiniMax-H3"
+    ],
+    "community_top20": [
+     "Abiray/MiniMax-H3-GGUF",
+     "Abiray/MiniMax-H3-Pruned-GGUF",
+     "Abiray/Minimax-H3-nvfp4-INT4-INT8-Convrot",
+     "Alissonerdx/Minimax-H3-ComfyUI",
+     "Comfy-Org/MiniMax-H3",
+     "DeepBeepMeep/MiniMax-H3",
+     "LBH-123-AI/Minimax_h3_latent_Upscaler",
+     "MATLOWAI/minimax-h3-fused-turbo-int8-convrot",
+     "MiniMaxAI/MiniMax-H3",
+     "WarmBloodAban/Minimax-h3_Singularity",
+     "Winnougan/Cobijada_Minimax-H3_Hybrid_Pruned_ComfyUI",
+     "akatz-ai/MiniMax-H3-Character-Swap-LoRA",
+     "drbaph/MiniMax-H3-Turbo-Lora-ComfyUI",
+     "fal/MiniMax-H3-Realism-People-LoRA",
+     "larryvrh/MiniMax-H3-Turbo-Lora",
+     "leejet/MiniMax-H3-GGUF",
+     "lightx2v/Minimax-h3-Turbo",
+     "realrebelai/MiniMax-H3_GGUFs",
+     "t8star/Vdn-Minimax-H3-Comfy",
+     "unsloth/MiniMax-H3-GGUF"
+    ],
+    "discussions": {
+     "61": "【招聘】 MiniMax 视频模型全球开源生态",
+     "12": "Any License Question Ask here!",
+     "117": "papa@papa",
+     "116": "Upload my_first_lora_v1.safetensors",
+     "115": "Upload my_first_lora_v1_000002750.safetensors",
+     "114": "Structural (per-frame) conditioning for H3 — supported, planned, or out of scope?",
+     "113": "Update README.md",
+     "112": "تغير ملابسها لمايوك اسود  وقطعتين",
+     "111": "Upload 2 files",
+     "110": "Upload SAVE_20260928_153918.jpg",
+     "109": "Run MiniMax-H3 locally on Apple Silicon from ComfyUI (Wild H3C nodes, via h3.c)",
+     "108": "minimax H3 Video",
+     "107": "Delete FL2VA",
+     "106": "如何解决人物胡言乱语的问题~~",
+     "105": "Guys any update for H3-Regenerate-2K?"
+    },
+    "modelscope": true,
+    "gitee_listed": [
+     "MiniMax-H3"
+    ]
+   },
+   "glm-5.3": {
+    "main": {
+     "sha": "ba32f8c19c8738e2c57c71798c601d477a7bf844",
+     "lastModified": "2026-10-14T12:22:48.000Z",
+     "downloads": 1937342
+    },
+    "alt:zai-org/GLM-5.3-BF16": {
+     "sha": "abf42e6c0e53bc29a875511301e7b7fcd220315b",
+     "lastModified": "2026-10-15T06:53:07.000Z",
+     "downloads": 25915
+    },
+    "official_variants": [
+     "zai-org/GLM-5.3",
+     "zai-org/GLM-5.3-BF16",
+     "zai-org/GLM-5.3-Flash",
+     "zai-org/GLM-5.3-Flash-BF16"
+    ],
+    "community_top20": [
+     "BoldingBuilds/orcarouter_GLM-5.3-Flash-Uncensored-GGUF",
+     "GCSA-AiLab/GLM-5.3-Flash-Uncensored-RCO-GSQ-GGUF",
+     "Inferact/GLM-5.3-NVFP4",
+     "RadixArk/GLM-5.3-Flash-NVFP4",
+     "RadixArk/GLM-5.3-NVFP4",
+     "antirez/glm-5.3-flash-gguf",
+     "autotrust/GLM-5.3-Flash-GGUF-DGX-Spark",
+     "dealignai/GLM-5.3-CYBERSECURITY-FP8",
+     "huihui-ai/Huihui-GLM-5.3-Flash-abliterated-GGUF",
+     "kindlingai/glm-5.3-exlr8-k2-k3-k4",
+     "nvidia/GLM-5.3-Flash-NVFP4",
+     "nvidia/GLM-5.3-NVFP4",
+     "orcarouter/GLM-5.3-Flash-Uncensored-FP8",
+     "peasantsmith/GLM-5.3-Flash-Maya-GGUF",
+     "pfeifferj/GLM-5.3-Flash-GSQ-RCO-GGUF",
+     "unsloth/GLM-5.3-Flash-GGUF",
+     "unsloth/GLM-5.3-GGUF",
+     "zai-org/GLM-5.3",
+     "zai-org/GLM-5.3-Flash",
+     "zai-org/GLM-5.3-Flash-BF16"
+    ],
+    "discussions": {
+     "31": "chat template: speed up tool-result validation and reordering",
+     "30": "Add Agents' Last Exam result (28.5, ale-cli-pass-rate, from model card)",
+     "29": "Add LHTB 2.0 (Long-Horizon Terminal-Bench) eval result: 12/77 tasks solved",
+     "28": "Behavioral problems",
+     "27": "Isn’t this AI model being used as a tool of war?",
+     "26": "GLM-5.3 API pricing by provider",
+     "25": "Security issue: ZCode",
+     "24": "It's not bad. I think I like it.",
+     "23": "What agent is used to evaluate ProgramBench?",
+     "22": "chat template: add support for enable_thinking",
+     "21": "GLM-5.3 doesn't support enable_thinking=false",
+     "20": "Model concedes even when its reasoning shows disagreement",
+     "19": "Poor persona-level instruction-following",
+     "18": "Fidelity measurement: KL(reference || this quant) on frozen tokens, receipt-backed",
+     "17": "Upload Recording_2829.wav"
+    },
+    "modelscope": true,
+    "ms:metax-tech/GLM-5.3-W8A8": {
+     "exists": true,
+     "updated": "2026-09-02 03:15",
+     "size_gb": 755.9
+    },
+    "gitee_listed": [
+     "GLM-5.3"
+    ]
+   },
+   "qwen3.8-max": {
+    "main": {
+     "sha": "207bd685a7e3696cfaff12ded7c6a7ea0f88c996",
+     "lastModified": "2026-08-12T10:24:04.000Z",
+     "downloads": 25398
+    },
+    "alt:FlagRelease/Qwen3.8-2.4T-A95B-INT8-metax-FlagOS": {
+     "sha": "ac2ac1266fb994f77950936c9fa8bd80c3eab92f",
+     "lastModified": "2026-08-12T12:38:46.000Z",
+     "downloads": 26
+    },
+    "alt:Qwen/Qwen3.8-2.4T-A95B-FP8": {
+     "sha": "d2dc35658bcf77e66643428cb52e774cc3b5bd29",
+     "lastModified": "2026-08-12T10:23:42.000Z",
+     "downloads": 5443
+    },
+    "official_variants": [
+     "Qwen/Qwen3.8-2.4T-A95B",
+     "Qwen/Qwen3.8-2.4T-A95B-FP8"
+    ],
+    "community_top20": [
+     "Anbeeld/Qwen3.8-2.4T-A95B-DSpark-GGUF",
+     "Blackfrost-AI/Qwen-3.8-2.4T-A95B-Derisked-IQ1_0-GGUF",
+     "Inferact/Qwen3.8-2.4T-A95B-NVFP4",
+     "Muhammadzain202/Qwen3.8-2.4T-A95B",
+     "Qwen/Qwen3.8-2.4T-A95B",
+     "Qwen/Qwen3.8-2.4T-A95B-FP8",
+     "RadixArk/Qwen3.8-2.4T-A95B-DSpark",
+     "RadixArk/Qwen3.8-2.4T-A95B-NVFP4",
+     "RedHatAI/Qwen3.8-2.4T-A95B-NVFP4",
+     "RedHatAI/Qwen3.8-2.4T-A95B-NVFP4-REAP-25",
+     "RedHatAI/Qwen3.8-2.4T-A95B-NVFP4-REAP-50",
+     "amd/Qwen3.8-2.4T-A95B-Quark-MXFP4",
+     "anemll/Qwen3.8-2.4T-A95B-FlashMoE-UD-Q1_0",
+     "kernelpool/Qwen3.8-2.4T-A95B-3bit-UVMAX",
+     "meshllm/Qwen3.8-2.4T-A95B-UD-IQ4_XS-layers",
+     "nvidia/Qwen3.8-2.4T-A95B-NVFP4",
+     "pipenetwork/Qwen3.8-2.4T-A95B-MLX-reap50-3bit",
+     "pipenetwork/Qwen3.8-2.4T-A95B-MLX-reap60-3bit",
+     "pipenetwork/Qwen3.8-2.4T-A95B-MLX-reap75-4bit",
+     "unsloth/Qwen3.8-2.4T-A95B-GGUF"
+    ],
+    "discussions": {
+     "44": "We are slaying - Better than any Opus or GPT I've Used",
+     "43": "Can I use llama.cpp tools to quantize this model ONE shard at a time?",
+     "42": "Question",
+     "41": "Architectural Proposal for Future Qwen Models: Dynamic Depth-Scaling and Macro-Expert Modularity for Composable AI",
+     "40": "Qwen3.8 Max 0902?",
+     "39": "Add Toolathlon-Verified evaluation result",
+     "38": "Add Terminal-Bench evaluation results",
+     "37": "ignore what’s going on in #26",
+     "36": "notice how they all do good at around 2t",
+     "35": "I researched the practical vLLM configs for Qwen3.8-2.4T-A95B — a few findings that surprised me more...",
+     "34": "Qwen3.8 16B",
+     "33": "Хочу gguf на 4_K_M квантования",
+     "32": "Qwen3.8-A50B: Can We Distill A95B into a 50B MoE with 5–12B Active Parameters?",
+     "31": "can you do 99999999999999B-A0.00000000000001B",
+     "30": "Weirdos"
+    },
+    "modelscope": true,
+    "gitee_listed": [
+     "qwen3.8-max"
+    ]
+   }
+  },
+  "frameworks": {
+   "vllm-project/vllm": {
+    "tag": "v0.32.1rc0",
+    "published": "2026-10-18",
+    "from": "releases"
+   },
+   "vllm-project/vllm-omni": {
+    "tag": "v0.32.0rc1",
+    "published": "2026-10-19",
+    "from": "releases"
+   },
+   "sgl-project/sglang": {
+    "tag": "v0.5.22",
+    "published": "2026-10-19",
+    "from": "releases"
+   },
+   "huggingface/diffusers": {
+    "tag": "v0.41.0",
+    "published": "2026-10-06",
+    "from": "releases"
+   },
+   "huggingface/transformers": {
+    "tag": "v5.20.2",
+    "published": "2026-10-19",
+    "from": "releases"
+   },
+   "MetaX-MACA/vLLM-metax": {
+    "tag": "v0.28.0",
+    "published": "2026-10-15",
+    "from": "releases"
+   },
+   "MetaX-MACA/vllm-omni-metax": {
+    "error": "no releases or tags"
+   },
+   "ModelTC/LightX2V": {
+    "tag": "0.6.0",
+    "published": "2026-10-12",
+    "from": "releases"
+   }
+  }
+ }
+}

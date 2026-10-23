@@ -1,0 +1,130 @@
+{
+  "_doc": "Registry for tools/watch_upstream.py and tools/smoke_test.py. kind: vlm | t2i | omni | t2av. gitee_ids are matched case-insensitively against GET https://ai.gitee.com/v1/models. variant_search = [author, search] pairs used to list official FP8/AWQ/GGUF siblings on HF. community_search = searched across all authors (top by downloads) to spot third-party quants. hf_alt / modelscope_alt = extra repos whose updates matter (official FP8/BF16 siblings, MetaX-made W8A8 / FlagOS builds).",
+  "models": [
+    {
+      "key": "qwen3.8-27b",
+      "kind": "vlm",
+      "hf": "Qwen/Qwen3.8-27B",
+      "modelscope": "Qwen/Qwen3.8-27B",
+      "gitee_ids": [
+        "qwen3.8-27b"
+      ],
+      "variant_search": [
+        [
+          "Qwen",
+          "Qwen3.8-27B"
+        ]
+      ],
+      "community_search": "Qwen3.8-27B",
+      "modelscope_alt": [
+        "metax-tech/Qwen3.8-27B-W8A8"
+      ]
+    },
+    {
+      "key": "qwen-image-2.1",
+      "kind": "t2i",
+      "hf": "Qwen/Qwen-Image-2.1",
+      "modelscope": "Qwen/Qwen-Image-2.1",
+      "gitee_ids": [
+        "Qwen-Image-2.1",
+        "qwen-image-2.1"
+      ],
+      "variant_search": [
+        [
+          "Qwen",
+          "Qwen-Image-2.1"
+        ]
+      ],
+      "community_search": "Qwen-Image-2.1",
+      "hf_alt": [
+        "FlagRelease/Qwen-Image-2.1-BF16-metax-FlagOS"
+      ]
+    },
+    {
+      "key": "qwen3-omni-30b-a3b-instruct",
+      "kind": "omni",
+      "hf": "Qwen/Qwen3-Omni-30B-A3B-Instruct",
+      "modelscope": "Qwen/Qwen3-Omni-30B-A3B-Instruct",
+      "gitee_ids": [
+        "Qwen3-Omni-30B-A3B-Instruct",
+        "qwen3-omni-30b-a3b-instruct"
+      ],
+      "variant_search": [
+        [
+          "Qwen",
+          "Qwen3-Omni-30B-A3B"
+        ]
+      ],
+      "community_search": "Qwen3-Omni-30B-A3B-Instruct"
+    },
+    {
+      "key": "minimax-h3",
+      "kind": "t2av",
+      "hf": "MiniMaxAI/MiniMax-H3",
+      "modelscope": "MiniMax/MiniMax-H3",
+      "gitee_ids": [
+        "MiniMax-H3"
+      ],
+      "variant_search": [
+        [
+          "MiniMaxAI",
+          "MiniMax-H3"
+        ]
+      ],
+      "community_search": "MiniMax-H3"
+    },
+    {
+      "key": "glm-5.3",
+      "kind": "llm",
+      "hf": "zai-org/GLM-5.3",
+      "hf_alt": [
+        "zai-org/GLM-5.3-BF16"
+      ],
+      "modelscope": "ZhipuAI/GLM-5.3",
+      "gitee_ids": [
+        "GLM-5.3"
+      ],
+      "variant_search": [
+        [
+          "zai-org",
+          "GLM-5.3"
+        ]
+      ],
+      "community_search": "GLM-5.3",
+      "modelscope_alt": [
+        "metax-tech/GLM-5.3-W8A8"
+      ]
+    },
+    {
+      "key": "qwen3.8-max",
+      "kind": "llm",
+      "hf": "Qwen/Qwen3.8-2.4T-A95B",
+      "hf_alt": [
+        "FlagRelease/Qwen3.8-2.4T-A95B-INT8-metax-FlagOS",
+        "Qwen/Qwen3.8-2.4T-A95B-FP8"
+      ],
+      "modelscope": "Qwen/Qwen3.8-2.4T-A95B",
+      "gitee_ids": [
+        "qwen3.8-max"
+      ],
+      "variant_search": [
+        [
+          "Qwen",
+          "Qwen3.8-2.4T"
+        ]
+      ],
+      "community_search": "Qwen3.8-2.4T-A95B",
+      "note": "Qwen3.8-Max on Gitee/Qwen Cloud is the official version built on the open Qwen3.8-2.4T-A95B (adds vision input, non-thinking, 1M ctx, built-in tools) per the HF card; the open weights are text-only and thinking-only"
+    }
+  ],
+  "frameworks": [
+    "vllm-project/vllm",
+    "vllm-project/vllm-omni",
+    "sgl-project/sglang",
+    "huggingface/diffusers",
+    "huggingface/transformers",
+    "MetaX-MACA/vLLM-metax",
+    "MetaX-MACA/vllm-omni-metax",
+    "ModelTC/LightX2V"
+  ]
+}

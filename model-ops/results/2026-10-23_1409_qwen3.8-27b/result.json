@@ -1,0 +1,45 @@
+{
+ "when": "2026-10-23_1409",
+ "model": "qwen3.8-27b",
+ "model_id": "qwen3.8-27b",
+ "kind": "vlm",
+ "base_url": "https://ai.gitee.com/v1",
+ "checks": [
+  {
+   "check": "listed",
+   "status": "pass",
+   "seconds": null,
+   "evidence": "listed"
+  },
+  {
+   "check": "basic",
+   "status": "pass",
+   "seconds": 1.9,
+   "evidence": "content='\\n\\n42' reasoning_chars=0 usage={'prompt_tokens': 69, 'total_tokens': 121, 'completion_tokens': 52, 'prompt_tokens_details': None} finish=stop"
+  },
+  {
+   "check": "stream",
+   "status": "pass",
+   "seconds": 3.42,
+   "evidence": "TTFT 0.31s, total 3.42s, 105 tok, 33.8 tok/s; usage_in_stream=yes; answer='\\n\\n上海是中国东部的直辖市，也是重要的经济、金融和贸易中心。它地处长江入海口，拥有世界级港口和便捷的交通网络。上海既充满'"
+  },
+  {
+   "check": "json_schema",
+   "status": "FAIL",
+   "seconds": 4.1,
+   "evidence": "response_format accepted but output is not JSON (silent ignore): 城市名：上海  \n所在国家：中国  \n人口（百万）：约 24.9（约 2490 万常住人口）"
+  },
+  {
+   "check": "tools",
+   "status": "pass",
+   "seconds": 1.77,
+   "evidence": "get_weather({'city': '上海'})"
+  },
+  {
+   "check": "vision",
+   "status": "pass",
+   "seconds": 6.05,
+   "evidence": "content='\\n\\n4729'"
+  }
+ ]
+}

@@ -1,0 +1,39 @@
+{
+ "when": "2026-10-23_1410",
+ "model": "glm-5.3",
+ "model_id": "GLM-5.3",
+ "kind": "llm",
+ "base_url": "https://ai.gitee.com/v1",
+ "checks": [
+  {
+   "check": "listed",
+   "status": "pass",
+   "seconds": null,
+   "evidence": "listed"
+  },
+  {
+   "check": "basic",
+   "status": "pass",
+   "seconds": 2.03,
+   "evidence": "content='42' reasoning_chars=175 usage={'prompt_tokens': 27, 'total_tokens': 78, 'completion_tokens': 51, 'prompt_tokens_details': None, 'reasoning_tokens': 48} finish=stop"
+  },
+  {
+   "check": "stream",
+   "status": "pass",
+   "seconds": 12.15,
+   "evidence": "TTFT 0.55s, total 12.15s, 402 tok, 34.6 tok/s; usage_in_stream=yes; answer='上海是中国最大的经济中心城市，也是国际金融、贸易和航运中心，坐落于长江入海口。这座城市融合了东西方文化，外滩的万国建筑群'"
+  },
+  {
+   "check": "json_schema",
+   "status": "FAIL",
+   "seconds": 6.61,
+   "evidence": "response_format accepted but output is not JSON (silent ignore): - **城市名**：上海\n- **所在国家**：中国\n- **人口**：约 2500 万（25 百万）\n\n上海是中国人口最多的城市，也是全球最大的都市区之一。"
+  },
+  {
+   "check": "tools",
+   "status": "pass",
+   "seconds": 1.59,
+   "evidence": "get_weather({'city': '上海'})"
+  }
+ ]
+}

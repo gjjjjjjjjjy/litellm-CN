@@ -1,0 +1,39 @@
+{
+ "when": "2026-10-23_1410",
+ "model": "qwen3.8-max",
+ "model_id": "qwen3.8-max",
+ "kind": "llm",
+ "base_url": "https://ai.gitee.com/v1",
+ "checks": [
+  {
+   "check": "listed",
+   "status": "FAIL",
+   "seconds": null,
+   "evidence": "not in /models"
+  },
+  {
+   "check": "basic",
+   "status": "FAIL",
+   "seconds": 0.16,
+   "evidence": "HTTP 400: {\"error\":{\"code\":\"400\",\"message\":\"您绑定的资源包不支持当前模型或算力。建议购买“全资源包”，可支持全部模型。\",\"type\":\"server_error\"}}"
+  },
+  {
+   "check": "stream",
+   "status": "FAIL",
+   "seconds": null,
+   "evidence": "HTTP 400: {\"error\":{\"code\":\"400\",\"message\":\"您绑定的资源包不支持当前模型或算力。建议购买“全资源包”，可支持全部模型。\",\"type\":\"server_error\"}}"
+  },
+  {
+   "check": "json_schema",
+   "status": "FAIL",
+   "seconds": 0.16,
+   "evidence": "HTTP 400: {\"error\":{\"code\":\"400\",\"message\":\"您绑定的资源包不支持当前模型或算力。建议购买“全资源包”，可支持全部模型。\",\"type\":\"server_error\"}}"
+  },
+  {
+   "check": "tools",
+   "status": "FAIL",
+   "seconds": 0.15,
+   "evidence": "HTTP 400: {\"error\":{\"code\":\"400\",\"message\":\"您绑定的资源包不支持当前模型或算力。建议购买“全资源包”，可支持全部模型。\",\"type\":\"server_error\"}}"
+  }
+ ]
+}

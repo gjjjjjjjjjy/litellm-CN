@@ -1,0 +1,7 @@
+__pycache__/
+.DS_Store
+results/**/*.png
+results/**/*.jpg
+results/**/*.wav
+results/**/*.mp3
+results/**/*.mp4
