@@ -188,6 +188,7 @@ describe("provider_info_helpers", () => {
         Providers.LEMONADE,
         Providers.LLAMAFILE,
         Providers.MARITALK,
+        Providers.MOARK,
         Providers.NLP_CLOUD,
         Providers.NSCALE,
         Providers.OVHCLOUD,
@@ -239,6 +240,15 @@ describe("provider_info_helpers", () => {
   describe("getPlaceholder", () => {
     it("should return aiml placeholder for AIML provider", () => {
       expect(getPlaceholder(Providers.AIML)).toBe("aiml/flux-pro/v1.1");
+    });
+
+    it("should map the moark slug to the Moark (Gitee AI) display name", () => {
+      expect(getProviderLogoAndName("moark").displayName).toBe(Providers.MOARK);
+      expect(getProviderLogoAndName("MOARK").displayName).toBe(Providers.MOARK);
+    });
+
+    it("should prefix the Moark model placeholder with the moark provider slug", () => {
+      expect(getPlaceholder(Providers.MOARK)).toMatch(/^moark\//);
     });
 
     it("should return gemini-pro placeholder for Vertex_AI provider", () => {

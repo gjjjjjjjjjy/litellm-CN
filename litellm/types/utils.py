@@ -4291,6 +4291,7 @@ class LlmProviders(str, Enum):
     COGNITION = "cognition"
     CORTECS = "cortecs"
     SCX_AI = "scx-ai"
+    MOARK = "moark"
     PRISM = "prism"
     DARKBLOOM = "darkbloom"
     META = "meta"
