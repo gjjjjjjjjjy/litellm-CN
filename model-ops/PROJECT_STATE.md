@@ -16,11 +16,24 @@ DeepSeek V4 Flash 在宁夏 C500 6 节点，不在这次搬迁范围内。
 - 模力方舟实测：qwen3.8-27b 6 项过 5、GLM-5.3 5 项过 4，两者 json_schema 都被静默忽略；qwen3.8-max 当前 key 无权限
 - C600 结论：可以直接迁，但先沿用 INT8 W8A8 不换精度；20 台 C500 → 约 10 台 C600（最少 7 台）
 
+### 2026-10-23 下午：生图跟踪和验收标准
+
+用户明确了分工：负责跟踪生图模型、确保迁移过程无误，以及思考音频合成和图像、音频、视频的验收标准与方法。范围是模力方舟「沐曦 Token 资源包」（package 1492，https://ai.gitee.com/serverless-api/packages/1492）
+
+- 找到资源包页面背后的公开接口（`/api/pay/services/1492`、`/api/pay/service/operations?package_id=1492`），每个接口都标了实际算力。资源包共 209 个模型，但用到沐曦的只是一部分：图像 29 个里 11 个，音频 17 个里 3 个，视频 16 个里 3 个，其余在昇腾、燧原、壁仞、Gitee 自有卡、TeleAI、阿里百炼
+- 我们这把 key 只能调沐曦算力上的服务（只在百炼、燧原上的模型都被拒），所以用它采的基线来自沐曦
+- **qwen3.8-max 在资源包里只走百炼，不在沐曦上**，和 C600 迁移评估里「20 台 C500 包含 Qwen3.8 Max」的前提冲突，待确认
+- 新增 `tools/moark_inventory.py`、`tools/image_baseline.py`、`tools/compare_images.py`、`tools/audio_eval.py`，`testsets/` 两个固定测试集，`ACCEPTANCE.md`，`models/IMAGE_MODELS.md`、`models/AUDIO_MODELS.md`
+- 实测：Qwen-Image-2512 同 seed 两次输出逐字节相同（部署是确定性的）；服务端计算时间波动大（同请求 7.3 秒和 29.1 秒）；SenseVoiceSmall 免费、可作 TTS 验收的 ASR 判官
+- 评测 venv：`metax/tools/evalenv`（numpy、Pillow、soundfile、pyloudnorm、cn2an），在仓库外
+- 花费：试采 4 张图 ¥0.2，flux-1-schnell 探测 ¥0.01，whisper ¥0.015
+
 ## 卡在哪
 
 - 不知道现网 20 台 C500 的具体分配（台数测算的最大误差来源）
 - 没有能调 qwen3.8-max 的 key
-- 模力方舟视频接口（H3）不知道
+- 模力方舟视频接口（H3）已查到：`v1/async/videos/generations`（10-23 下午，从资源包数据）
+- 迁移时间表不知道（生图基线必须在迁移前采）
 - 没有 C600 机器可以上手验证
 
 ## 下一步

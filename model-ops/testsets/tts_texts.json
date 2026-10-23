@@ -1,0 +1,22 @@
+{
+  "_doc": "Fixed Chinese text set for TTS acceptance and before/after parity runs (tools/audio_eval.py). CER is computed after removing punctuation and spaces and normalising numbers on both sides with cn2an, so 二十三 and 23 count as the same. Items with cer=false are judged by ear (number and symbol reading has more than one acceptable form)",
+  "version": "2026-10-23",
+  "texts": [
+    {"id": "short_plain", "category": "短句", "text": "今天上海的天气很好，适合出门散步。"},
+    {"id": "news", "category": "新闻播报", "text": "据气象台消息，受冷空气影响，未来三天本市将出现明显降温，最低气温降至八度左右，请市民注意添衣保暖。"},
+    {"id": "polyphone_1", "category": "多音字", "text": "他在银行工作了十年，每天步行去上班，路上会经过一家很有名的长寿面馆。"},
+    {"id": "polyphone_2", "category": "多音字", "text": "重庆的朋友说，这件事很重要，我们重新开会讨论一下，把重点写在白板上。"},
+    {"id": "polyphone_3", "category": "多音字", "text": "这个孩子长大以后想当音乐家，他已经学了好几年的乐器，还会弹奏几首长调。"},
+    {"id": "numbers_date", "category": "数字与日期", "cer": false, "text": "会议定于2026年10月23日下午3点半召开，地点在5楼502会议室。"},
+    {"id": "numbers_money", "category": "数字与金额", "cer": false, "text": "这台服务器的价格是128000元，比去年降低了15%，交货周期为45天。"},
+    {"id": "numbers_phone", "category": "号码", "cer": false, "text": "如需帮助，请拨打客服热线400-820-8820，或发送邮件到service@example.com。"},
+    {"id": "en_mixed", "category": "中英混读", "text": "这次发布会上，团队展示了新的GPU和AI芯片，还现场演示了用iPhone连接云端大模型。"},
+    {"id": "question", "category": "语气：疑问", "text": "你确定明天早上八点之前能把报告发给我吗？"},
+    {"id": "exclaim", "category": "语气：感叹", "text": "太好了！我们终于把这个问题解决了，大家辛苦了！"},
+    {"id": "list_pause", "category": "停顿与列举", "text": "购物清单上有：苹果、香蕉、牛奶、鸡蛋，还有一袋大米。"},
+    {"id": "classical", "category": "古诗文", "text": "床前明月光，疑是地上霜。举头望明月，低头思故乡。"},
+    {"id": "tongue_twister", "category": "绕口令", "cer": false, "text": "四是四，十是十，十四是十四，四十是四十。"},
+    {"id": "long_paragraph", "category": "长文本", "text": "人工智能的发展离不开算力的支撑。过去几年，国产 GPU 在硬件性能和软件生态上都取得了明显进步，越来越多的大模型可以直接部署在国产芯片上运行。对于平台来说，模型迁移并不只是把权重搬过去那么简单，还要保证推理结果和原来一致，延迟和稳定性也要达到上线标准。因此，每一次迁移都需要一套完整的验收流程，从功能、质量、性能到稳定性逐项检查，确认没有问题之后才能切换线上流量。"},
+    {"id": "very_short", "category": "极短输入", "text": "好的。"}
+  ]
+}

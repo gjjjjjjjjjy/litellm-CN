@@ -28,6 +28,13 @@ MiniMax-H3（音视频生成）；这次 C500 → C600 搬迁还包括 GLM-5.3�
 - `models.json` — 上面三个脚本共用的模型登记表
 - `results/LOG.md` — 每次测试每一项一行；`results/<时间>_<模型>/` 放原始返回和生成的图片 / 音频
 - `feedback/` — 发出去的问题单
+- `ACCEPTANCE.md`：图像、音频、视频的验收标准与方法（新上线和迁移等价两种场景）
+- `models/IMAGE_MODELS.md`、`models/AUDIO_MODELS.md`：资源包 1492 里的生图模型、音频模型跟踪
+- `testsets/`：固定的生图提示词集和 TTS 文本集，采过基线后不要改已有条目，只能新增
+- `tools/moark_inventory.py`：拉资源包里每个模型跑在哪家算力、接口参数、单价，和上次比（迁移时算力一变就报）
+- `tools/image_baseline.py`、`tools/compare_images.py`：迁移前后采图像基线、逐张对比、生成盲评页
+- `tools/audio_eval.py`：TTS 生成、客观检查、ASR 回写算 CER、前后对比
+- `results/baselines/`、`results/tts/`、`results/compare/`：采集清单和对比报告进 git，图片音频不进
 
 ## 日常用法
 
@@ -37,7 +44,13 @@ python3 tools/watch_upstream.py              # 每周至少一次；有变化会
 python3 tools/smoke_test.py qwen3.8-27b      # 模力方舟上的线上版本
 python3 tools/smoke_test.py glm-5.3 --base-url http://<节点>:8000/v1 --model-id GLM-5.3 --api-key EMPTY   # 自部署
 python3 tools/size_cluster.py                # 台数测算
+python3 tools/moark_inventory.py --kinds image,audio,video     # 资源包 1492 盘点，看算力有没有变
+python3 tools/image_baseline.py --label c500-20261023 --dry-run  # 先看张数和费用，再去掉 --dry-run
+~/myworkspace/metax/tools/evalenv/bin/python tools/compare_images.py --a c500-20261023 --b c600-<日期>
+~/myworkspace/metax/tools/evalenv/bin/python tools/audio_eval.py check --label <采集名>
 ```
+
+用 evalenv 的脚本需要 numpy、Pillow、soundfile、pyloudnorm、cn2an，venv 在 `~/myworkspace/metax/tools/evalenv`（本机，不在仓库里）。其余脚本只用标准库，系统 python3 就能跑
 
 上游一变（主仓库 sha 变了、出了新的 FP8 版、框架发新版），先看 CHANGELOG 里是哪一项，再决定要不要重新部署；
 重新部署后一定再跑一遍 smoke_test，结果和上一次对比。
