@@ -19,7 +19,7 @@ services:
       retries: 20
 
   litellm:
-    image: litellm-local:zh-cn
+    image: litellm-local:zh-cn-amd64
     pull_policy: never
     restart: unless-stopped
     environment:

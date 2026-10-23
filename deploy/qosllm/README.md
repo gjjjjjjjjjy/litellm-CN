@@ -1,18 +1,43 @@
 # QosLLM 公网部署
 
-一台装有 Docker 和 Docker Compose 插件的 Linux 服务器即可运行，构建镜像时 Node 需要约 4 GB 内存。服务由三个容器组成：PostgreSQL、QosLLM 网关和 Caddy。只有 Caddy 对外开放 80 和 443 端口，80 只负责跳转到 HTTPS。网关和数据库只在 Docker 内部网络中可访问，数据库端口不对外开放
+在本机编译并导出 `linux/amd64` 镜像包，上传到 x86 Linux 服务器后运行。服务器需要 Docker 和 Docker Compose 插件，`start.sh` 只启动已导入的镜像。服务由三个容器组成：PostgreSQL、QosLLM 网关和 Caddy。只有 Caddy 对外开放 80 和 443 端口，80 只负责跳转到 HTTPS。网关和数据库只在 Docker 内部网络中可访问，数据库端口不对外开放
+
+## 本机打包和上传
+
+在本机仓库根目录运行，输出目录需要已存在。本机仅需 Docker、Bash、tar 和 gzip，Node 与 npm 在 Docker 容器中运行
+
+```bash
+git pull --ff-only origin litellm_zh_cn
+./deploy/qosllm/build-image.sh ../qosllm-linux-amd64.tar.gz
+scp -i ~/.ssh/aliyun ../qosllm-linux-amd64.tar.gz root@<服务器公网IP>:/root/service/
+```
+
+Apple Silicon Mac 在 ARM 容器中编译静态前端，再为 x86 服务器打包 `linux/amd64` 后端镜像。服务器镜像名为 `litellm-local:zh-cn-amd64`，本机开发使用的 `litellm-local:zh-cn` 保持独立
+
+前端依赖需要通过代理下载时，给打包命令传入容器可访问的代理地址，例如
+
+```bash
+HTTPS_PROXY=http://host.docker.internal:7897 \
+HTTP_PROXY=http://host.docker.internal:7897 \
+./deploy/qosllm/build-image.sh ../qosllm-linux-amd64.tar.gz
+```
+
+后端基础镜像由 Docker BuildKit 下载，需要单独保证 Docker 的镜像仓库网络可用。打包过程会显示依赖安装、翻译检查、前端编译和镜像导出的日志，结束后删除临时构建文件
 
 ## 首次部署
 
-在云服务器的安全组和防火墙中只放行 22、80 和 443
+在云服务器的安全组和防火墙中只放行 22、80 和 443。在服务器上导入本机上传的镜像包，再获取部署配置
 
 ```bash
+docker load -i /root/service/qosllm-linux-amd64.tar.gz
 git clone -b litellm_zh_cn <你的 Fork 地址> litellm
 cd litellm/deploy/qosllm
 ./start.sh
 ```
 
-第一次运行会生成 `.env`，其中的主密钥、加密盐和数据库密码都是随机值。编辑 `.env`，把 `SERVER_IP` 填成服务器公网 IP，然后再次运行 `./start.sh`。没有本地镜像时脚本会先构建 `litellm-local:zh-cn`，首次约 10~20 分钟，之后启动只需几十秒
+第一次运行会生成 `.env`，其中的主密钥、加密盐和数据库密码都是随机值。编辑 `.env`，把 `SERVER_IP` 填成服务器公网 IP，然后再次运行 `./start.sh`。镜像缺失或架构错误时脚本会报错，按提示重新导入镜像包
+
+首次启动还需要 `postgres:16` 和 `caddy:2.8.4` 镜像。服务器无法访问 Docker Hub 时，可以在本机拉取对应的 `linux/amd64` 镜像，用 `docker image save --platform linux/amd64` 导出后上传并导入
 
 `.env` 要单独备份。`LITELLM_SALT_KEY` 用来加密保存在数据库中的服务商密钥，丢失或修改后这些密钥将无法解密
 
@@ -50,10 +75,19 @@ docker compose cp caddy:/data/caddy/pki/authorities/local/root.crt ./qosllm-root
 
 ## 日常操作
 
+更新时先在本机拉取代码、重新打包并上传，再在服务器运行
+
+```bash
+git pull --ff-only origin litellm_zh_cn
+docker load -i /root/service/qosllm-linux-amd64.tar.gz
+./start.sh
+```
+
+导入镜像只更新镜像文件，运行 `./start.sh` 才会让服务使用新镜像。启动后确认网关健康和管理界面可用，再删除上传的镜像包
+
 ```bash
 ./start.sh            # 启动
 ./stop.sh             # 停止，数据保留在 Docker 卷中
-git pull && ./start.sh --build   # 更新代码后重新构建并启动
 docker compose logs -f litellm   # 查看网关日志
 ```
 

@@ -1,10 +1,20 @@
 #!/bin/bash
 set -euo pipefail
 
-if [[ $# -ne 2 ]]; then
-  printf '用法：%s /绝对路径/litellm 后端基础镜像\n' "$0" >&2
-  exit 2
-fi
+case $# in
+  2)
+    target_platform="$(docker version --format '{{.Server.Os}}/{{.Server.Arch}}')"
+    image_tag=litellm-local:zh-cn
+    ;;
+  4)
+    target_platform="$3"
+    image_tag="$4"
+    ;;
+  *)
+    printf '用法：%s /绝对路径/litellm 后端基础镜像 [目标平台 镜像名称]\n' "$0" >&2
+    exit 2
+    ;;
+esac
 
 patch_root="$(cd "$(dirname "$0")" && pwd)"
 repo_root="$(cd "$1" && pwd)"
@@ -16,7 +26,9 @@ mkdir -p "$build_root/ui" "$build_root/runtime"
 tar -C "$repo_root/ui/litellm-dashboard" --exclude=node_modules --exclude=.next --exclude=out -cf "$build_root/frontend.tar" .
 tar -C "$build_root/ui" -xf "$build_root/frontend.tar"
 
+printf '正在编译中文前端，Node 在本机 Docker 架构上运行\n'
 docker run --rm \
+  --platform "$(docker version --format '{{.Server.Os}}/{{.Server.Arch}}')" \
   --mount "type=bind,source=$build_root,target=/work" \
   --mount "type=bind,source=$patch_root,target=/patch,readonly" \
   --mount "type=volume,source=litellm-zh-cn-npm-cache,target=/root/.npm" \
@@ -38,8 +50,10 @@ tar -C "$repo_root" --exclude=__pycache__ -cf - litellm | tar -C "$build_root/ru
 source_version="$(sed -n 's/^version = "\(.*\)"$/\1/p' "$repo_root/pyproject.toml" | head -n 1)"
 cp -R "$patch_root/branding" "$build_root/runtime/branding"
 cp "$patch_root/Dockerfile.runtime" "$build_root/runtime/Dockerfile"
-env -u HTTPS_PROXY -u HTTP_PROXY -u https_proxy -u http_proxy docker build \
+printf '正在打包 %s 镜像：%s\n' "$target_platform" "$image_tag"
+env -u HTTPS_PROXY -u HTTP_PROXY -u https_proxy -u http_proxy docker buildx build --load \
+  --platform "$target_platform" \
   --build-arg "LITELLM_BASE_IMAGE=$base_image" --build-arg "LITELLM_SOURCE_VERSION=$source_version" \
-  --tag litellm-local:zh-cn "$build_root/runtime"
+  --tag "$image_tag" "$build_root/runtime"
 cp "$build_root/translation-report.json" "$patch_root/translation-report.json"
-printf '中文镜像已构建为 litellm-local:zh-cn，翻译报告位于 %s/translation-report.json\n' "$patch_root"
+printf '中文镜像已构建为 %s，翻译报告位于 %s/translation-report.json\n' "$image_tag" "$patch_root"

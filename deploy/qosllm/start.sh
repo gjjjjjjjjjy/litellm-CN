@@ -2,7 +2,15 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-command -v docker >/dev/null || { echo "未找到 docker，请先安装 Docker 和 Docker Compose 插件" >&2; exit 1; }
+if [[ $# -gt 0 ]]; then
+  echo "用法：./start.sh。请在本机运行 build-image.sh，上传并导入镜像后再启动" >&2
+  exit 2
+fi
+
+if ! command -v docker >/dev/null; then
+  echo "未找到 docker，请先安装 Docker 和 Docker Compose 插件" >&2
+  exit 1
+fi
 docker compose version >/dev/null
 
 random_hex() {
@@ -30,11 +38,14 @@ for name in LITELLM_MASTER_KEY LITELLM_SALT_KEY POSTGRES_PASSWORD; do
   (( ${#value} >= 32 )) || { echo "$name 至少需要 32 个字符" >&2; exit 1; }
 done
 
-if [[ "${1:-}" == "--build" ]] || ! docker image inspect litellm-local:zh-cn >/dev/null 2>&1; then
-  repo_root="$(cd ../.. && pwd)"
-  version="$(sed -n 's/^version = "\(.*\)"$/\1/p' "$repo_root/pyproject.toml" | head -n 1)"
-  echo "正在构建镜像 litellm-local:zh-cn（首次约 10~20 分钟）..."
-  "$repo_root/localization/zh-CN/build.sh" "$repo_root" "ghcr.io/berriai/litellm:v$version"
+if image_platform="$(docker image inspect --format '{{.Os}}/{{.Architecture}}' litellm-local:zh-cn-amd64)"; then
+  if [[ "$image_platform" != "linux/amd64" ]]; then
+    echo "服务器镜像架构应为 linux/amd64，当前为 $image_platform，请重新导入本机生成的镜像包" >&2
+    exit 1
+  fi
+else
+  echo "请先上传本机 build-image.sh 生成的镜像包，再执行 docker load -i 镜像包路径" >&2
+  exit 1
 fi
 
 docker compose up -d
