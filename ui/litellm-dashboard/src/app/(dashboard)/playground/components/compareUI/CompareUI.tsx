@@ -16,6 +16,8 @@ import type { TokenUsage } from "@/components/chat_ui/ResponseMetrics";
 import type { MessageType, VectorStoreSearchResponse } from "@/components/chat_ui/types";
 import { makeOpenAIChatCompletionRequest } from "@/components/llm_calls/chat_completion";
 import { fetchAvailableModels } from "@/components/llm_calls/fetch_models";
+import { apiClient } from "@/components/networking";
+import type { QosTargetModel } from "@/app/(dashboard)/qos/_components/qosData";
 import { Agent, fetchAvailableAgents } from "../../llm_calls/fetch_agents";
 import { makeA2AStreamMessageRequest } from "../../llm_calls/a2a_send_message";
 import { ComparisonPanel } from "./components/ComparisonPanel";
@@ -49,6 +51,7 @@ export interface ComparisonInstance {
 interface CompareUIProps {
   accessToken: string | null;
   disabledPersonalKeyCreation: boolean;
+  showProviders: boolean;
 }
 const GENERIC_FOLLOW_UPS = [
   "Can you summarize the key points?",
@@ -57,7 +60,7 @@ const GENERIC_FOLLOW_UPS = [
 ];
 const SUGGESTED_PROMPTS = ["Write me a poem", "Explain quantum computing", "Draft a polite email requesting a meeting"];
 const DEFAULT_ENDPOINT = EndpointId.CHAT_COMPLETIONS;
-export default function CompareUI({ accessToken, disabledPersonalKeyCreation }: CompareUIProps) {
+export default function CompareUI({ accessToken, disabledPersonalKeyCreation, showProviders }: CompareUIProps) {
   const [comparisons, setComparisons] = useState<ComparisonInstance[]>([
     {
       id: "1",
@@ -91,6 +94,11 @@ export default function CompareUI({ accessToken, disabledPersonalKeyCreation }: 
     },
   ]);
   const [modelOptions, setModelOptions] = useState<string[]>([]);
+  const [providerTargets, setProviderTargets] = useState<readonly QosTargetModel[]>([]);
+  const providersByModel = useMemo(
+    () => new Map(providerTargets.map((target) => [target.model_group, target.deployments])),
+    [providerTargets],
+  );
   const [agentOptions, setAgentOptions] = useState<Agent[]>([]);
   const [isLoadingModels, setIsLoadingModels] = useState(false);
   const [isLoadingAgents, setIsLoadingAgents] = useState(false);
@@ -101,7 +109,7 @@ export default function CompareUI({ accessToken, disabledPersonalKeyCreation }: 
   const isA2AMode = isAgentEndpoint(selectedEndpoint);
   const selectorOptions = isA2AMode
     ? agentOptionsToSelectorOptions(agentOptions)
-    : modelOptionsToSelectorOptions(modelOptions);
+    : modelOptionsToSelectorOptions(modelOptions, providersByModel);
   const isLoadingOptions = isA2AMode ? isLoadingAgents : isLoadingModels;
   const [inputValue, setInputValue] = useState("");
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
@@ -160,6 +168,20 @@ export default function CompareUI({ accessToken, disabledPersonalKeyCreation }: 
       active = false;
     };
   }, [effectiveApiKey]);
+
+  useEffect(() => {
+    if (!showProviders || !accessToken) return;
+    let active = true;
+    apiClient
+      .get<{ models: QosTargetModel[] }>("/qos/targets", { accessToken })
+      .then((response) => {
+        if (active) setProviderTargets(response.models);
+      })
+      .catch((error: unknown) => toast.fromError(error));
+    return () => {
+      active = false;
+    };
+  }, [showProviders, accessToken]);
 
   // Fetch agents when A2A mode is selected
   useEffect(() => {

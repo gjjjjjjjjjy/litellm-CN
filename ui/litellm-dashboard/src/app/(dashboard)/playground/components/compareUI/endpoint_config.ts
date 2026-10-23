@@ -3,6 +3,7 @@
  * Add new endpoints here to extend the comparison functionality.
  */
 
+import { providerLabel, vendorName, type QosTargetDeployment } from "@/app/(dashboard)/qos/_components/qosData";
 import { Agent } from "../../llm_calls/fetch_agents";
 
 // Endpoint identifiers
@@ -78,9 +79,36 @@ export interface SelectorOption {
   label: string;
 }
 
-// Convert model options to unified format
-export const modelOptionsToSelectorOptions = (models: string[]): SelectorOption[] =>
-  models.map((model) => ({ value: model, label: model }));
+export const allProvidersLabel = (model: string): string => `${model} · All providers`;
+
+const deploymentLabel = (
+  model: string,
+  deployment: QosTargetDeployment,
+  deployments: readonly QosTargetDeployment[],
+): string => {
+  const sharesVendor = deployments.filter((other) => other.vendor === deployment.vendor).length > 1;
+  return `${model} · ${sharesVendor ? providerLabel(deployment) : vendorName(deployment.vendor)}`;
+};
+
+const modelSelectorOptions = (model: string, deployments: readonly QosTargetDeployment[]): SelectorOption[] => {
+  if (deployments.length < 2) return [{ value: model, label: model }];
+  return [
+    { value: model, label: allProvidersLabel(model) },
+    ...deployments.map((deployment) => ({
+      value: deployment.model_id,
+      label: deploymentLabel(model, deployment, deployments),
+    })),
+  ];
+};
+
+/**
+ * A model served by several providers is offered once per provider as well: the deployment id routes the
+ * request to that provider alone, while the model name keeps load-balancing across all of them.
+ */
+export const modelOptionsToSelectorOptions = (
+  models: string[],
+  providers: ReadonlyMap<string, readonly QosTargetDeployment[]>,
+): SelectorOption[] => models.flatMap((model) => modelSelectorOptions(model, providers.get(model) ?? []));
 
 // Convert agent options to unified format
 export const agentOptionsToSelectorOptions = (agents: Agent[]): SelectorOption[] =>

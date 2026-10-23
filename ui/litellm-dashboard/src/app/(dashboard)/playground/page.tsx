@@ -12,6 +12,7 @@ import useAuthorized from "@/app/(dashboard)/hooks/useAuthorized";
 import { fetchProxySettings } from "@/utils/proxyUtils";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useUrlTab } from "@/hooks/useUrlTab";
+import { proxyAdminTierRoles } from "@/utils/roles";
 
 const PLAYGROUND_TABS = ["chat", "compare", "compliance", "system-one", "agent-builder"] as const;
 
@@ -91,7 +92,11 @@ export default function PlaygroundPage() {
           />
         </TabsContent>
         <TabsContent value="compare" className="mt-0 h-full data-hidden:hidden" keepMounted>
-          <CompareUI accessToken={accessToken} disabledPersonalKeyCreation={disabledPersonalKeyCreation} />
+          <CompareUI
+            accessToken={accessToken}
+            disabledPersonalKeyCreation={disabledPersonalKeyCreation}
+            showProviders={proxyAdminTierRoles.includes(userRole)}
+          />
         </TabsContent>
         <TabsContent value="compliance" className="mt-0 h-full data-hidden:hidden" keepMounted>
           <ComplianceUI accessToken={accessToken} disabledPersonalKeyCreation={disabledPersonalKeyCreation} />

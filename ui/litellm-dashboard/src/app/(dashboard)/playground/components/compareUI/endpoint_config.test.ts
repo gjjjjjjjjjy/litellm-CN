@@ -59,7 +59,7 @@ describe("endpoint_config", () => {
 
   it("should convert model options to selector options", () => {
     const models = ["gpt-4", "gpt-3.5-turbo", "claude-3"];
-    const options = modelOptionsToSelectorOptions(models);
+    const options = modelOptionsToSelectorOptions(models, new Map());
     expect(options).toHaveLength(3);
     expect(options[0]).toEqual({ value: "gpt-4", label: "gpt-4" });
     expect(options[1]).toEqual({ value: "gpt-3.5-turbo", label: "gpt-3.5-turbo" });
@@ -100,5 +100,37 @@ describe("endpoint_config", () => {
     expect(hasValidSelection(comparisonWithAgent, EndpointId.A2A_AGENTS)).toBe(true);
     expect(hasValidSelection(comparisonEmpty, EndpointId.CHAT_COMPLETIONS)).toBe(false);
     expect(hasValidSelection(comparisonWhitespace, EndpointId.CHAT_COMPLETIONS)).toBe(false);
+  });
+});
+
+describe("provider options", () => {
+  const deployment = (model_id: string, vendor: string, api_base: string) => ({
+    model_id,
+    provider: vendor,
+    vendor,
+    api_base,
+    upstream_model: "GLM-5.3",
+  });
+
+  it("keeps a model with a single provider as one option", () => {
+    const providers = new Map([["GLM-5.3", [deployment("a", "moark", "https://api.moark.com/v1")]]]);
+    expect(modelOptionsToSelectorOptions(["GLM-5.3"], providers)).toEqual([{ value: "GLM-5.3", label: "GLM-5.3" }]);
+  });
+
+  it("names the endpoint too when two deployments share a vendor", () => {
+    const providers = new Map([
+      [
+        "GLM-5.3",
+        [
+          deployment("east", "ai.gitee.com", "https://ai.gitee.com/v1"),
+          deployment("west", "ai.gitee.com", "https://ai.gitee.com/v2"),
+        ],
+      ],
+    ]);
+    expect(modelOptionsToSelectorOptions(["GLM-5.3"], providers).map((option) => option.label)).toEqual([
+      "GLM-5.3 · All providers",
+      "GLM-5.3 · ai.gitee.com · https://ai.gitee.com/v1",
+      "GLM-5.3 · ai.gitee.com · https://ai.gitee.com/v2",
+    ]);
   });
 });
