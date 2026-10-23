@@ -7,7 +7,7 @@ RUN installed="$(python3 -c 'import importlib.metadata; print(importlib.metadata
       exit 1; \
     fi
 COPY backend/ /opt/litellm-fork/
-COPY branding/logo.png branding/logo_dark.png /opt/litellm-fork/litellm/proxy/
+COPY branding/logo.png branding/logo_dark.png branding/logo_monogram.png branding/logo_monogram_dark.png /opt/litellm-fork/litellm/proxy/
 ENV PYTHONPATH=/opt/litellm-fork
 COPY ui/ /opt/litellm-ui-zh-cn/
 ENV LITELLM_UI_PATH=/opt/litellm-ui-zh-cn
