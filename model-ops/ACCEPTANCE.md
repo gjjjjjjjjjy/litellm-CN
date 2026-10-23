@@ -103,7 +103,7 @@ TTS 和图像最大的不同是：大多数 TTS 是自回归采样，模力方�
 
 ### 3.3 质量
 
-**可懂度用 CER。** 合成音频送进固定的 ASR 判官，转写结果和输入文本比，算字错率。比之前两边都去标点，并用 cn2an 统一数字写法（SenseVoice 会把「二十三」写成「23」，不统一会被误判成错字）。`tools/audio_eval.py check` 已实现，判官默认用模力方舟上的 SenseVoiceSmall（跑在沐曦上，免费）。对外报数要和论文可比时，按 seed-tts-eval 的做法用 Paraformer-zh 算中文 CER、Whisper-large-v3 算英文 WER
+**可懂度用 CER。** 合成音频送进固定的 ASR 判官，转写结果和输入文本比，算字错率。比之前两边都去标点，并用 cn2an 统一数字写法（SenseVoice 会把「二十三」写成「23」，不统一会被误判成错字）。`tools/audio_eval.py check` 已实现，判官默认用模力方舟上的 SenseVoiceSmall：它是非自回归 CTC 贪心解码，同一段音频每次结果一样，跑在沐曦上，免费。对外报数要和论文可比时，按 seed-tts-eval 的做法用 Paraformer-zh 算中文 CER、Whisper-large-v3 算英文 WER，但 `paraformer-zh` 这个名字从 ModelScope 和 HF 下载会拿到两个不同的模型，要写死模型 id 和 sha。不要用 Fun-ASR-Nano 这类 LLM 解码的 ASR 当判官，它的语言先验可能把读错的地方纠正回来。各判官对比见 `models/AUDIO_MODELS.md`
 
 **音色相似度用 SIM。** 参考音频和合成音频分别过说话人验证模型取向量，算余弦相似度（seed-tts-eval 用 WavLM-large 微调的说话人模型）。需要 torch，计划中
 

@@ -40,9 +40,34 @@ Spark-TTS 代码是 Apache-2.0，但 HF 上的权重已改为 CC BY-NC-SA 4.0（
 
 Spark-TTS 输出 16 kHz，单次最长约 60 秒，已知问题有生成空语音时报错（#82）、偶发 1 分钟空白（#107）、数字和电话读错（#205）。ChatTTS 输出 24 kHz，有官方 `manual_seed`，但模力方舟接口没暴露；不注册文本归一化时会直接删掉数字（#644），验收必须带数字用例
 
+## CosyVoice3（Gitee 自有卡，可能要搬）
+
+**来源。** HF `FunAudioLLM/Fun-CosyVoice3-0.5B-2512` @ `29e01c4e8d`（2026-02-03），同一仓库里有基础版 `llm.pt` 和 RL 版 `llm.rl.pt`，代码默认加载基础版。代码仓库已迁到 `QwenAudio/CosyVoice`。没有 1.5B 开源版
+
+**许可证要法务确认。** 标的是 Apache-2.0，但 README 和模型卡末尾写着「仅供学术用途」，HF 上有人问商用没人回
+
+**随机性。** 只有 LLM 采样 speech token 这一处随机（ras_sampling，top_p 0.8、top_k 25）；flow matching 的噪声和声码器的噪声都是建模型时固定的。所以每次调用前设 seed、没有并发请求时可以复现。模力方舟接口暴露了 `seed`，迁移时可以先试逐条比。输出 24 kHz 单声道；参考音频 ≤ 30 秒，建议 24 kHz
+
+**迁移要专门测的。** transformers ≥ 4.53 会生成流畅但毫无意义的语音（issue #1953，要锁 4.51.3）；TensorRT 加 fp16 会出 NaN 音频（#1930）；vLLM 加 fp16 的 flow 会出无法播放的音频（#1873）。沐曦上如果用新版 transformers 或 fp16，最先出问题的就是这些。另有重复读句、把提示文本读出来、长指令被读出来（#1703、#1733、#1903），以及流式首尾长静音（#1756）
+
+**参考指标（模型卡，2512 版）。** test-zh CER 1.21、SS 78.0；test-en WER 2.24；test-hard CER 6.71。RL 版 test-zh CER 0.81。模型卡没写用的是哪个 ASR 和说话人模型；论文用 Paraformer 和 WavLM
+
+**沐曦。** 沐曦自己的 `MetaX-MACA/VirtualHuman/projects/cosyvoice` 只适配了 CosyVoice2 和 300M 版，没有 3 代
+
+## ASR 判官怎么选
+
+| 模型 | 解码 | 做判官 | 公开 CER |
+|---|---|---|---|
+| SenseVoiceSmall | 非自回归 CTC 贪心，确定性 | **默认用它**：结果稳定，模力方舟上在沐曦、免费。固定 `language`，去掉情感和事件标签 | AISHELL-1 2.96、AISHELL-2 ios 3.80、WenetSpeech net 7.84 |
+| Paraformer-zh | 非自回归，确定性 | seed-tts-eval 的标准判官，对外报数用它。**注意**：FunASR 默认从 ModelScope 下载时 `paraformer-zh` 指向 SeACo-Paraformer，从 HF 下载是普通 Paraformer，两个不是同一个模型，必须写死模型 id 和 sha。seed-tts-eval 只去标点、不做数字归一化 | Paraformer-large：AISHELL-1 1.95、AISHELL-2 ios 2.85 |
+| Fun-ASR-Nano-2512 | LLM 解码 | 不建议：LLM 的语言先验可能把 TTS 读错的地方「纠正」回来，掩盖问题；超过 30 秒不切分会出幻觉 | AISHELL-1 1.80、Fleurs-zh 2.56 |
+| whisper-large-v3-turbo | 自回归 | 英文用；`temperature` 必须设 0（模力方舟默认 0.7） | |
+
+SenseVoiceSmall 的模型许可是 FunASR MODEL_LICENSE，维护者说可以商用但要署名，有一个确认商用的 issue（#334）还没关
+
 ## 待补
 
-CosyVoice3、Qwen3-TTS、GLM-TTS、Step-Audio-TTS-3B、TeleTTS、ACE-Step 的来源、许可证、公布指标还在调研；SenseVoiceSmall、Fun-ASR-Nano、GLM-ASR 的公开 CER 也待补
+Qwen3-TTS、GLM-TTS、Step-Audio-TTS-3B、TeleTTS、ACE-Step 的来源、许可证和公布指标还没查完（两路调研因网络中断失败，这些模型都不在沐曦上，不急）
 
 ## 待办
 
