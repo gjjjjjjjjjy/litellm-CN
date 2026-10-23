@@ -14188,6 +14188,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/qos/health": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Qos Health */
+        get: operations["get_qos_health_qos_health_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/qos/summary": {
         parameters: {
             query?: never;
@@ -42973,6 +42990,66 @@ export interface components {
             streamed_requests: number;
             tpot_ms: components["schemas"]["QosPercentiles"];
             ttft_ms: components["schemas"]["QosPercentiles"];
+        };
+        /** QosHealthNode */
+        QosHealthNode: {
+            /** Api Base */
+            api_base: string;
+            /** Availability */
+            availability: number;
+            /** Checks */
+            checks: number;
+            /** Failures */
+            failures: number;
+            /**
+             * Last Checked At
+             * Format: date-time
+             */
+            last_checked_at: string;
+            /** Last Error */
+            last_error: string | null;
+            /** Last Failure At */
+            last_failure_at: string | null;
+            /** Latest Status */
+            latest_status: string;
+            /** Model Id */
+            model_id: string;
+            /** Model Name */
+            model_name: string;
+            /** Upstream Model */
+            upstream_model: string;
+        };
+        /** QosHealthProbe */
+        QosHealthProbe: {
+            /** Api Base */
+            api_base: string;
+            /**
+             * Last Probe At
+             * Format: date-time
+             */
+            last_probe_at: string;
+            latency_ms: components["schemas"]["QosPercentiles"];
+            /** Model */
+            model: string;
+            /** Probes */
+            probes: number;
+        };
+        /** QosHealthResponse */
+        QosHealthResponse: {
+            /**
+             * End Time
+             * Format: date-time
+             */
+            end_time: string;
+            /** Nodes */
+            nodes: components["schemas"]["QosHealthNode"][];
+            /** Probes */
+            probes: components["schemas"]["QosHealthProbe"][];
+            /**
+             * Start Time
+             * Format: date-time
+             */
+            start_time: string;
         };
         /** QosModelGroupMetrics */
         QosModelGroupMetrics: {
@@ -71864,6 +71941,40 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["QosBenchmarkDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_qos_health_qos_health_get: {
+        parameters: {
+            query?: {
+                /** @description ISO 8601, defaults to 24 hours before end_time */
+                start_time?: string | null;
+                /** @description ISO 8601, defaults to now */
+                end_time?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QosHealthResponse"];
                 };
             };
             /** @description Validation Error */

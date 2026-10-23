@@ -52205,6 +52205,154 @@
           "title": "QosDeploymentMetrics",
           "type": "object"
         },
+        "QosHealthNode": {
+          "properties": {
+            "api_base": {
+              "title": "Api Base",
+              "type": "string"
+            },
+            "availability": {
+              "title": "Availability",
+              "type": "number"
+            },
+            "checks": {
+              "title": "Checks",
+              "type": "integer"
+            },
+            "failures": {
+              "title": "Failures",
+              "type": "integer"
+            },
+            "last_checked_at": {
+              "format": "date-time",
+              "title": "Last Checked At",
+              "type": "string"
+            },
+            "last_error": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Last Error"
+            },
+            "last_failure_at": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Last Failure At"
+            },
+            "latest_status": {
+              "title": "Latest Status",
+              "type": "string"
+            },
+            "model_id": {
+              "title": "Model Id",
+              "type": "string"
+            },
+            "model_name": {
+              "title": "Model Name",
+              "type": "string"
+            },
+            "upstream_model": {
+              "title": "Upstream Model",
+              "type": "string"
+            }
+          },
+          "required": [
+            "model_name",
+            "model_id",
+            "api_base",
+            "upstream_model",
+            "checks",
+            "failures",
+            "availability",
+            "latest_status",
+            "last_error",
+            "last_failure_at",
+            "last_checked_at"
+          ],
+          "title": "QosHealthNode",
+          "type": "object"
+        },
+        "QosHealthProbe": {
+          "properties": {
+            "api_base": {
+              "title": "Api Base",
+              "type": "string"
+            },
+            "last_probe_at": {
+              "format": "date-time",
+              "title": "Last Probe At",
+              "type": "string"
+            },
+            "latency_ms": {
+              "$ref": "#/components/schemas/QosPercentiles"
+            },
+            "model": {
+              "title": "Model",
+              "type": "string"
+            },
+            "probes": {
+              "title": "Probes",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "model",
+            "api_base",
+            "probes",
+            "latency_ms",
+            "last_probe_at"
+          ],
+          "title": "QosHealthProbe",
+          "type": "object"
+        },
+        "QosHealthResponse": {
+          "properties": {
+            "end_time": {
+              "format": "date-time",
+              "title": "End Time",
+              "type": "string"
+            },
+            "nodes": {
+              "items": {
+                "$ref": "#/components/schemas/QosHealthNode"
+              },
+              "title": "Nodes",
+              "type": "array"
+            },
+            "probes": {
+              "items": {
+                "$ref": "#/components/schemas/QosHealthProbe"
+              },
+              "title": "Probes",
+              "type": "array"
+            },
+            "start_time": {
+              "format": "date-time",
+              "title": "Start Time",
+              "type": "string"
+            }
+          },
+          "required": [
+            "start_time",
+            "end_time",
+            "nodes",
+            "probes"
+          ],
+          "title": "QosHealthResponse",
+          "type": "object"
+        },
         "QosModelGroupMetrics": {
           "properties": {
             "e2e_latency_ms": {
@@ -52574,6 +52722,82 @@
             }
           ],
           "summary": "Get Qos Benchmark",
+          "tags": [
+            "qos"
+          ]
+        }
+      },
+      "/qos/health": {
+        "get": {
+          "operationId": "get_qos_health_qos_health_get",
+          "parameters": [
+            {
+              "description": "ISO 8601, defaults to 24 hours before end_time",
+              "in": "query",
+              "name": "start_time",
+              "required": false,
+              "schema": {
+                "anyOf": [
+                  {
+                    "format": "date-time",
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "ISO 8601, defaults to 24 hours before end_time",
+                "title": "Start Time"
+              }
+            },
+            {
+              "description": "ISO 8601, defaults to now",
+              "in": "query",
+              "name": "end_time",
+              "required": false,
+              "schema": {
+                "anyOf": [
+                  {
+                    "format": "date-time",
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "ISO 8601, defaults to now",
+                "title": "End Time"
+              }
+            }
+          ],
+          "responses": {
+            "200": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/QosHealthResponse"
+                  }
+                }
+              },
+              "description": "Successful Response"
+            },
+            "422": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/HTTPValidationError"
+                  }
+                }
+              },
+              "description": "Validation Error"
+            }
+          },
+          "security": [
+            {
+              "APIKeyHeader": []
+            }
+          ],
+          "summary": "Get Qos Health",
           "tags": [
             "qos"
           ]

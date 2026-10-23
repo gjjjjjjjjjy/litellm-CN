@@ -6,6 +6,7 @@ import pytest
 from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 
+from litellm.llms.openai_like.json_loader import JSONProviderRegistry
 from litellm.proxy._types import LitellmUserRoles, UserAPIKeyAuth
 from litellm.proxy.auth.user_api_key_auth import user_api_key_auth
 from litellm.proxy.management_endpoints.qos_endpoints import (
@@ -192,3 +193,86 @@ class TestBenchmarkEndpoints:
         level_query, deployment_query = prisma.db.query_raw.await_args_list
         assert (level_query.args[0], level_query.args[3:]) == (BENCHMARK_LEVEL_SUMMARY_SQL, (None, "qos-run-1"))
         assert (deployment_query.args[0], deployment_query.args[3:]) == (DEPLOYMENT_SUMMARY_SQL, (None, "qos-run-1"))
+
+
+class TestHealthEndpoint:
+    def test_internal_users_cannot_read_node_health(self) -> None:
+        with patch("litellm.proxy.proxy_server.prisma_client", MagicMock()):
+            response = _client(LitellmUserRoles.INTERNAL_USER).get("/qos/health")
+        assert response.status_code == 403
+
+    def test_nodes_show_availability_and_their_deployment_target_and_probes_show_latency(self) -> None:
+        history = [
+            {
+                "model_name": "GLM-5.3",
+                "model_id": "node-a",
+                "checks": 9,
+                "failures": 1,
+                "latest_status": "healthy",
+                "last_error": "Timeout exceeded",
+                "last_failure_at": "2026-10-23T01:58:49",
+                "last_checked_at": "2026-10-23T05:14:25",
+            },
+            {
+                "model_name": "Qwen3.8-27B",
+                "model_id": "node-default-base",
+                "checks": 3,
+                "failures": 0,
+                "latest_status": "healthy",
+                "last_error": None,
+                "last_failure_at": None,
+                "last_checked_at": "2026-10-23T05:23:41",
+            },
+            {
+                "model_name": "removed-model",
+                "model_id": "node-gone",
+                "checks": 2,
+                "failures": 0,
+                "latest_status": "healthy",
+                "last_error": None,
+                "last_failure_at": None,
+                "last_checked_at": "2026-10-23T03:00:00",
+            },
+        ]
+        probes = [
+            {
+                "model": "GLM-5.3",
+                "api_base": "https://ai.gitee.com/v1/",
+                "probes": 53,
+                "p50": 1275.0,
+                "p95": 2075.2,
+                "p99": 4598.8,
+                "last_probe_at": "2026-10-23T05:28:41",
+            }
+        ]
+        prisma = MagicMock()
+        prisma.db.query_raw = AsyncMock(side_effect=[history, probes])
+        deployment = MagicMock()
+        deployment.litellm_params.api_base = "https://ai.gitee.com/v1"
+        deployment.litellm_params.model = "openai/GLM-5.3"
+        default_base_deployment = MagicMock()
+        default_base_deployment.litellm_params.api_base = None
+        default_base_deployment.litellm_params.model = "Qwen3.8-27B"
+        default_base_deployment.litellm_params.custom_llm_provider = "moark"
+        deployments = {"node-a": deployment, "node-default-base": default_base_deployment}
+        llm_router = MagicMock()
+        llm_router.get_deployment.side_effect = deployments.get
+
+        with (
+            patch("litellm.proxy.proxy_server.prisma_client", prisma),
+            patch("litellm.proxy.proxy_server.llm_router", llm_router),
+        ):
+            response = _client(LitellmUserRoles.PROXY_ADMIN_VIEW_ONLY).get("/qos/health")
+
+        assert response.status_code == 200
+        node, default_base, removed = response.json()["nodes"]
+        assert node["availability"] == pytest.approx(8 / 9)
+        assert (node["api_base"], node["upstream_model"]) == ("https://ai.gitee.com/v1", "openai/GLM-5.3")
+        assert (node["last_error"], node["last_failure_at"]) == ("Timeout exceeded", "2026-10-23T01:58:49Z")
+        moark = JSONProviderRegistry.get("moark")
+        assert moark is not None
+        assert default_base["api_base"] == moark.base_url
+        assert (removed["api_base"], removed["upstream_model"]) == ("", "")
+        probe = response.json()["probes"][0]
+        assert probe["latency_ms"] == {"p50": 1275.0, "p95": 2075.2, "p99": 4598.8}
+        assert probe["last_probe_at"] == "2026-10-23T05:28:41Z"

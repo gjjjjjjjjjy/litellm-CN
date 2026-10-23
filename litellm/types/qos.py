@@ -117,3 +117,38 @@ class QosBenchmarkDetail(LiteLLMBaseModel):
     run_id: str
     levels: tuple[QosBenchmarkLevel, ...]
     deployments: tuple[QosDeploymentMetrics, ...]
+
+
+class QosHealthNode(LiteLLMBaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    model_name: str
+    model_id: str
+    api_base: str
+    upstream_model: str
+    checks: int
+    failures: int
+    availability: float
+    latest_status: str
+    last_error: str | None
+    last_failure_at: UtcDatetime | None
+    last_checked_at: UtcDatetime
+
+
+class QosHealthProbe(LiteLLMBaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    model: str
+    api_base: str
+    probes: int
+    latency_ms: QosPercentiles
+    last_probe_at: UtcDatetime
+
+
+class QosHealthResponse(LiteLLMBaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    start_time: UtcDatetime
+    end_time: UtcDatetime
+    nodes: tuple[QosHealthNode, ...]
+    probes: tuple[QosHealthProbe, ...]

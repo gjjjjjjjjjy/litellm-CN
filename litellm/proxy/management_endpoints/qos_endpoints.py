@@ -1,14 +1,25 @@
 import re
+from collections.abc import Callable
 from datetime import datetime, timedelta, timezone
-from typing import Annotated, Final
+from typing import TYPE_CHECKING, Annotated, Final
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import ConfigDict, TypeAdapter
 
 from litellm.constants import LITTELM_INTERNAL_HEALTH_SERVICE_ACCOUNT_NAME
+from litellm.litellm_core_utils.get_llm_provider_logic import get_llm_provider
 from litellm.proxy._types import CommonProxyErrors, LitellmUserRoles, UserAPIKeyAuth
 from litellm.proxy.auth.user_api_key_auth import user_api_key_auth
 from litellm.proxy.management_endpoints.qos_benchmark import QOS_RUN_PREFIX, concurrency_of, new_run_id, start_benchmark
+from litellm.proxy.management_endpoints.qos_health import (
+    HEALTH_HISTORY_ROWS,
+    HEALTH_HISTORY_SQL,
+    HEALTH_PROBE_ROWS,
+    HEALTH_PROBES_SQL,
+    DeploymentTarget,
+    health_node,
+    health_probe,
+)
 from litellm.types.llms.base import LiteLLMBaseModel
 from litellm.types.qos import (
     QosBenchmarkDetail,
@@ -18,10 +29,14 @@ from litellm.types.qos import (
     QosBenchmarkRun,
     QosBenchmarkStarted,
     QosDeploymentMetrics,
+    QosHealthResponse,
     QosModelGroupMetrics,
     QosPercentiles,
     QosSummaryResponse,
 )
+
+if TYPE_CHECKING:
+    from litellm.router import Router
 
 router: Final = APIRouter()
 
@@ -364,4 +379,52 @@ async def get_qos_benchmark(
         run_id=run_id,
         levels=tuple(sorted(levels, key=lambda level: level.concurrency)),
         deployments=tuple(deployment_metrics(row) for row in deployment_rows),
+    )
+
+
+def deployment_target_lookup(llm_router: "Router | None") -> Callable[[str], DeploymentTarget | None]:
+    def target_of(model_id: str) -> DeploymentTarget | None:
+        deployment: Final = None if llm_router is None else llm_router.get_deployment(model_id)
+        if deployment is None:
+            return None
+        params: Final = deployment.litellm_params
+        if params.api_base is not None:
+            return DeploymentTarget(api_base=params.api_base, upstream_model=params.model)
+        _, provider, _, default_api_base = get_llm_provider(
+            model=params.model, custom_llm_provider=params.custom_llm_provider
+        )
+        return DeploymentTarget(
+            api_base=provider if default_api_base is None else default_api_base, upstream_model=params.model
+        )
+
+    return target_of
+
+
+@router.get(
+    "/qos/health",
+    tags=["qos"],
+    dependencies=[Depends(user_api_key_auth)],
+    response_model=QosHealthResponse,
+)
+async def get_qos_health(
+    user_api_key_dict: Annotated[UserAPIKeyAuth, Depends(user_api_key_auth)],
+    start_time: Annotated[datetime | None, Query(description="ISO 8601, defaults to 24 hours before end_time")] = None,
+    end_time: Annotated[datetime | None, Query(description="ISO 8601, defaults to now")] = None,
+) -> QosHealthResponse:
+    from litellm.proxy.proxy_server import llm_router, prisma_client
+
+    _require_role(user_api_key_dict, (LitellmUserRoles.PROXY_ADMIN, LitellmUserRoles.PROXY_ADMIN_VIEW_ONLY))
+    if prisma_client is None:
+        raise HTTPException(status_code=500, detail=CommonProxyErrors.db_not_connected_error.value)
+    start, end = resolve_window(start_time, end_time, _utc_now())
+    history: Final = HEALTH_HISTORY_ROWS.validate_python(
+        await prisma_client.db.query_raw(HEALTH_HISTORY_SQL, start, end)
+    )
+    probes: Final = HEALTH_PROBE_ROWS.validate_python(await prisma_client.db.query_raw(HEALTH_PROBES_SQL, start, end))
+    target_of: Final = deployment_target_lookup(llm_router)
+    return QosHealthResponse(
+        start_time=start,
+        end_time=end,
+        nodes=tuple(health_node(row, target_of) for row in history),
+        probes=tuple(health_probe(row) for row in probes),
     )

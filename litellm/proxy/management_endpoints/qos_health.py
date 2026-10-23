@@ -1,0 +1,108 @@
+from collections.abc import Callable
+from datetime import datetime
+from typing import Final
+
+from pydantic import ConfigDict, TypeAdapter
+
+from litellm.constants import LITTELM_INTERNAL_HEALTH_SERVICE_ACCOUNT_NAME
+from litellm.types.llms.base import LiteLLMBaseModel
+from litellm.types.qos import QosHealthNode, QosHealthProbe, QosPercentiles
+
+HEALTH_HISTORY_SQL: Final = """
+SELECT
+    model_name,
+    COALESCE(model_id, '') AS model_id,
+    COUNT(*)::int AS checks,
+    (COUNT(*) FILTER (WHERE status = 'unhealthy'))::int AS failures,
+    (array_agg(status ORDER BY checked_at DESC))[1] AS latest_status,
+    (array_agg(error_message ORDER BY checked_at DESC) FILTER (WHERE status = 'unhealthy'))[1] AS last_error,
+    MAX(checked_at) FILTER (WHERE status = 'unhealthy') AS last_failure_at,
+    MAX(checked_at) AS last_checked_at
+FROM "LiteLLM_HealthCheckTable"
+WHERE checked_at >= $1::timestamp AND checked_at < $2::timestamp
+GROUP BY model_name, COALESCE(model_id, '')
+ORDER BY model_name, model_id
+"""
+
+HEALTH_PROBES_SQL: Final = f"""
+SELECT
+    COALESCE(model, '') AS model,
+    COALESCE(api_base, '') AS api_base,
+    COUNT(*)::int AS probes,
+    percentile_cont(0.5) WITHIN GROUP (ORDER BY EXTRACT(epoch FROM ("endTime" - "startTime")) * 1000) AS p50,
+    percentile_cont(0.95) WITHIN GROUP (ORDER BY EXTRACT(epoch FROM ("endTime" - "startTime")) * 1000) AS p95,
+    percentile_cont(0.99) WITHIN GROUP (ORDER BY EXTRACT(epoch FROM ("endTime" - "startTime")) * 1000) AS p99,
+    MAX("startTime") AS last_probe_at
+FROM "LiteLLM_SpendLogs"
+WHERE "startTime" >= $1::timestamp
+    AND "startTime" < $2::timestamp
+    AND request_tags ? '{LITTELM_INTERNAL_HEALTH_SERVICE_ACCOUNT_NAME}'
+GROUP BY 1, 2
+ORDER BY 2, 1
+"""
+
+
+class HealthHistoryRow(LiteLLMBaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    model_name: str
+    model_id: str
+    checks: int
+    failures: int
+    latest_status: str
+    last_error: str | None
+    last_failure_at: datetime | None
+    last_checked_at: datetime
+
+
+class HealthProbeRow(LiteLLMBaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    model: str
+    api_base: str
+    probes: int
+    p50: float
+    p95: float
+    p99: float
+    last_probe_at: datetime
+
+
+class DeploymentTarget(LiteLLMBaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    api_base: str
+    upstream_model: str
+
+
+HEALTH_HISTORY_ROWS: Final = TypeAdapter(list[HealthHistoryRow])
+HEALTH_PROBE_ROWS: Final = TypeAdapter(list[HealthProbeRow])
+
+_UNKNOWN_TARGET: Final = DeploymentTarget(api_base="", upstream_model="")
+
+
+def health_node(row: HealthHistoryRow, target_of: Callable[[str], DeploymentTarget | None]) -> QosHealthNode:
+    target: Final = target_of(row.model_id) if row.model_id != "" else None
+    resolved: Final = _UNKNOWN_TARGET if target is None else target
+    return QosHealthNode(
+        model_name=row.model_name,
+        model_id=row.model_id,
+        api_base=resolved.api_base,
+        upstream_model=resolved.upstream_model,
+        checks=row.checks,
+        failures=row.failures,
+        availability=(row.checks - row.failures) / row.checks,
+        latest_status=row.latest_status,
+        last_error=row.last_error,
+        last_failure_at=row.last_failure_at,
+        last_checked_at=row.last_checked_at,
+    )
+
+
+def health_probe(row: HealthProbeRow) -> QosHealthProbe:
+    return QosHealthProbe(
+        model=row.model,
+        api_base=row.api_base,
+        probes=row.probes,
+        latency_ms=QosPercentiles(p50=row.p50, p95=row.p95, p99=row.p99),
+        last_probe_at=row.last_probe_at,
+    )
