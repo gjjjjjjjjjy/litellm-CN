@@ -52027,8 +52027,107 @@
           "title": "QosBenchmarkDeleted",
           "type": "object"
         },
+        "QosBenchmarkDeploymentLevel": {
+          "properties": {
+            "api_base": {
+              "title": "Api Base",
+              "type": "string"
+            },
+            "concurrency": {
+              "title": "Concurrency",
+              "type": "integer"
+            },
+            "e2e_latency_ms": {
+              "$ref": "#/components/schemas/QosPercentiles"
+            },
+            "failed_requests": {
+              "title": "Failed Requests",
+              "type": "integer"
+            },
+            "first_request_at": {
+              "format": "date-time",
+              "title": "First Request At",
+              "type": "string"
+            },
+            "last_response_at": {
+              "format": "date-time",
+              "title": "Last Response At",
+              "type": "string"
+            },
+            "model": {
+              "title": "Model",
+              "type": "string"
+            },
+            "model_group": {
+              "title": "Model Group",
+              "type": "string"
+            },
+            "model_id": {
+              "title": "Model Id",
+              "type": "string"
+            },
+            "output_tokens": {
+              "title": "Output Tokens",
+              "type": "integer"
+            },
+            "output_tokens_per_second": {
+              "title": "Output Tokens Per Second",
+              "type": "number"
+            },
+            "peak_concurrency": {
+              "title": "Peak Concurrency",
+              "type": "integer"
+            },
+            "requests": {
+              "title": "Requests",
+              "type": "integer"
+            },
+            "requests_per_second": {
+              "title": "Requests Per Second",
+              "type": "number"
+            },
+            "streamed_requests": {
+              "title": "Streamed Requests",
+              "type": "integer"
+            },
+            "tpot_ms": {
+              "$ref": "#/components/schemas/QosPercentiles"
+            },
+            "ttft_ms": {
+              "$ref": "#/components/schemas/QosPercentiles"
+            }
+          },
+          "required": [
+            "model_group",
+            "requests",
+            "failed_requests",
+            "streamed_requests",
+            "output_tokens",
+            "peak_concurrency",
+            "first_request_at",
+            "last_response_at",
+            "requests_per_second",
+            "output_tokens_per_second",
+            "ttft_ms",
+            "tpot_ms",
+            "e2e_latency_ms",
+            "model_id",
+            "model",
+            "api_base",
+            "concurrency"
+          ],
+          "title": "QosBenchmarkDeploymentLevel",
+          "type": "object"
+        },
         "QosBenchmarkDetail": {
           "properties": {
+            "deployment_levels": {
+              "items": {
+                "$ref": "#/components/schemas/QosBenchmarkDeploymentLevel"
+              },
+              "title": "Deployment Levels",
+              "type": "array"
+            },
             "deployments": {
               "items": {
                 "$ref": "#/components/schemas/QosDeploymentMetrics"
@@ -52051,7 +52150,8 @@
           "required": [
             "run_id",
             "levels",
-            "deployments"
+            "deployments",
+            "deployment_levels"
           ],
           "title": "QosBenchmarkDetail",
           "type": "object"
@@ -52162,6 +52262,17 @@
               "title": "Concurrency",
               "type": "array"
             },
+            "deployment_ids": {
+              "default": [],
+              "description": "Deployments of model_group to test one after another; empty load-balances across all of them",
+              "items": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "maxItems": 8,
+              "title": "Deployment Ids",
+              "type": "array"
+            },
             "max_tokens": {
               "maximum": 8192.0,
               "minimum": 1.0,
@@ -52238,6 +52349,13 @@
               "title": "Concurrency",
               "type": "array"
             },
+            "deployment_ids": {
+              "items": {
+                "type": "string"
+              },
+              "title": "Deployment Ids",
+              "type": "array"
+            },
             "max_tokens": {
               "title": "Max Tokens",
               "type": "integer"
@@ -52267,6 +52385,7 @@
           "required": [
             "run_id",
             "model_group",
+            "deployment_ids",
             "concurrency",
             "requests_per_worker",
             "max_tokens",
@@ -52673,6 +52792,71 @@
             "deployments"
           ],
           "title": "QosSummaryResponse",
+          "type": "object"
+        },
+        "QosTargetDeployment": {
+          "properties": {
+            "api_base": {
+              "title": "Api Base",
+              "type": "string"
+            },
+            "model_id": {
+              "title": "Model Id",
+              "type": "string"
+            },
+            "provider": {
+              "title": "Provider",
+              "type": "string"
+            },
+            "upstream_model": {
+              "title": "Upstream Model",
+              "type": "string"
+            }
+          },
+          "required": [
+            "model_id",
+            "provider",
+            "api_base",
+            "upstream_model"
+          ],
+          "title": "QosTargetDeployment",
+          "type": "object"
+        },
+        "QosTargetModel": {
+          "properties": {
+            "deployments": {
+              "items": {
+                "$ref": "#/components/schemas/QosTargetDeployment"
+              },
+              "title": "Deployments",
+              "type": "array"
+            },
+            "model_group": {
+              "title": "Model Group",
+              "type": "string"
+            }
+          },
+          "required": [
+            "model_group",
+            "deployments"
+          ],
+          "title": "QosTargetModel",
+          "type": "object"
+        },
+        "QosTargetsResponse": {
+          "properties": {
+            "models": {
+              "items": {
+                "$ref": "#/components/schemas/QosTargetModel"
+              },
+              "title": "Models",
+              "type": "array"
+            }
+          },
+          "required": [
+            "models"
+          ],
+          "title": "QosTargetsResponse",
           "type": "object"
         },
         "ValidationError": {
@@ -53113,6 +53297,33 @@
             }
           ],
           "summary": "Get Qos Summary",
+          "tags": [
+            "qos"
+          ]
+        }
+      },
+      "/qos/targets": {
+        "get": {
+          "description": "Every model name with the provider deployments behind it, so a benchmark can target one or compare them.",
+          "operationId": "get_qos_targets_qos_targets_get",
+          "responses": {
+            "200": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/QosTargetsResponse"
+                  }
+                }
+              },
+              "description": "Successful Response"
+            }
+          },
+          "security": [
+            {
+              "APIKeyHeader": []
+            }
+          ],
+          "summary": "Get Qos Targets",
           "tags": [
             "qos"
           ]

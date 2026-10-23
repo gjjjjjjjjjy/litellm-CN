@@ -10,6 +10,7 @@ import {
   formatRatio,
   nodeLabel,
   successRate,
+  type QosBenchmarkDeploymentLevel,
   type QosBenchmarkLevel,
   type QosDeploymentMetrics,
   type QosModelGroupMetrics,
@@ -53,21 +54,33 @@ export const groupColumns: ColumnDef<QosModelGroupMetrics>[] = [
   ...metricColumns<QosModelGroupMetrics>(),
 ];
 
+const NodeCell = ({ deployment }: { deployment: QosDeploymentMetrics }) => (
+  <div className="min-w-0">
+    <p className="truncate font-mono text-xs">{nodeLabel(deployment)}</p>
+    <p className="truncate text-xs text-muted-foreground">{deployment.model}</p>
+  </div>
+);
+
 export const deploymentColumns: ColumnDef<QosDeploymentMetrics>[] = [
-  {
-    id: "node",
-    header: "Node",
-    cell: ({ row }) => (
-      <div className="min-w-0">
-        <p className="truncate font-mono text-xs">{nodeLabel(row.original)}</p>
-        <p className="truncate text-xs text-muted-foreground">{row.original.model}</p>
-      </div>
-    ),
-  },
+  { id: "node", header: "Node", cell: ({ row }) => <NodeCell deployment={row.original} /> },
   ...metricColumns<QosDeploymentMetrics>(),
 ];
 
+export const deploymentLevelColumns: ColumnDef<QosBenchmarkDeploymentLevel>[] = [
+  {
+    id: "concurrency",
+    header: "Concurrency",
+    cell: ({ row }) => <span className="font-medium">{row.original.concurrency}</span>,
+  },
+  { id: "node", header: "Provider", cell: ({ row }) => <NodeCell deployment={row.original} /> },
+  ...metricColumns<QosBenchmarkDeploymentLevel>(),
+];
+
 export const levelColumns: ColumnDef<QosBenchmarkLevel>[] = [
-  { id: "concurrency", header: "Concurrency", cell: ({ row }) => <span className="font-medium">{row.original.concurrency}</span> },
+  {
+    id: "concurrency",
+    header: "Concurrency",
+    cell: ({ row }) => <span className="font-medium">{row.original.concurrency}</span>,
+  },
   ...metricColumns<QosBenchmarkLevel>(),
 ];

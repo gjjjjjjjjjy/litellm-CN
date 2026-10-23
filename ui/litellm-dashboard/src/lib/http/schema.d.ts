@@ -731,6 +731,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/account_lockout/unlock": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Unlock Account
+         * @description Clear a user's failed sign-in count and lock so they can sign in with their password again.
+         */
+        post: operations["unlock_account_account_lockout_unlock_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/active/callbacks": {
         parameters: {
             query?: never;
@@ -14215,6 +14235,26 @@ export interface paths {
         };
         /** Get Qos Summary */
         get: operations["get_qos_summary_qos_summary_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/qos/targets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Qos Targets
+         * @description Every model name with the provider deployments behind it, so a benchmark can target one or compare them.
+         */
+        get: operations["get_qos_targets_qos_targets_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -42861,8 +42901,50 @@ export interface components {
             /** Run Id */
             run_id: string;
         };
+        /** QosBenchmarkDeploymentLevel */
+        QosBenchmarkDeploymentLevel: {
+            /** Api Base */
+            api_base: string;
+            /** Concurrency */
+            concurrency: number;
+            e2e_latency_ms: components["schemas"]["QosPercentiles"];
+            /** Failed Requests */
+            failed_requests: number;
+            /**
+             * First Request At
+             * Format: date-time
+             */
+            first_request_at: string;
+            /**
+             * Last Response At
+             * Format: date-time
+             */
+            last_response_at: string;
+            /** Model */
+            model: string;
+            /** Model Group */
+            model_group: string;
+            /** Model Id */
+            model_id: string;
+            /** Output Tokens */
+            output_tokens: number;
+            /** Output Tokens Per Second */
+            output_tokens_per_second: number;
+            /** Peak Concurrency */
+            peak_concurrency: number;
+            /** Requests */
+            requests: number;
+            /** Requests Per Second */
+            requests_per_second: number;
+            /** Streamed Requests */
+            streamed_requests: number;
+            tpot_ms: components["schemas"]["QosPercentiles"];
+            ttft_ms: components["schemas"]["QosPercentiles"];
+        };
         /** QosBenchmarkDetail */
         QosBenchmarkDetail: {
+            /** Deployment Levels */
+            deployment_levels: components["schemas"]["QosBenchmarkDeploymentLevel"][];
             /** Deployments */
             deployments: components["schemas"]["QosDeploymentMetrics"][];
             /** Levels */
@@ -42913,6 +42995,12 @@ export interface components {
         QosBenchmarkRequest: {
             /** Concurrency */
             concurrency: number[];
+            /**
+             * Deployment Ids
+             * @description Deployments of model_group to test one after another; empty load-balances across all of them
+             * @default []
+             */
+            deployment_ids: string[];
             /** Max Tokens */
             max_tokens: number;
             /** Model Group */
@@ -42945,6 +43033,8 @@ export interface components {
         QosBenchmarkStarted: {
             /** Concurrency */
             concurrency: number[];
+            /** Deployment Ids */
+            deployment_ids: string[];
             /** Max Tokens */
             max_tokens: number;
             /** Model Group */
@@ -43118,6 +43208,29 @@ export interface components {
             start_time: string;
             /** Tag */
             tag: string | null;
+        };
+        /** QosTargetDeployment */
+        QosTargetDeployment: {
+            /** Api Base */
+            api_base: string;
+            /** Model Id */
+            model_id: string;
+            /** Provider */
+            provider: string;
+            /** Upstream Model */
+            upstream_model: string;
+        };
+        /** QosTargetModel */
+        QosTargetModel: {
+            /** Deployments */
+            deployments: components["schemas"]["QosTargetDeployment"][];
+            /** Model Group */
+            model_group: string;
+        };
+        /** QosTargetsResponse */
+        QosTargetsResponse: {
+            /** Models */
+            models: components["schemas"]["QosTargetModel"][];
         };
         /**
          * RankingOptions
@@ -49465,6 +49578,18 @@ export interface components {
              */
             blocked_users: string[];
         };
+        /** UnlockAccountRequest */
+        UnlockAccountRequest: {
+            /** User Id */
+            user_id: string;
+        };
+        /** UnlockAccountResponse */
+        UnlockAccountResponse: {
+            /** Unlocked */
+            unlocked: boolean;
+            /** User Id */
+            user_id: string;
+        };
         /** UpdateCredentialItem */
         UpdateCredentialItem: {
             /** Credential Info */
@@ -53040,6 +53165,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["NewModelGroupResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    unlock_account_account_lockout_unlock_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UnlockAccountRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UnlockAccountResponse"];
                 };
             };
             /** @description Validation Error */
@@ -72061,6 +72219,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_qos_targets_qos_targets_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QosTargetsResponse"];
                 };
             };
         };

@@ -63,16 +63,27 @@ class QosBenchmarkRequest(LiteLLMBaseModel):
     model_config = ConfigDict(frozen=True)
 
     model_group: str = Field(min_length=1)
+    deployment_ids: tuple[Annotated[str, Field(min_length=1)], ...] = Field(
+        default=(),
+        max_length=8,
+        description="Deployments of model_group to test one after another; empty load-balances across all of them",
+    )
     concurrency: tuple[Annotated[int, Field(ge=1, le=256)], ...] = Field(min_length=1, max_length=8)
     requests_per_worker: int = Field(ge=1, le=50)
     max_tokens: int = Field(ge=1, le=8192)
 
     @property
+    def targets(self) -> tuple[str, ...]:
+        return self.deployment_ids if self.deployment_ids else (self.model_group,)
+
+    @property
     def total_requests(self) -> int:
-        return sum(self.concurrency) * self.requests_per_worker
+        return sum(self.concurrency) * self.requests_per_worker * len(self.targets)
 
     @model_validator(mode="after")
-    def _bounded_total(self) -> Self:
+    def _valid_plan(self) -> Self:
+        if len(set(self.deployment_ids)) != len(self.deployment_ids):
+            raise ValueError("Each deployment may be tested only once per benchmark")
         if self.total_requests > QOS_BENCHMARK_MAX_REQUESTS:
             raise ValueError(f"A benchmark may send at most {QOS_BENCHMARK_MAX_REQUESTS} requests")
         return self
@@ -83,6 +94,7 @@ class QosBenchmarkStarted(LiteLLMBaseModel):
 
     run_id: str
     model_group: str
+    deployment_ids: tuple[str, ...]
     concurrency: tuple[int, ...]
     requests_per_worker: int
     max_tokens: int
@@ -111,12 +123,39 @@ class QosBenchmarkLevel(QosModelGroupMetrics):
     concurrency: int
 
 
+class QosBenchmarkDeploymentLevel(QosDeploymentMetrics):
+    concurrency: int
+
+
 class QosBenchmarkDetail(LiteLLMBaseModel):
     model_config = ConfigDict(frozen=True)
 
     run_id: str
     levels: tuple[QosBenchmarkLevel, ...]
     deployments: tuple[QosDeploymentMetrics, ...]
+    deployment_levels: tuple[QosBenchmarkDeploymentLevel, ...]
+
+
+class QosTargetDeployment(LiteLLMBaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    model_id: str
+    provider: str
+    api_base: str
+    upstream_model: str
+
+
+class QosTargetModel(LiteLLMBaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    model_group: str
+    deployments: tuple[QosTargetDeployment, ...]
+
+
+class QosTargetsResponse(LiteLLMBaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    models: tuple[QosTargetModel, ...]
 
 
 class QosHealthNode(LiteLLMBaseModel):

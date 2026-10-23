@@ -52,9 +52,9 @@ async def _send(client: httpx.AsyncClient, url: str, headers: Mapping[str, str],
             verbose_proxy_logger.warning("QoS benchmark request failed with HTTP %s", response.status_code)
 
 
-def _request_body(plan: QosBenchmarkRequest, sequence: int) -> Mapping[str, object]:
+def _request_body(plan: QosBenchmarkRequest, target: str, sequence: int) -> Mapping[str, object]:
     return {
-        "model": plan.model_group,
+        "model": target,
         "stream": True,
         "max_tokens": plan.max_tokens,
         "messages": [{"role": "user", "content": BENCHMARK_PROMPTS[sequence % len(BENCHMARK_PROMPTS)]}],
@@ -66,12 +66,16 @@ async def _worker(
     url: str,
     headers: Mapping[str, str],
     plan: QosBenchmarkRequest,
+    target: str,
     worker_index: int,
 ) -> None:
     for request_index in range(plan.requests_per_worker):
         try:
             await _send(
-                client, url, headers, _request_body(plan, worker_index * plan.requests_per_worker + request_index)
+                client,
+                url,
+                headers,
+                _request_body(plan, target, worker_index * plan.requests_per_worker + request_index),
             )
         except httpx.HTTPError as error:
             verbose_proxy_logger.warning("QoS benchmark request did not complete: %s", error)
@@ -86,13 +90,14 @@ async def run_benchmark(
 ) -> None:
     url: Final = f"{base_url.rstrip('/')}/v1/chat/completions"
     auth: Final = {} if api_key is None else {"Authorization": f"Bearer {api_key}"}
-    for concurrency in plan.concurrency:
-        await asyncio.gather(
-            *(
-                _worker(client, url, _level_headers(auth, run_id, concurrency), plan, index)
-                for index in range(concurrency)
+    for target in plan.targets:
+        for concurrency in plan.concurrency:
+            await asyncio.gather(
+                *(
+                    _worker(client, url, _level_headers(auth, run_id, concurrency), plan, target, index)
+                    for index in range(concurrency)
+                )
             )
-        )
 
 
 async def _run_in_background(base_url: str, api_key: str | None, run_id: str, plan: QosBenchmarkRequest) -> None:

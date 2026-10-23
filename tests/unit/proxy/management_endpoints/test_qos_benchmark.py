@@ -69,7 +69,38 @@ async def test_a_failed_request_does_not_stop_the_run_and_no_key_sends_no_auth_h
     assert all("authorization" not in request.headers for request in upstream.requests)
 
 
+@pytest.mark.asyncio
+async def test_a_provider_comparison_runs_every_level_against_each_deployment_in_turn() -> None:
+    upstream: Final = _RecordingUpstream()
+
+    await _run(upstream, _plan(deployment_ids=("node-moark", "node-gitee")), "sk-master")
+
+    sent: Final = [
+        (json.loads(request.content)["model"], request.headers["x-litellm-tags"]) for request in upstream.requests
+    ]
+    assert sent == (
+        [("node-moark", "qos-run,qos-run@c1")] * 2
+        + [("node-moark", "qos-run,qos-run@c3")] * 6
+        + [("node-gitee", "qos-run,qos-run@c1")] * 2
+        + [("node-gitee", "qos-run,qos-run@c3")] * 6
+    )
+
+
 class TestBenchmarkPlan:
+    def test_each_compared_deployment_gets_the_whole_plan(self) -> None:
+        assert _plan().total_requests == (1 + 3) * 2
+        assert _plan(deployment_ids=("a", "b", "c")).total_requests == (1 + 3) * 2 * 3
+
+    def test_a_comparison_counts_toward_the_request_limit(self) -> None:
+        per_deployment: Final = _plan(concurrency=(256,), requests_per_worker=QOS_BENCHMARK_MAX_REQUESTS // 256)
+        assert per_deployment.total_requests <= QOS_BENCHMARK_MAX_REQUESTS
+        with pytest.raises(ValidationError):
+            _plan(concurrency=(256,), requests_per_worker=QOS_BENCHMARK_MAX_REQUESTS // 256, deployment_ids=("a", "b"))
+
+    def test_a_deployment_is_compared_only_once(self) -> None:
+        with pytest.raises(ValidationError):
+            _plan(deployment_ids=("a", "a"))
+
     def test_total_requests_is_bounded(self) -> None:
         limit_per_worker: Final = QOS_BENCHMARK_MAX_REQUESTS // 256
         assert (

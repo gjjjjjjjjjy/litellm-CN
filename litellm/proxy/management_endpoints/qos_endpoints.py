@@ -1,3 +1,4 @@
+import json
 import re
 from collections.abc import Callable
 from datetime import datetime, timedelta, timezone
@@ -24,6 +25,7 @@ from litellm.proxy.management_endpoints.qos_health import (
 from litellm.types.llms.base import LiteLLMBaseModel
 from litellm.types.qos import (
     QosBenchmarkDeleted,
+    QosBenchmarkDeploymentLevel,
     QosBenchmarkDetail,
     QosBenchmarkLevel,
     QosBenchmarkListResponse,
@@ -35,6 +37,9 @@ from litellm.types.qos import (
     QosModelGroupMetrics,
     QosPercentiles,
     QosSummaryResponse,
+    QosTargetDeployment,
+    QosTargetModel,
+    QosTargetsResponse,
 )
 
 if TYPE_CHECKING:
@@ -62,10 +67,19 @@ deleted_guardrail_index AS (
 SELECT COUNT(*)::int AS deleted_requests FROM deleted
 """
 
-BENCHMARK_RUNS_SQL: Final = """
+
+def _logged_model_group(deployment_groups_param: str) -> str:
+    """A request that addressed a deployment by id is logged with the id as its model group; report its model name."""
+    return (
+        f"CASE WHEN {deployment_groups_param}::jsonb ? model_group "
+        f"THEN {deployment_groups_param}::jsonb ->> model_group ELSE COALESCE(model_group, '') END"
+    )
+
+
+BENCHMARK_RUNS_SQL: Final = f"""
 SELECT
     run_tag AS run_id,
-    MAX(COALESCE(model_group, '')) AS model_group,
+    MAX({_logged_model_group("$3")}) AS model_group,
     COUNT(*)::int AS requests,
     (COUNT(*) FILTER (WHERE status = 'failure'))::int AS failed_requests,
     MIN("startTime") AS started_at,
@@ -86,7 +100,7 @@ LIMIT 100
 _SUMMARY_SQL: Final = """
 WITH base AS (
     SELECT
-        COALESCE(model_group, '') AS model_group,
+        {model_group} AS model_group,
         COALESCE(model_id, '') AS model_id,
         COALESCE(model, '') AS model,
         COALESCE(api_base, '') AS api_base,
@@ -113,7 +127,7 @@ WITH base AS (
         AND "startTime" < $2::timestamp
         AND COALESCE(cache_hit, '') <> 'True'
         AND COALESCE(model, '') <> ''
-        AND ($3::text IS NULL OR model_group = $3::text)
+        AND ($3::text IS NULL OR {model_group} = $3::text)
         AND {tag_filter}
         AND {health_check_filter}
 ),
@@ -158,11 +172,19 @@ ORDER BY {selected_keys}
 _SPEND_LOGS: Final = '"LiteLLM_SpendLogs"'
 _EXCLUDE_HEALTH_CHECKS: Final = f"NOT COALESCE(request_tags ? '{LITTELM_INTERNAL_HEALTH_SERVICE_ACCOUNT_NAME}', false)"
 _REQUEST_TAG_FILTER: Final = "($4::text IS NULL OR request_tags ? $4::text)"
+_SUMMARY_MODEL_GROUP: Final = _logged_model_group("$5")
+_LEVEL_SOURCE: Final = (
+    _SPEND_LOGS
+    + " CROSS JOIN LATERAL jsonb_array_elements_text("
+    + "CASE WHEN jsonb_typeof(request_tags) = 'array' THEN request_tags ELSE '[]'::jsonb END) AS level_tag"
+)
+_LEVEL_TAG_FILTER: Final = "left(level_tag, length($4::text) + 2) = $4::text || '@c'"
 
 DEPLOYMENT_SUMMARY_SQL: Final = _SUMMARY_SQL.format(
     keys="model_group, model_id",
     selected_keys="base.model_group, base.model_id",
     level_column="",
+    model_group=_SUMMARY_MODEL_GROUP,
     source=_SPEND_LOGS,
     tag_filter=_REQUEST_TAG_FILTER,
     health_check_filter=_EXCLUDE_HEALTH_CHECKS,
@@ -171,6 +193,7 @@ MODEL_GROUP_SUMMARY_SQL: Final = _SUMMARY_SQL.format(
     keys="model_group",
     selected_keys="base.model_group",
     level_column="",
+    model_group=_SUMMARY_MODEL_GROUP,
     source=_SPEND_LOGS,
     tag_filter=_REQUEST_TAG_FILTER,
     health_check_filter=_EXCLUDE_HEALTH_CHECKS,
@@ -179,10 +202,18 @@ BENCHMARK_LEVEL_SUMMARY_SQL: Final = _SUMMARY_SQL.format(
     keys="model_group, level_tag",
     selected_keys="base.model_group, base.level_tag",
     level_column=",\n        level_tag",
-    source=_SPEND_LOGS
-    + " CROSS JOIN LATERAL jsonb_array_elements_text("
-    + "CASE WHEN jsonb_typeof(request_tags) = 'array' THEN request_tags ELSE '[]'::jsonb END) AS level_tag",
-    tag_filter="left(level_tag, length($4::text) + 2) = $4::text || '@c'",
+    model_group=_SUMMARY_MODEL_GROUP,
+    source=_LEVEL_SOURCE,
+    tag_filter=_LEVEL_TAG_FILTER,
+    health_check_filter=_EXCLUDE_HEALTH_CHECKS,
+)
+BENCHMARK_DEPLOYMENT_LEVEL_SUMMARY_SQL: Final = _SUMMARY_SQL.format(
+    keys="model_group, model_id, level_tag",
+    selected_keys="base.model_group, base.model_id, base.level_tag",
+    level_column=",\n        level_tag",
+    model_group=_SUMMARY_MODEL_GROUP,
+    source=_LEVEL_SOURCE,
+    tag_filter=_LEVEL_TAG_FILTER,
     health_check_filter=_EXCLUDE_HEALTH_CHECKS,
 )
 
@@ -255,6 +286,18 @@ def group_metrics(row: QosSummaryRow) -> QosModelGroupMetrics:
     )
 
 
+def deployment_model_groups(llm_router: "Router | None") -> str:
+    if llm_router is None:
+        return "{}"
+    return json.dumps(
+        {
+            model_id: deployment.model_name
+            for model_id in llm_router.get_model_ids()
+            if (deployment := llm_router.get_deployment(model_id)) is not None
+        }
+    )
+
+
 def deployment_metrics(row: QosSummaryRow) -> QosDeploymentMetrics:
     return QosDeploymentMetrics(
         **group_metrics(row).model_dump(), model_id=row.model_id, model=row.model, api_base=row.api_base
@@ -274,7 +317,7 @@ async def get_qos_summary(
     model_group: Annotated[str | None, Query(description="Only include this public model name")] = None,
     tag: Annotated[str | None, Query(description="Only include requests carrying this request tag")] = None,
 ) -> QosSummaryResponse:
-    from litellm.proxy.proxy_server import prisma_client
+    from litellm.proxy.proxy_server import llm_router, prisma_client
 
     if user_api_key_dict.user_role not in (LitellmUserRoles.PROXY_ADMIN, LitellmUserRoles.PROXY_ADMIN_VIEW_ONLY):
         raise HTTPException(status_code=403, detail="Only proxy admins can view service quality metrics")
@@ -282,11 +325,12 @@ async def get_qos_summary(
         raise HTTPException(status_code=500, detail=CommonProxyErrors.db_not_connected_error.value)
 
     start, end = resolve_window(start_time, end_time, datetime.now(timezone.utc).replace(tzinfo=None))
+    groups: Final = deployment_model_groups(llm_router)
     group_rows: Final = _ROWS.validate_python(
-        await prisma_client.db.query_raw(MODEL_GROUP_SUMMARY_SQL, start, end, model_group, tag)
+        await prisma_client.db.query_raw(MODEL_GROUP_SUMMARY_SQL, start, end, model_group, tag, groups)
     )
     deployment_rows: Final = _ROWS.validate_python(
-        await prisma_client.db.query_raw(DEPLOYMENT_SUMMARY_SQL, start, end, model_group, tag)
+        await prisma_client.db.query_raw(DEPLOYMENT_SUMMARY_SQL, start, end, model_group, tag, groups)
     )
     return QosSummaryResponse(
         start_time=start,
@@ -327,12 +371,19 @@ async def start_qos_benchmark(
     _require_role(user_api_key_dict, (LitellmUserRoles.PROXY_ADMIN,))
     if llm_router is None or plan.model_group not in llm_router.get_model_names():
         raise HTTPException(status_code=404, detail=f"Model {plan.model_group} is not configured on this gateway")
+    unknown_deployments: Final = set(plan.deployment_ids) - set(llm_router.get_model_ids(model_name=plan.model_group))
+    if unknown_deployments:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Not deployments of {plan.model_group}: {', '.join(sorted(unknown_deployments))}",
+        )
     started_at: Final = _utc_now()
     run_id: Final = new_run_id(plan.model_group, started_at)
     start_benchmark(_loopback_base_url(request), master_key, run_id, plan)
     return QosBenchmarkStarted(
         run_id=run_id,
         model_group=plan.model_group,
+        deployment_ids=plan.deployment_ids,
         concurrency=plan.concurrency,
         requests_per_worker=plan.requests_per_worker,
         max_tokens=plan.max_tokens,
@@ -352,15 +403,14 @@ async def list_qos_benchmarks(
     start_time: Annotated[datetime | None, Query(description="ISO 8601, defaults to 7 days before end_time")] = None,
     end_time: Annotated[datetime | None, Query(description="ISO 8601, defaults to now")] = None,
 ) -> QosBenchmarkListResponse:
-    from litellm.proxy.proxy_server import prisma_client
+    from litellm.proxy.proxy_server import llm_router, prisma_client
 
     _require_role(user_api_key_dict, (LitellmUserRoles.PROXY_ADMIN, LitellmUserRoles.PROXY_ADMIN_VIEW_ONLY))
     if prisma_client is None:
         raise HTTPException(status_code=500, detail=CommonProxyErrors.db_not_connected_error.value)
     start, end = resolve_window(start_time, end_time, _utc_now(), QOS_RUNS_DEFAULT_WINDOW)
-    return QosBenchmarkListResponse(
-        runs=tuple(_RUNS.validate_python(await prisma_client.db.query_raw(BENCHMARK_RUNS_SQL, start, end)))
-    )
+    rows: Final = await prisma_client.db.query_raw(BENCHMARK_RUNS_SQL, start, end, deployment_model_groups(llm_router))
+    return QosBenchmarkListResponse(runs=tuple(_RUNS.validate_python(rows)))
 
 
 @router.get(
@@ -373,7 +423,7 @@ async def get_qos_benchmark(
     run_id: str,
     user_api_key_dict: Annotated[UserAPIKeyAuth, Depends(user_api_key_auth)],
 ) -> QosBenchmarkDetail:
-    from litellm.proxy.proxy_server import prisma_client
+    from litellm.proxy.proxy_server import llm_router, prisma_client
 
     _require_role(user_api_key_dict, (LitellmUserRoles.PROXY_ADMIN, LitellmUserRoles.PROXY_ADMIN_VIEW_ONLY))
     if _RUN_ID.fullmatch(run_id) is None:
@@ -382,20 +432,31 @@ async def get_qos_benchmark(
         raise HTTPException(status_code=500, detail=CommonProxyErrors.db_not_connected_error.value)
     end: Final = _utc_now() + timedelta(minutes=1)
     start: Final = end - QOS_MAX_WINDOW
+    groups: Final = deployment_model_groups(llm_router)
     level_rows: Final = _ROWS.validate_python(
-        await prisma_client.db.query_raw(BENCHMARK_LEVEL_SUMMARY_SQL, start, end, None, run_id)
+        await prisma_client.db.query_raw(BENCHMARK_LEVEL_SUMMARY_SQL, start, end, None, run_id, groups)
     )
     deployment_rows: Final = _ROWS.validate_python(
-        await prisma_client.db.query_raw(DEPLOYMENT_SUMMARY_SQL, start, end, None, run_id)
+        await prisma_client.db.query_raw(DEPLOYMENT_SUMMARY_SQL, start, end, None, run_id, groups)
+    )
+    deployment_level_rows: Final = _ROWS.validate_python(
+        await prisma_client.db.query_raw(BENCHMARK_DEPLOYMENT_LEVEL_SUMMARY_SQL, start, end, None, run_id, groups)
     )
     levels: Final = (
         QosBenchmarkLevel(**group_metrics(row).model_dump(), concurrency=concurrency_of(row.level_tag, run_id))
         for row in level_rows
     )
+    deployment_levels: Final = (
+        QosBenchmarkDeploymentLevel(
+            **deployment_metrics(row).model_dump(), concurrency=concurrency_of(row.level_tag, run_id)
+        )
+        for row in deployment_level_rows
+    )
     return QosBenchmarkDetail(
         run_id=run_id,
         levels=tuple(sorted(levels, key=lambda level: level.concurrency)),
         deployments=tuple(deployment_metrics(row) for row in deployment_rows),
+        deployment_levels=tuple(sorted(deployment_levels, key=lambda level: (level.concurrency, level.model_id))),
     )
 
 
@@ -409,12 +470,51 @@ def deployment_target_lookup(llm_router: "Router | None") -> Callable[[str], Dep
             model=params.model, custom_llm_provider=params.custom_llm_provider
         )
         if params.api_base is not None:
-            return DeploymentTarget(api_base=params.api_base, upstream_model=upstream_model)
+            return DeploymentTarget(provider=provider, api_base=params.api_base, upstream_model=upstream_model)
         return DeploymentTarget(
-            api_base=provider if default_api_base is None else default_api_base, upstream_model=upstream_model
+            provider=provider,
+            api_base=provider if default_api_base is None else default_api_base,
+            upstream_model=upstream_model,
         )
 
     return target_of
+
+
+def target_deployment(model_id: str, target: DeploymentTarget) -> QosTargetDeployment:
+    return QosTargetDeployment(
+        model_id=model_id, provider=target.provider, api_base=target.api_base, upstream_model=target.upstream_model
+    )
+
+
+@router.get(
+    "/qos/targets",
+    tags=["qos"],
+    dependencies=[Depends(user_api_key_auth)],
+    response_model=QosTargetsResponse,
+)
+async def get_qos_targets(
+    user_api_key_dict: Annotated[UserAPIKeyAuth, Depends(user_api_key_auth)],
+) -> QosTargetsResponse:
+    """Every model name with the provider deployments behind it, so a benchmark can target one or compare them."""
+    from litellm.proxy.proxy_server import llm_router
+
+    _require_role(user_api_key_dict, (LitellmUserRoles.PROXY_ADMIN, LitellmUserRoles.PROXY_ADMIN_VIEW_ONLY))
+    if llm_router is None:
+        return QosTargetsResponse(models=())
+    target_of: Final = deployment_target_lookup(llm_router)
+    return QosTargetsResponse(
+        models=tuple(
+            QosTargetModel(
+                model_group=model_group,
+                deployments=tuple(
+                    target_deployment(model_id, target)
+                    for model_id in llm_router.get_model_ids(model_name=model_group)
+                    if (target := target_of(model_id)) is not None
+                ),
+            )
+            for model_group in sorted(set(llm_router.get_model_names()))
+        )
+    )
 
 
 @router.get(

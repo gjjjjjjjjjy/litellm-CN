@@ -32,6 +32,7 @@ const metrics = {
 const started = {
   run_id: "qos-20261023-090000-qwen3-max-ab12",
   model_group: "qwen3-max",
+  deployment_ids: [],
   concurrency: [1, 4],
   requests_per_worker: 2,
   max_tokens: 256,
@@ -48,15 +49,47 @@ const pastRun = {
   last_response_at: "2026-10-22T04:01:00Z",
 };
 
-const respond = (path: string): unknown => {
-  if (path === "/qos/summary") return { start_time: "", end_time: "", tag: null, model_groups: [], deployments: [] };
-  if (path === "/qos/benchmarks") return { runs: [pastRun] };
-  return {
-    run_id: started.run_id,
-    levels: [{ ...metrics, concurrency: 4, requests: 8 }],
-    deployments: [{ ...metrics, model_id: "node-a", model: "moark/qwen3.8-max", api_base: "https://node-a/v1" }],
-  };
+const qwenProviders = [
+  { model_id: "node-moark", provider: "moark", api_base: "https://api.moark.com/v1", upstream_model: "Qwen3-Max" },
+  { model_id: "node-gitee", provider: "openai", api_base: "https://ai.gitee.com/v1", upstream_model: "Qwen3-Max" },
+];
+
+const providerLevel = (model_id: string, api_base: string, concurrency: number, ttft: number) => ({
+  ...metrics,
+  model_id,
+  model: "Qwen3-Max",
+  api_base,
+  concurrency,
+  ttft_ms: { p50: ttft, p95: ttft * 2, p99: ttft * 2 },
+});
+
+const singleProviderDetail = {
+  run_id: started.run_id,
+  levels: [{ ...metrics, concurrency: 4, requests: 8 }],
+  deployments: [{ ...metrics, model_id: "node-a", model: "moark/qwen3.8-max", api_base: "https://node-a/v1" }],
+  deployment_levels: [
+    { ...metrics, model_id: "node-a", model: "moark/qwen3.8-max", api_base: "https://node-a/v1", concurrency: 4 },
+  ],
 };
+
+const comparisonDetail = {
+  run_id: started.run_id,
+  levels: [{ ...metrics, concurrency: 1, requests: 4 }],
+  deployments: [],
+  deployment_levels: [
+    providerLevel("node-gitee", "https://ai.gitee.com/v1", 1, 900),
+    providerLevel("node-moark", "https://api.moark.com/v1", 1, 300),
+  ],
+};
+
+const respondWith =
+  (detail: unknown) =>
+  async (path: string): Promise<unknown> => {
+    if (path === "/qos/summary") return { start_time: "", end_time: "", tag: null, model_groups: [], deployments: [] };
+    if (path === "/qos/benchmarks") return { runs: [pastRun] };
+    if (path === "/qos/targets") return { models: [{ model_group: "qwen3-max", deployments: qwenProviders }] };
+    return detail;
+  };
 
 describe("QoS benchmarks", () => {
   beforeEach(() => {
@@ -65,7 +98,7 @@ describe("QoS benchmarks", () => {
     testQueryClient.clear();
     vi.mocked(apiClient.get).mockReset();
     vi.mocked(apiClient.post).mockReset();
-    vi.mocked(apiClient.get).mockImplementation(async (path: string) => respond(path));
+    vi.mocked(apiClient.get).mockImplementation(respondWith(singleProviderDetail));
     vi.mocked(apiClient.post).mockResolvedValue(started);
   });
 
@@ -85,13 +118,50 @@ describe("QoS benchmarks", () => {
 
     expect(apiClient.post).toHaveBeenCalledWith("/qos/benchmarks", {
       accessToken: "token",
-      body: { model_group: "qwen3-max", concurrency: [1, 4], requests_per_worker: 2, max_tokens: 256 },
+      body: {
+        model_group: "qwen3-max",
+        deployment_ids: [],
+        concurrency: [1, 4],
+        requests_per_worker: 2,
+        max_tokens: 256,
+      },
     });
     expect(await screen.findByText(started.run_id)).toBeInTheDocument();
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     expect(screen.getByText("Test running")).toBeInTheDocument();
     expect(screen.getByText("8 / 10")).toBeInTheDocument();
     expect(screen.getByText("https://node-a/v1")).toBeInTheDocument();
+  });
+
+  it("compares every provider of a model with the same plan and lays their results side by side", async () => {
+    const user = userEvent.setup();
+    vi.mocked(apiClient.get).mockImplementation(respondWith(comparisonDetail));
+    vi.mocked(apiClient.post).mockResolvedValue({
+      ...started,
+      deployment_ids: ["node-moark", "node-gitee"],
+      total_requests: 8,
+    });
+    renderWithProviders(<QosView accessToken="token" />, { searchParams: { benchmark: "qwen3-max" } });
+
+    await user.click(await screen.findByLabelText("Provider"));
+    expect(await screen.findByRole("option", { name: "moark · https://api.moark.com/v1" })).toBeInTheDocument();
+    await user.click(screen.getByRole("option", { name: "Compare all 2 providers" }));
+    fireEvent.change(screen.getByLabelText("Concurrency levels"), { target: { value: "1" } });
+    fireEvent.change(screen.getByLabelText("Requests per worker"), { target: { value: "4" } });
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Sends 8 streamed requests, testing 2 providers one after another with the same plan",
+    );
+    await user.click(screen.getByRole("button", { name: "Start test" }));
+
+    expect(vi.mocked(apiClient.post).mock.calls[0][1]?.body).toMatchObject({
+      model_group: "qwen3-max",
+      deployment_ids: ["node-moark", "node-gitee"],
+    });
+    expect(await screen.findByText("Provider comparison")).toBeInTheDocument();
+    expect(screen.getByText("https://api.moark.com/v1")).toBeInTheDocument();
+    expect(screen.getByText("https://ai.gitee.com/v1")).toBeInTheDocument();
+    expect(screen.getByText("300 ms / 600 ms")).toBeInTheDocument();
+    expect(screen.getByText("900 ms / 1.80 s")).toBeInTheDocument();
   });
 
   it("keeps the start button disabled and says why while the plan is invalid", async () => {
