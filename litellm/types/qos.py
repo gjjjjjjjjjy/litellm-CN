@@ -152,3 +152,10 @@ class QosHealthResponse(LiteLLMBaseModel):
     end_time: UtcDatetime
     nodes: tuple[QosHealthNode, ...]
     probes: tuple[QosHealthProbe, ...]
+
+
+class QosBenchmarkDeleted(LiteLLMBaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    run_id: str
+    deleted_requests: int

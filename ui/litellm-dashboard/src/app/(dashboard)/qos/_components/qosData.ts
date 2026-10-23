@@ -54,6 +54,7 @@ export type QosBenchmarkStarted = components["schemas"]["QosBenchmarkStarted"];
 export type QosBenchmarkRun = components["schemas"]["QosBenchmarkRun"];
 export type QosBenchmarkDetail = components["schemas"]["QosBenchmarkDetail"];
 export type QosBenchmarkLevel = components["schemas"]["QosBenchmarkLevel"];
+export type QosBenchmarkDeleted = components["schemas"]["QosBenchmarkDeleted"];
 
 export const MAX_CONCURRENCY = 256;
 export const MAX_CONCURRENCY_LEVELS = 8;

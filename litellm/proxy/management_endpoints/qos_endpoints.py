@@ -22,6 +22,7 @@ from litellm.proxy.management_endpoints.qos_health import (
 )
 from litellm.types.llms.base import LiteLLMBaseModel
 from litellm.types.qos import (
+    QosBenchmarkDeleted,
     QosBenchmarkDetail,
     QosBenchmarkLevel,
     QosBenchmarkListResponse,
@@ -44,6 +45,21 @@ QOS_DEFAULT_WINDOW: Final = timedelta(hours=24)
 QOS_MAX_WINDOW: Final = timedelta(days=31)
 QOS_RUNS_DEFAULT_WINDOW: Final = timedelta(days=7)
 _RUN_ID: Final = re.compile(rf"{QOS_RUN_PREFIX}[A-Za-z0-9.-]+")
+
+BENCHMARK_DELETE_SQL: Final = """
+WITH deleted AS (
+    DELETE FROM "LiteLLM_SpendLogs"
+    WHERE "startTime" >= $1::timestamp AND request_tags ? $2::text
+    RETURNING request_id
+),
+deleted_tool_index AS (
+    DELETE FROM "LiteLLM_SpendLogToolIndex" WHERE request_id IN (SELECT request_id FROM deleted)
+),
+deleted_guardrail_index AS (
+    DELETE FROM "LiteLLM_SpendLogGuardrailIndex" WHERE request_id IN (SELECT request_id FROM deleted)
+)
+SELECT COUNT(*)::int AS deleted_requests FROM deleted
+"""
 
 BENCHMARK_RUNS_SQL: Final = """
 SELECT
@@ -428,3 +444,34 @@ async def get_qos_health(
         nodes=tuple(health_node(row, target_of) for row in history),
         probes=tuple(health_probe(row) for row in probes),
     )
+
+
+class _DeletedCount(LiteLLMBaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    deleted_requests: int
+
+
+_DELETED_COUNT: Final = TypeAdapter(list[_DeletedCount])
+
+
+@router.delete(
+    "/qos/benchmarks/{run_id}",
+    tags=["qos"],
+    dependencies=[Depends(user_api_key_auth)],
+    response_model=QosBenchmarkDeleted,
+)
+async def delete_qos_benchmark(
+    run_id: str,
+    user_api_key_dict: Annotated[UserAPIKeyAuth, Depends(user_api_key_auth)],
+) -> QosBenchmarkDeleted:
+    from litellm.proxy.proxy_server import prisma_client
+
+    _require_role(user_api_key_dict, (LitellmUserRoles.PROXY_ADMIN,))
+    if _RUN_ID.fullmatch(run_id) is None:
+        raise HTTPException(status_code=400, detail="Not a QoS benchmark run id")
+    if prisma_client is None:
+        raise HTTPException(status_code=500, detail=CommonProxyErrors.db_not_connected_error.value)
+    since: Final = _utc_now() - QOS_MAX_WINDOW
+    (result,) = _DELETED_COUNT.validate_python(await prisma_client.db.query_raw(BENCHMARK_DELETE_SQL, since, run_id))
+    return QosBenchmarkDeleted(run_id=run_id, deleted_requests=result.deleted_requests)

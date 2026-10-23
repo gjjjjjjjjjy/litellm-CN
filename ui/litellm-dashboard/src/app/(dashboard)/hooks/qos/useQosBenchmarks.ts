@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient, type Query, type UseQueryResult 
 import { apiClient } from "@/components/networking";
 import {
   recordedRequests,
+  type QosBenchmarkDeleted,
   type QosBenchmarkDetail,
   type QosBenchmarkRequest,
   type QosBenchmarkRun,
@@ -52,5 +53,14 @@ export const useStartQosBenchmark = (accessToken: string | null) => {
     mutationFn: (plan: QosBenchmarkRequest) =>
       apiClient.post<QosBenchmarkStarted>("/qos/benchmarks", { accessToken, body: plan }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: benchmarkKeys.lists() }),
+  });
+};
+
+export const useDeleteQosBenchmark = (accessToken: string | null) => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (runId: string) =>
+      apiClient.delete<QosBenchmarkDeleted>(`/qos/benchmarks/${encodeURIComponent(runId)}`, { accessToken }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: benchmarkKeys.all }),
   });
 };

@@ -14182,7 +14182,8 @@ export interface paths {
         get: operations["get_qos_benchmark_qos_benchmarks__run_id__get"];
         put?: never;
         post?: never;
-        delete?: never;
+        /** Delete Qos Benchmark */
+        delete: operations["delete_qos_benchmark_qos_benchmarks__run_id__delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -42852,6 +42853,13 @@ export interface components {
                     [key: string]: unknown;
                 };
             } | null;
+        };
+        /** QosBenchmarkDeleted */
+        QosBenchmarkDeleted: {
+            /** Deleted Requests */
+            deleted_requests: number;
+            /** Run Id */
+            run_id: string;
         };
         /** QosBenchmarkDetail */
         QosBenchmarkDetail: {
@@ -71941,6 +71949,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["QosBenchmarkDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_qos_benchmark_qos_benchmarks__run_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QosBenchmarkDeleted"];
                 };
             };
             /** @description Validation Error */

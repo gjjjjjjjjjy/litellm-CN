@@ -6,7 +6,9 @@ import QosView from "./QosView";
 import { apiClient } from "@/components/networking";
 import { renderWithProviders, testQueryClient } from "../../../../../tests/test-utils";
 
-vi.mock("@/components/networking", () => ({ apiClient: { get: vi.fn(), post: vi.fn() } }));
+vi.mock("@/components/networking", () => ({ apiClient: { get: vi.fn(), post: vi.fn(), delete: vi.fn() } }));
+const authorized = vi.hoisted(() => ({ userRole: "Admin", isViewOnly: false }));
+vi.mock("@/app/(dashboard)/hooks/useAuthorized", () => ({ default: () => authorized }));
 vi.mock("@/app/(dashboard)/hooks/models/useModels", () => ({
   usePlainChatModelGroups: () => new Set(["qwen3-max", "glm-5"]),
 }));
@@ -37,9 +39,18 @@ const started = {
   started_at: "2026-10-23T01:00:00Z",
 };
 
+const pastRun = {
+  run_id: "qos-20261022-120000-glm-5-cd34",
+  model_group: "glm-5",
+  requests: 42,
+  failed_requests: 0,
+  started_at: "2026-10-22T04:00:00Z",
+  last_response_at: "2026-10-22T04:01:00Z",
+};
+
 const respond = (path: string): unknown => {
   if (path === "/qos/summary") return { start_time: "", end_time: "", tag: null, model_groups: [], deployments: [] };
-  if (path === "/qos/benchmarks") return { runs: [] };
+  if (path === "/qos/benchmarks") return { runs: [pastRun] };
   return {
     run_id: started.run_id,
     levels: [{ ...metrics, concurrency: 4, requests: 8 }],
@@ -49,6 +60,8 @@ const respond = (path: string): unknown => {
 
 describe("QoS benchmarks", () => {
   beforeEach(() => {
+    authorized.userRole = "Admin";
+    authorized.isViewOnly = false;
     testQueryClient.clear();
     vi.mocked(apiClient.get).mockReset();
     vi.mocked(apiClient.post).mockReset();
@@ -90,5 +103,31 @@ describe("QoS benchmarks", () => {
     expect(screen.getByRole("status")).toHaveTextContent("Concurrency levels must be whole numbers from 1 to 256");
     expect(screen.getByRole("button", { name: "Start test" })).toBeDisabled();
     expect(apiClient.post).not.toHaveBeenCalled();
+  });
+
+  it("deletes a test record only after the admin confirms how many request logs it removes", async () => {
+    const user = userEvent.setup();
+    vi.mocked(apiClient.delete).mockResolvedValue({ run_id: pastRun.run_id, deleted_requests: 42 });
+    renderWithProviders(<QosView accessToken="token" />, { searchParams: { tab: "benchmarks" } });
+
+    await user.click(await screen.findByRole("button", { name: "Delete test record" }));
+    const dialog = await screen.findByRole("alertdialog");
+    expect(dialog).toHaveTextContent(`This permanently deletes the 42 request logs recorded for ${pastRun.run_id}.`);
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(apiClient.delete).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole("button", { name: "Delete test record" }));
+    await user.click(await screen.findByRole("button", { name: "Delete" }));
+
+    expect(apiClient.delete).toHaveBeenCalledWith(`/qos/benchmarks/${pastRun.run_id}`, { accessToken: "token" });
+  });
+
+  it("shows view-only admins the results without start or delete controls", async () => {
+    authorized.isViewOnly = true;
+    renderWithProviders(<QosView accessToken="token" />, { searchParams: { tab: "benchmarks" } });
+
+    expect(await screen.findByText(pastRun.run_id)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Delete test record" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Start test" })).not.toBeInTheDocument();
   });
 });

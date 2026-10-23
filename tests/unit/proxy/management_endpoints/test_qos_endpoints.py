@@ -10,6 +10,7 @@ from litellm.llms.openai_like.json_loader import JSONProviderRegistry
 from litellm.proxy._types import LitellmUserRoles, UserAPIKeyAuth
 from litellm.proxy.auth.user_api_key_auth import user_api_key_auth
 from litellm.proxy.management_endpoints.qos_endpoints import (
+    BENCHMARK_DELETE_SQL,
     BENCHMARK_LEVEL_SUMMARY_SQL,
     DEPLOYMENT_SUMMARY_SQL,
     MODEL_GROUP_SUMMARY_SQL,
@@ -276,3 +277,33 @@ class TestHealthEndpoint:
         probe = response.json()["probes"][0]
         assert probe["latency_ms"] == {"p50": 1275.0, "p95": 2075.2, "p99": 4598.8}
         assert probe["last_probe_at"] == "2026-10-23T05:28:41Z"
+
+
+class TestBenchmarkDeletion:
+    def test_only_full_proxy_admins_can_delete_a_run(self) -> None:
+        prisma = MagicMock()
+        prisma.db.query_raw = AsyncMock()
+        with patch("litellm.proxy.proxy_server.prisma_client", prisma):
+            response = _client(LitellmUserRoles.PROXY_ADMIN_VIEW_ONLY).delete("/qos/benchmarks/qos-run-1")
+        assert response.status_code == 403
+        prisma.db.query_raw.assert_not_awaited()
+
+    def test_ids_that_are_not_benchmark_runs_cannot_be_deleted(self) -> None:
+        prisma = MagicMock()
+        prisma.db.query_raw = AsyncMock()
+        with patch("litellm.proxy.proxy_server.prisma_client", prisma):
+            response = _client(LitellmUserRoles.PROXY_ADMIN).delete("/qos/benchmarks/litellm-internal-health-check")
+        assert response.status_code == 400
+        prisma.db.query_raw.assert_not_awaited()
+
+    def test_deleting_a_run_removes_its_tagged_requests_and_reports_how_many(self) -> None:
+        prisma = MagicMock()
+        prisma.db.query_raw = AsyncMock(return_value=[{"deleted_requests": 42}])
+        with patch("litellm.proxy.proxy_server.prisma_client", prisma):
+            response = _client(LitellmUserRoles.PROXY_ADMIN).delete("/qos/benchmarks/qos-run-1")
+
+        assert response.status_code == 200
+        assert response.json() == {"run_id": "qos-run-1", "deleted_requests": 42}
+        sql, since, run_id = prisma.db.query_raw.await_args.args
+        assert (sql, run_id) == (BENCHMARK_DELETE_SQL, "qos-run-1")
+        assert datetime.now(timezone.utc).replace(tzinfo=None) - since >= QOS_MAX_WINDOW

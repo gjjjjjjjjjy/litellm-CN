@@ -51869,6 +51869,24 @@
           "title": "HTTPValidationError",
           "type": "object"
         },
+        "QosBenchmarkDeleted": {
+          "properties": {
+            "deleted_requests": {
+              "title": "Deleted Requests",
+              "type": "integer"
+            },
+            "run_id": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          },
+          "required": [
+            "run_id",
+            "deleted_requests"
+          ],
+          "title": "QosBenchmarkDeleted",
+          "type": "object"
+        },
         "QosBenchmarkDetail": {
           "properties": {
             "deployments": {
@@ -52681,6 +52699,51 @@
         }
       },
       "/qos/benchmarks/{run_id}": {
+        "delete": {
+          "operationId": "delete_qos_benchmark_qos_benchmarks__run_id__delete",
+          "parameters": [
+            {
+              "in": "path",
+              "name": "run_id",
+              "required": true,
+              "schema": {
+                "title": "Run Id",
+                "type": "string"
+              }
+            }
+          ],
+          "responses": {
+            "200": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/QosBenchmarkDeleted"
+                  }
+                }
+              },
+              "description": "Successful Response"
+            },
+            "422": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/HTTPValidationError"
+                  }
+                }
+              },
+              "description": "Validation Error"
+            }
+          },
+          "security": [
+            {
+              "APIKeyHeader": []
+            }
+          ],
+          "summary": "Delete Qos Benchmark",
+          "tags": [
+            "qos"
+          ]
+        },
         "get": {
           "operationId": "get_qos_benchmark_qos_benchmarks__run_id__get",
           "parameters": [
