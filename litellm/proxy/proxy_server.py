@@ -18280,6 +18280,10 @@ def get_logo_url():
     return {"logo_url": ""}
 
 
+# The logo URL never changes when the image behind it does, so browsers must revalidate it (cheaply, by ETag).
+UI_LOGO_CACHE_HEADERS: Final = MappingProxyType({"Cache-Control": "no-cache"})
+
+
 def _serve_custom_ui_logo(candidate: str) -> Response | None:
     """Serve one admin-configured logo, or None when it is unusable so the caller falls back."""
     from litellm.proxy.common_utils.static_asset_utils import (
@@ -18300,7 +18304,7 @@ def _serve_custom_ui_logo(candidate: str) -> Response | None:
         return None
 
     safe_logo_path, media_type = safe_logo
-    return FileResponse(safe_logo_path, media_type=media_type)
+    return FileResponse(safe_logo_path, media_type=media_type, headers=UI_LOGO_CACHE_HEADERS)
 
 
 @app.get("/get_image", include_in_schema=False)
@@ -18374,8 +18378,8 @@ async def get_image(
     safe_logo: Final = resolve_validated_local_image_path(default_logo)
     if safe_logo is not None:
         safe_logo_path, media_type = safe_logo
-        return FileResponse(safe_logo_path, media_type=media_type)
-    return FileResponse(bundled_light_logo, media_type="image/png")
+        return FileResponse(safe_logo_path, media_type=media_type, headers=UI_LOGO_CACHE_HEADERS)
+    return FileResponse(bundled_light_logo, media_type="image/png", headers=UI_LOGO_CACHE_HEADERS)
 
 
 @app.get("/get_favicon", include_in_schema=False)
