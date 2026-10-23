@@ -48,6 +48,26 @@ describe("BulkCreateUsersButton", () => {
     expect(await screen.findByText("new.hire@example.com")).toBeInTheDocument();
   });
 
+  it("downloads a template that the upload step accepts as is", async () => {
+    const downloads: Blob[] = [];
+    vi.spyOn(window.URL, "createObjectURL").mockImplementation((blob) => {
+      downloads.push(blob as Blob);
+      return "blob:template";
+    });
+    vi.spyOn(window.URL, "revokeObjectURL").mockImplementation(() => undefined);
+    const user = await openUploadStep();
+
+    await user.click(screen.getByRole("button", { name: /download csv template/i }));
+
+    expect(downloads).toHaveLength(1);
+    const template = new File([downloads[0]], "template.csv", { type: "text/csv" });
+    fireEvent.change(document.querySelector('input[type="file"]') as HTMLInputElement, {
+      target: { files: [template] },
+    });
+    expect(await screen.findByText("user@example.com")).toBeInTheDocument();
+    expect(screen.queryByText(/invalid|required/i)).not.toBeInTheDocument();
+  });
+
   it("exposes the drop zone as a label for a keyboard-reachable file input", async () => {
     await openUploadStep();
 

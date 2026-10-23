@@ -42,6 +42,29 @@ interface UserData {
 
 const PREVIEW_PAGE_SIZE = 5;
 
+const TEMPLATE_ROWS = [
+  {
+    user_email: "user@example.com",
+    user_role: "internal_user",
+    teams: "",
+    max_budget: "",
+    budget_duration: "",
+    models: "",
+  },
+];
+
+const downloadCsv = (rows: object[], fileName: string) => {
+  const blob = new Blob([Papa.unparse(rows)], { type: "text/csv" });
+  const url = window.URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = fileName;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  window.URL.revokeObjectURL(url);
+};
+
 // Define an interface for the UI settings
 interface UISettings {
   PROXY_BASE_URL: string | null;
@@ -454,17 +477,7 @@ const BulkCreateUsersButton: React.FC<BulkCreateUsersProps> = ({
       invitation_link: user.invitation_link || "",
       error: user.error || "",
     }));
-
-    const csv = Papa.unparse(results);
-    const blob = new Blob([csv], { type: "text/csv" });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "bulk_users_results.csv";
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    window.URL.revokeObjectURL(url);
+    downloadCsv(results, "bulk_users_results.csv");
   };
 
   const renderStatusCell = (record: UserData) => {
@@ -607,7 +620,11 @@ const BulkCreateUsersButton: React.FC<BulkCreateUsersProps> = ({
                     </div>
                   </div>
 
-                  <Button size="lg" className="w-full md:w-auto">
+                  <Button
+                    size="lg"
+                    className="w-full md:w-auto"
+                    onClick={() => downloadCsv(TEMPLATE_ROWS, "bulk_users_template.csv")}
+                  >
                     <Download className="size-4" />
                     Download CSV Template
                   </Button>
