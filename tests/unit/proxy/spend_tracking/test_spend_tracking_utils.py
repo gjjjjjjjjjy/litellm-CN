@@ -116,6 +116,26 @@ def test_get_logging_payload_maps_openai_cached_tokens_to_cache_read_input_token
     assert additional_usage_values["prompt_tokens_details"]["cached_tokens"] == 123
 
 
+@pytest.mark.parametrize("stream", [True, False])
+def test_get_logging_payload_only_keeps_a_first_token_time_for_streamed_calls(stream: bool) -> None:
+    start_time: Final = datetime.datetime(2026, 10, 23, 4, 0, 0, tzinfo=timezone.utc)
+    first_token_time: Final = start_time + datetime.timedelta(milliseconds=300)
+    end_time: Final = start_time + datetime.timedelta(milliseconds=1301)
+    payload: Final = get_logging_payload(
+        kwargs={
+            "model": "qwen3-max",
+            "stream": stream,
+            "completion_start_time": first_token_time if stream else end_time - datetime.timedelta(milliseconds=1),
+            "litellm_params": {"metadata": {"user_api_key": "test-key"}},
+        },
+        response_obj=litellm.ModelResponse(id="chatcmpl-test", choices=[], usage=litellm.Usage()),
+        start_time=start_time,
+        end_time=end_time,
+    )
+
+    assert payload["completionStartTime"] == (first_token_time if stream else end_time)
+
+
 class _HashingCache(litellm.Cache):
     def __init__(self) -> None:
         pass
