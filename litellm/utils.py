@@ -9136,6 +9136,13 @@ class ProviderConfigManager:
             )
 
             return get_dashscope_family_rerank_config(provider.value)
+        from litellm.llms.openai_like.json_loader import JSONProviderRegistry
+
+        json_provider: Final = JSONProviderRegistry.get(provider.value)
+        if json_provider is not None and "/v1/rerank" in json_provider.supported_endpoints:
+            from litellm.llms.openai_like.rerank.transformation import JSONProviderRerankConfig
+
+            return JSONProviderRerankConfig(json_provider)
         return litellm.CohereRerankConfig()
 
     @staticmethod

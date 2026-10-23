@@ -2138,18 +2138,18 @@
     },
     "moark": {
       "display_name": "Moark / Gitee AI (`moark`)",
-      "url": "https://www.moark.com/docs/FAQ",
+      "url": "https://moark.com/docs/products/apis",
       "endpoints": {
         "chat_completions": true,
         "messages": false,
         "responses": false,
-        "embeddings": false,
-        "image_generations": false,
-        "audio_transcriptions": false,
-        "audio_speech": false,
+        "embeddings": true,
+        "image_generations": true,
+        "audio_transcriptions": true,
+        "audio_speech": true,
         "moderations": false,
         "batches": false,
-        "rerank": false,
+        "rerank": true,
         "a2a": false
       }
     },

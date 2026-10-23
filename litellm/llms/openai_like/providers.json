@@ -199,7 +199,14 @@
     "base_url": "https://api.moark.com/v1",
     "api_key_env": "MOARK_API_KEY",
     "api_base_env": "MOARK_API_BASE",
-    "supported_endpoints": ["/v1/chat/completions"]
+    "supported_endpoints": [
+      "/v1/chat/completions",
+      "/v1/embeddings",
+      "/v1/rerank",
+      "/v1/images/generations",
+      "/v1/audio/speech",
+      "/v1/audio/transcriptions"
+    ]
   },
   "scx-ai": {
     "base_url": "https://api.scx.ai/v1",
