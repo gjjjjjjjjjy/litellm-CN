@@ -15,7 +15,7 @@ const health = {
       model_name: "GLM-5.3",
       model_id: "node-a",
       api_base: "https://ai.gitee.com/v1",
-      upstream_model: "openai/GLM-5.3",
+      upstream_model: "GLM-5.3",
       checks: 9,
       failures: 1,
       availability: 8 / 9,
@@ -25,10 +25,10 @@ const health = {
       last_checked_at: "2026-10-23T05:14:25Z",
     },
     {
-      model_name: "removed-model",
-      model_id: "node-gone",
-      api_base: "",
-      upstream_model: "",
+      model_name: "Qwen3.8-27B",
+      model_id: "node-b",
+      api_base: "https://api.moark.com/v1",
+      upstream_model: "Qwen3.8-27B",
       checks: 2,
       failures: 0,
       availability: 1,
@@ -71,9 +71,9 @@ describe("QosHealthPanel", () => {
     expect(glm.getByText("88.9%")).toBeInTheDocument();
     expect(glm.getByText("Timeout exceeded")).toBeInTheDocument();
 
-    const removed = within(rowContaining("node-gone"));
-    expect(removed.getByText("Healthy")).toBeInTheDocument();
-    expect(removed.getByText("100.0%")).toBeInTheDocument();
+    const qwen = within(rowContaining("https://api.moark.com/v1"));
+    expect(qwen.getByText("Healthy")).toBeInTheDocument();
+    expect(qwen.getByText("100.0%")).toBeInTheDocument();
 
     expect(screen.getByText("1.27 s / 2.08 s")).toBeInTheDocument();
   });

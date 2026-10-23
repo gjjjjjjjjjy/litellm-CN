@@ -202,7 +202,7 @@ class TestHealthEndpoint:
             response = _client(LitellmUserRoles.INTERNAL_USER).get("/qos/health")
         assert response.status_code == 403
 
-    def test_nodes_show_availability_and_their_deployment_target_and_probes_show_latency(self) -> None:
+    def test_current_nodes_show_availability_and_latency_and_removed_models_are_left_out(self) -> None:
         history = [
             {
                 "model_name": "GLM-5.3",
@@ -244,13 +244,23 @@ class TestHealthEndpoint:
                 "p95": 2075.2,
                 "p99": 4598.8,
                 "last_probe_at": "2026-10-23T05:28:41",
-            }
+            },
+            {
+                "model": "removed-model",
+                "api_base": "https://ai.gitee.com/v1/",
+                "probes": 12,
+                "p50": 900.0,
+                "p95": 1500.0,
+                "p99": 1800.0,
+                "last_probe_at": "2026-10-23T03:00:00",
+            },
         ]
         prisma = MagicMock()
         prisma.db.query_raw = AsyncMock(side_effect=[history, probes])
         deployment = MagicMock()
         deployment.litellm_params.api_base = "https://ai.gitee.com/v1"
         deployment.litellm_params.model = "openai/GLM-5.3"
+        deployment.litellm_params.custom_llm_provider = None
         default_base_deployment = MagicMock()
         default_base_deployment.litellm_params.api_base = None
         default_base_deployment.litellm_params.model = "Qwen3.8-27B"
@@ -258,6 +268,7 @@ class TestHealthEndpoint:
         deployments = {"node-a": deployment, "node-default-base": default_base_deployment}
         llm_router = MagicMock()
         llm_router.get_deployment.side_effect = deployments.get
+        llm_router.get_model_ids.return_value = list(deployments)
 
         with (
             patch("litellm.proxy.proxy_server.prisma_client", prisma),
@@ -266,15 +277,15 @@ class TestHealthEndpoint:
             response = _client(LitellmUserRoles.PROXY_ADMIN_VIEW_ONLY).get("/qos/health")
 
         assert response.status_code == 200
-        node, default_base, removed = response.json()["nodes"]
+        node, default_base = response.json()["nodes"]
         assert node["availability"] == pytest.approx(8 / 9)
-        assert (node["api_base"], node["upstream_model"]) == ("https://ai.gitee.com/v1", "openai/GLM-5.3")
+        assert (node["api_base"], node["upstream_model"]) == ("https://ai.gitee.com/v1", "GLM-5.3")
         assert (node["last_error"], node["last_failure_at"]) == ("Timeout exceeded", "2026-10-23T01:58:49Z")
         moark = JSONProviderRegistry.get("moark")
         assert moark is not None
         assert default_base["api_base"] == moark.base_url
-        assert (removed["api_base"], removed["upstream_model"]) == ("", "")
-        probe = response.json()["probes"][0]
+        (probe,) = response.json()["probes"]
+        assert (probe["model"], probe["probes"]) == ("GLM-5.3", 53)
         assert probe["latency_ms"] == {"p50": 1275.0, "p95": 2075.2, "p99": 4598.8}
         assert probe["last_probe_at"] == "2026-10-23T05:28:41Z"
 

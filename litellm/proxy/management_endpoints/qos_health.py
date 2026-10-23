@@ -1,4 +1,3 @@
-from collections.abc import Callable
 from datetime import datetime
 from typing import Final
 
@@ -77,17 +76,18 @@ class DeploymentTarget(LiteLLMBaseModel):
 HEALTH_HISTORY_ROWS: Final = TypeAdapter(list[HealthHistoryRow])
 HEALTH_PROBE_ROWS: Final = TypeAdapter(list[HealthProbeRow])
 
-_UNKNOWN_TARGET: Final = DeploymentTarget(api_base="", upstream_model="")
+
+def probe_key(api_base: str, upstream_model: str) -> tuple[str, str]:
+    """Health-check probes are logged without a model id, so they are matched to a node by base URL and model."""
+    return api_base.rstrip("/"), upstream_model
 
 
-def health_node(row: HealthHistoryRow, target_of: Callable[[str], DeploymentTarget | None]) -> QosHealthNode:
-    target: Final = target_of(row.model_id) if row.model_id != "" else None
-    resolved: Final = _UNKNOWN_TARGET if target is None else target
+def health_node(row: HealthHistoryRow, target: DeploymentTarget) -> QosHealthNode:
     return QosHealthNode(
         model_name=row.model_name,
         model_id=row.model_id,
-        api_base=resolved.api_base,
-        upstream_model=resolved.upstream_model,
+        api_base=target.api_base,
+        upstream_model=target.upstream_model,
         checks=row.checks,
         failures=row.failures,
         availability=(row.checks - row.failures) / row.checks,

@@ -128,5 +128,3 @@ export const checkBenchmarkPlan = (input: BenchmarkFormInput): BenchmarkPlanChec
 export type QosHealthResponse = components["schemas"]["QosHealthResponse"];
 export type QosHealthNode = components["schemas"]["QosHealthNode"];
 export type QosHealthProbe = components["schemas"]["QosHealthProbe"];
-
-export const healthNodeLabel = (node: QosHealthNode): string => (node.api_base !== "" ? node.api_base : node.model_id);
