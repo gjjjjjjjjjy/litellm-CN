@@ -26,6 +26,7 @@ import {
   type QosBenchmarkStarted,
   type QosTargetDeployment,
   type TargetChoice,
+  vendorName,
 } from "./qosData";
 
 interface StartBenchmarkDialogProps {
@@ -40,7 +41,7 @@ const BALANCED: TargetChoice = { kind: "balanced" };
 const NO_DEPLOYMENTS: readonly QosTargetDeployment[] = [];
 
 const providerSummary = (deployments: readonly QosTargetDeployment[]): string =>
-  [...new Set(deployments.map((deployment) => deployment.provider))].join(", ");
+  [...new Set(deployments.map((deployment) => vendorName(deployment.vendor)))].join(", ");
 
 const targetOptions = (deployments: readonly QosTargetDeployment[]): { value: string; label: string }[] => [
   { value: targetChoiceValue(BALANCED), label: "All providers, load-balanced" },

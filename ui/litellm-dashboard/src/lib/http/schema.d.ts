@@ -42942,6 +42942,11 @@ export interface components {
             streamed_requests: number;
             tpot_ms: components["schemas"]["QosPercentiles"];
             ttft_ms: components["schemas"]["QosPercentiles"];
+            /**
+             * Vendor
+             * @description Who serves the model: the provider, or the endpoint host for OpenAI-compatible ones
+             */
+            vendor: string;
         };
         /** QosBenchmarkDetail */
         QosBenchmarkDetail: {
@@ -43095,6 +43100,11 @@ export interface components {
             streamed_requests: number;
             tpot_ms: components["schemas"]["QosPercentiles"];
             ttft_ms: components["schemas"]["QosPercentiles"];
+            /**
+             * Vendor
+             * @description Who serves the model: the provider, or the endpoint host for OpenAI-compatible ones
+             */
+            vendor: string;
         };
         /** QosHealthNode */
         QosHealthNode: {
@@ -43123,6 +43133,8 @@ export interface components {
             model_name: string;
             /** Upstream Model */
             upstream_model: string;
+            /** Vendor */
+            vendor: string;
         };
         /** QosHealthProbe */
         QosHealthProbe: {
@@ -43249,6 +43261,8 @@ export interface components {
             provider: string;
             /** Upstream Model */
             upstream_model: string;
+            /** Vendor */
+            vendor: string;
         };
         /** QosTargetModel */
         QosTargetModel: {

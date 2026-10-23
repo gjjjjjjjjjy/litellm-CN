@@ -54,23 +54,37 @@ const pastRun = {
 };
 
 const qwenProviders = [
-  { model_id: "node-moark", provider: "moark", api_base: "https://api.moark.com/v1", upstream_model: "Qwen3-Max" },
-  { model_id: "node-gitee", provider: "openai", api_base: "https://ai.gitee.com/v1", upstream_model: "Qwen3-Max" },
+  {
+    model_id: "node-moark",
+    provider: "moark",
+    vendor: "moark",
+    api_base: "https://api.moark.com/v1",
+    upstream_model: "Qwen3-Max",
+  },
+  {
+    model_id: "node-gitee",
+    provider: "openai",
+    vendor: "ai.gitee.com",
+    api_base: "https://ai.gitee.com/v1",
+    upstream_model: "Qwen3-Max",
+  },
 ];
 
 interface ProviderLevel {
   readonly model_id: string;
+  readonly vendor: string;
   readonly api_base: string;
   readonly ttft: number;
   readonly crosstalk: number;
   readonly sameDeployment: number;
 }
 
-const providerLevel = ({ model_id, api_base, ttft, crosstalk, sameDeployment }: ProviderLevel) => ({
+const providerLevel = ({ model_id, vendor, api_base, ttft, crosstalk, sameDeployment }: ProviderLevel) => ({
   ...metrics,
   model_id,
   model: "Qwen3-Max",
   api_base,
+  vendor,
   concurrency: 1,
   ttft_ms: { p50: ttft, p95: ttft * 2, p99: ttft * 2 },
   response_checks: { checked: 4, crosstalk, marker_missing: 0 },
@@ -79,6 +93,7 @@ const providerLevel = ({ model_id, api_base, ttft, crosstalk, sameDeployment }: 
 
 const crossedGitee: ProviderLevel = {
   model_id: "node-gitee",
+  vendor: "ai.gitee.com",
   api_base: "https://ai.gitee.com/v1",
   ttft: 900,
   crosstalk: 2,
@@ -86,6 +101,7 @@ const crossedGitee: ProviderLevel = {
 };
 const busyMoark: ProviderLevel = {
   model_id: "node-moark",
+  vendor: "moark",
   api_base: "https://api.moark.com/v1",
   ttft: 300,
   crosstalk: 0,
@@ -95,13 +111,16 @@ const busyMoark: ProviderLevel = {
 const singleProviderDetail = {
   run_id: started.run_id,
   levels: [{ ...metrics, concurrency: 4, requests: 8, interference: quiet }],
-  deployments: [{ ...metrics, model_id: "node-a", model: "moark/qwen3.8-max", api_base: "https://node-a/v1" }],
+  deployments: [
+    { ...metrics, model_id: "node-a", model: "moark/qwen3.8-max", api_base: "https://node-a/v1", vendor: "moark" },
+  ],
   deployment_levels: [
     {
       ...metrics,
       model_id: "node-a",
       model: "moark/qwen3.8-max",
       api_base: "https://node-a/v1",
+      vendor: "moark",
       concurrency: 4,
       interference: quiet,
     },
@@ -183,7 +202,10 @@ describe("QoS benchmarks", () => {
     renderWithProviders(<QosView accessToken="token" />, { searchParams: { benchmark: "qwen3-max" } });
 
     await user.click(await screen.findByLabelText("Provider"));
-    expect(await screen.findByRole("option", { name: "moark · https://api.moark.com/v1" })).toBeInTheDocument();
+    expect(
+      await screen.findByRole("option", { name: "Moark (Gitee AI) · https://api.moark.com/v1" }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "ai.gitee.com · https://ai.gitee.com/v1" })).toBeInTheDocument();
     await user.click(screen.getByRole("option", { name: "Compare all 2 providers" }));
     fireEvent.change(screen.getByLabelText("Concurrency levels"), { target: { value: "1" } });
     fireEvent.change(screen.getByLabelText("Requests per worker"), { target: { value: "4" } });
@@ -202,7 +224,9 @@ describe("QoS benchmarks", () => {
     expect(screen.getByText("300 ms / 600 ms")).toBeInTheDocument();
     expect(screen.getByText("900 ms / 1.80 s")).toBeInTheDocument();
     expect(within(rowContaining("https://ai.gitee.com/v1")).getByText("2 cross-talk")).toBeInTheDocument();
+    expect(within(rowContaining("https://ai.gitee.com/v1")).getByText("ai.gitee.com")).toBeInTheDocument();
     const moarkRow = within(rowContaining("https://api.moark.com/v1"));
+    expect(moarkRow.getByText("Moark (Gitee AI)")).toBeInTheDocument();
     expect(moarkRow.getByText("4 passed")).toBeInTheDocument();
     expect(moarkRow.getByText("5")).toBeInTheDocument();
   });

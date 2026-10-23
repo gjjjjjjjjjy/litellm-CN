@@ -14,6 +14,7 @@ const health = {
     {
       model_name: "GLM-5.3",
       model_id: "node-a",
+      vendor: "ai.gitee.com",
       api_base: "https://ai.gitee.com/v1",
       upstream_model: "GLM-5.3",
       checks: 9,
@@ -27,6 +28,7 @@ const health = {
     {
       model_name: "Qwen3.8-27B",
       model_id: "node-b",
+      vendor: "moark",
       api_base: "https://api.moark.com/v1",
       upstream_model: "Qwen3.8-27B",
       checks: 2,
@@ -70,6 +72,8 @@ describe("QosHealthPanel", () => {
     expect(glm.getByText("Unhealthy")).toBeInTheDocument();
     expect(glm.getByText("88.9%")).toBeInTheDocument();
     expect(glm.getByText("Timeout exceeded")).toBeInTheDocument();
+    expect(glm.getByText("ai.gitee.com")).toBeInTheDocument();
+    expect(within(rowContaining("https://api.moark.com/v1")).getByText("Moark (Gitee AI)")).toBeInTheDocument();
 
     const qwen = within(rowContaining("https://api.moark.com/v1"));
     expect(qwen.getByText("Healthy")).toBeInTheDocument();

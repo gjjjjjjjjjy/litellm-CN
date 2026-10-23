@@ -33,6 +33,7 @@ def _row(**overrides: object) -> dict[str, object]:
         "model_id": "node-a",
         "model": "moark/qwen3.8-max",
         "api_base": "https://api.moark.com/v1",
+        "custom_llm_provider": "moark",
         "requests": 40,
         "failed_requests": 2,
         "streamed_requests": 38,
@@ -163,7 +164,11 @@ class TestQosSummaryEndpoint:
         assert group["response_checks"] == {"checked": 40, "crosstalk": 0, "marker_missing": 0}
         assert "model_id" not in group
         deployment: Final = body["deployments"][0]
-        assert (deployment["model_id"], deployment["api_base"]) == ("node-a", "https://api.moark.com/v1")
+        assert (deployment["model_id"], deployment["api_base"], deployment["vendor"]) == (
+            "node-a",
+            "https://api.moark.com/v1",
+            "moark",
+        )
         assert deployment["tpot_ms"]["p95"] == 35.0
         assert body["tag"] == "qos-run-1"
         assert body["start_time"] == "2026-10-22T10:00:00Z"
@@ -326,12 +331,14 @@ class TestBenchmarkEndpoints:
                 {
                     "model_id": "node-moark",
                     "provider": "moark",
+                    "vendor": "moark",
                     "api_base": moark.base_url,
                     "upstream_model": "Qwen3-Max",
                 },
                 {
                     "model_id": "node-gitee",
                     "provider": "openai",
+                    "vendor": "ai.gitee.com",
                     "api_base": "https://ai.gitee.com/v1",
                     "upstream_model": "Qwen3-Max",
                 },
@@ -422,11 +429,15 @@ class TestHealthEndpoint:
         assert response.status_code == 200
         node, default_base = response.json()["nodes"]
         assert node["availability"] == pytest.approx(8 / 9)
-        assert (node["api_base"], node["upstream_model"]) == ("https://ai.gitee.com/v1", "GLM-5.3")
+        assert (node["vendor"], node["api_base"], node["upstream_model"]) == (
+            "ai.gitee.com",
+            "https://ai.gitee.com/v1",
+            "GLM-5.3",
+        )
         assert (node["last_error"], node["last_failure_at"]) == ("Timeout exceeded", "2026-10-23T01:58:49Z")
         moark = JSONProviderRegistry.get("moark")
         assert moark is not None
-        assert default_base["api_base"] == moark.base_url
+        assert (default_base["vendor"], default_base["api_base"]) == ("moark", moark.base_url)
         (probe,) = response.json()["probes"]
         assert (probe["model"], probe["probes"]) == ("GLM-5.3", 53)
         assert probe["latency_ms"] == {"p50": 1275.0, "p95": 2075.2, "p99": 4598.8}
