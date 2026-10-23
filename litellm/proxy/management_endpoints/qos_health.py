@@ -69,6 +69,7 @@ class HealthProbeRow(LiteLLMBaseModel):
 class DeploymentTarget(LiteLLMBaseModel):
     model_config = ConfigDict(frozen=True)
 
+    provider: str
     api_base: str
     upstream_model: str
 

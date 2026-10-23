@@ -7,17 +7,20 @@ import {
   type QosBenchmarkRequest,
   type QosBenchmarkRun,
   type QosBenchmarkStarted,
+  type QosTargetModel,
 } from "@/app/(dashboard)/qos/_components/qosData";
 import { createQueryKeys } from "../common/queryKeysFactory";
 
 const benchmarkKeys = createQueryKeys("qosBenchmarks");
 const POLL_MS = 3000;
 
-export const useQosBenchmarkRuns = (accessToken: string | null, polling: boolean): UseQueryResult<QosBenchmarkRun[]> => {
+export const useQosBenchmarkRuns = (
+  accessToken: string | null,
+  polling: boolean,
+): UseQueryResult<QosBenchmarkRun[]> => {
   const options = {
     queryKey: benchmarkKeys.lists(),
-    queryFn: async () =>
-      (await apiClient.get<{ runs: QosBenchmarkRun[] }>("/qos/benchmarks", { accessToken })).runs,
+    queryFn: async () => (await apiClient.get<{ runs: QosBenchmarkRun[] }>("/qos/benchmarks", { accessToken })).runs,
     enabled: Boolean(accessToken),
     refetchInterval: polling ? POLL_MS : false,
     retry: false,
@@ -45,6 +48,16 @@ export const useQosBenchmarkDetail = (
     retry: false,
   } as const;
   return useQuery<QosBenchmarkDetail>(options);
+};
+
+export const useQosTargets = (accessToken: string | null): UseQueryResult<QosTargetModel[]> => {
+  const options = {
+    queryKey: [...benchmarkKeys.all, "targets"],
+    queryFn: async () => (await apiClient.get<{ models: QosTargetModel[] }>("/qos/targets", { accessToken })).models,
+    enabled: Boolean(accessToken),
+    retry: false,
+  } as const;
+  return useQuery<QosTargetModel[]>(options);
 };
 
 export const useStartQosBenchmark = (accessToken: string | null) => {

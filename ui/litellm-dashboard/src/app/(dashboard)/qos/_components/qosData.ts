@@ -55,6 +55,51 @@ export type QosBenchmarkRun = components["schemas"]["QosBenchmarkRun"];
 export type QosBenchmarkDetail = components["schemas"]["QosBenchmarkDetail"];
 export type QosBenchmarkLevel = components["schemas"]["QosBenchmarkLevel"];
 export type QosBenchmarkDeleted = components["schemas"]["QosBenchmarkDeleted"];
+export type QosBenchmarkDeploymentLevel = components["schemas"]["QosBenchmarkDeploymentLevel"];
+export type QosTargetModel = components["schemas"]["QosTargetModel"];
+export type QosTargetDeployment = components["schemas"]["QosTargetDeployment"];
+
+export const providerLabel = (deployment: QosTargetDeployment): string =>
+  deployment.api_base === deployment.provider ? deployment.provider : `${deployment.provider} · ${deployment.api_base}`;
+
+export type TargetChoice =
+  | { readonly kind: "balanced" }
+  | { readonly kind: "compare" }
+  | { readonly kind: "deployment"; readonly modelId: string };
+
+const DEPLOYMENT_CHOICE_PREFIX = "deployment:";
+
+export const targetChoiceValue = (choice: TargetChoice): string => {
+  switch (choice.kind) {
+    case "balanced":
+    case "compare":
+      return choice.kind;
+    case "deployment":
+      return `${DEPLOYMENT_CHOICE_PREFIX}${choice.modelId}`;
+  }
+};
+
+export const parseTargetChoice = (value: string): TargetChoice => {
+  if (value === "balanced" || value === "compare") return { kind: value };
+  if (value.startsWith(DEPLOYMENT_CHOICE_PREFIX)) {
+    return { kind: "deployment", modelId: value.slice(DEPLOYMENT_CHOICE_PREFIX.length) };
+  }
+  throw new Error(`Unknown benchmark target ${value}`);
+};
+
+export const deploymentIdsFor = (choice: TargetChoice, deployments: readonly QosTargetDeployment[]): string[] => {
+  switch (choice.kind) {
+    case "balanced":
+      return [];
+    case "compare":
+      return deployments.map((deployment) => deployment.model_id);
+    case "deployment":
+      return [choice.modelId];
+  }
+};
+
+export const comparesProviders = (detail: QosBenchmarkDetail): boolean =>
+  new Set(detail.deployment_levels.map((level) => level.model_id)).size > 1;
 
 export const MAX_CONCURRENCY = 256;
 export const MAX_CONCURRENCY_LEVELS = 8;
@@ -86,6 +131,7 @@ export const recordedRequests = (detail: QosBenchmarkDetail): number =>
 
 export interface BenchmarkFormInput {
   readonly model: string;
+  readonly deploymentIds: readonly string[];
   readonly concurrency: string;
   readonly requestsPerWorker: string;
   readonly maxTokens: string;
@@ -110,7 +156,8 @@ export const checkBenchmarkPlan = (input: BenchmarkFormInput): BenchmarkPlanChec
   if (requestsPerWorker === null) return { ok: false, message: "Requests per worker must be from 1 to 50" };
   const maxTokens = wholeNumberIn(input.maxTokens, 1, 8192);
   if (maxTokens === null) return { ok: false, message: "Max output tokens must be from 1 to 8192" };
-  const total = plannedRequests(concurrency.levels, requestsPerWorker);
+  const targets = input.deploymentIds.length === 0 ? 1 : input.deploymentIds.length;
+  const total = plannedRequests(concurrency.levels, requestsPerWorker) * targets;
   if (total > MAX_BENCHMARK_REQUESTS)
     return { ok: false, message: `This plan sends ${total} requests; the limit is ${MAX_BENCHMARK_REQUESTS}` };
   return {
@@ -118,6 +165,7 @@ export const checkBenchmarkPlan = (input: BenchmarkFormInput): BenchmarkPlanChec
     total,
     plan: {
       model_group: input.model,
+      deployment_ids: [...input.deploymentIds],
       concurrency: [...concurrency.levels],
       requests_per_worker: requestsPerWorker,
       max_tokens: maxTokens,

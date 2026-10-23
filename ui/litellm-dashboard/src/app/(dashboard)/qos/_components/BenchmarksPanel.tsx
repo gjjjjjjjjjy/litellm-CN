@@ -27,8 +27,9 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { extractErrorMessage } from "@/utils/errorUtils";
 import { isProxyAdminRole } from "@/utils/roles";
-import { deploymentColumns, levelColumns } from "./QosColumns";
+import { deploymentColumns, deploymentLevelColumns, levelColumns } from "./QosColumns";
 import {
+  comparesProviders,
   formatRatio,
   recordedRequests,
   type QosBenchmarkDetail,
@@ -41,10 +42,18 @@ const runSuccessRate = (run: QosBenchmarkRun): number | null =>
 
 const runColumns: ColumnDef<QosBenchmarkRun>[] = [
   { id: "started_at", header: "Started", cell: ({ row }) => new Date(row.original.started_at).toLocaleString() },
-  { id: "model_group", header: "Model", cell: ({ row }) => <span className="font-medium">{row.original.model_group}</span> },
+  {
+    id: "model_group",
+    header: "Model",
+    cell: ({ row }) => <span className="font-medium">{row.original.model_group}</span>,
+  },
   { id: "requests", header: "Requests", cell: ({ row }) => row.original.requests },
   { id: "success_rate", header: "Success rate", cell: ({ row }) => formatRatio(runSuccessRate(row.original)) },
-  { id: "run_id", header: "Run ID", cell: ({ row }) => <span className="font-mono text-xs text-muted-foreground">{row.original.run_id}</span> },
+  {
+    id: "run_id",
+    header: "Run ID",
+    cell: ({ row }) => <span className="font-mono text-xs text-muted-foreground">{row.original.run_id}</span>,
+  },
 ];
 
 const deleteColumn = (
@@ -168,13 +177,25 @@ export default function BenchmarksPanel({
           </CardHeader>
           <CardContent className="flex flex-col gap-6">
             {expectedTotal !== null && <RunProgress detail={detail} total={expectedTotal} />}
-            <DataTable
-              data={detail === undefined ? [] : [...detail.levels]}
-              columns={levelColumns}
-              getRowId={(level) => String(level.concurrency)}
-              isLoading={detailQuery.isLoading}
-              noDataMessage="No requests recorded for this run yet"
-            />
+            {detail !== undefined && comparesProviders(detail) ? (
+              <div className="flex flex-col gap-2">
+                <h3 className="text-base font-semibold">Provider comparison</h3>
+                <DataTable
+                  data={[...detail.deployment_levels]}
+                  columns={deploymentLevelColumns}
+                  getRowId={(level) => `${level.concurrency}-${level.model_id}`}
+                  noDataMessage="No requests recorded for this run yet"
+                />
+              </div>
+            ) : (
+              <DataTable
+                data={detail === undefined ? [] : [...detail.levels]}
+                columns={levelColumns}
+                getRowId={(level) => String(level.concurrency)}
+                isLoading={detailQuery.isLoading}
+                noDataMessage="No requests recorded for this run yet"
+              />
+            )}
             <DataTable
               data={detail === undefined ? [] : [...detail.deployments]}
               columns={deploymentColumns}
