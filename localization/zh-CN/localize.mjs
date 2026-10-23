@@ -26,13 +26,30 @@ const sourceExtensions = new Set([".tsx", ".ts", ".jsx", ".js"]);
 const ignoredDirectories = new Set(["node_modules", ".next", "out", "__tests__", "__mocks__"]);
 const terminology = JSON.parse(fs.readFileSync(new URL("./terminology.json", import.meta.url), "utf8"));
 
+const termBoundary = "\u0000";
+const wordCharacter = /[\p{L}\p{N}]/u;
+
 export function preserveTerminology(original, translation) {
   let result = translation;
   for (const term of terminology) {
     if (!new RegExp(term.source, "i").test(original)) continue;
-    for (const wording of term.translations) result = result.replaceAll(wording, term.preferred);
+    for (const wording of term.translations) result = result.replaceAll(wording, `${termBoundary}${term.preferred}${termBoundary}`);
   }
-  return result;
+  return result.replace(/\u0000+/g, (marker, offset, text) => {
+    const before = text[offset - 1];
+    const after = text[offset + marker.length];
+    return before !== undefined && after !== undefined && wordCharacter.test(before) && wordCharacter.test(after) ? " " : "";
+  });
+}
+
+const namedEntities = new Map([["quot", '"'], ["apos", "'"], ["amp", "&"], ["lt", "<"], ["gt", ">"], ["nbsp", " "]]);
+
+export function decodeJsxEntities(text) {
+  return text.replace(/&(?:#x([0-9a-fA-F]+)|#(\d+)|([a-zA-Z]+));/g, (entity, hex, decimal, name) => {
+    if (hex !== undefined) return String.fromCodePoint(Number.parseInt(hex, 16));
+    if (decimal !== undefined) return String.fromCodePoint(Number.parseInt(decimal, 10));
+    return namedEntities.has(name) ? namedEntities.get(name) : entity;
+  });
 }
 
 export function normalize(text) {
@@ -192,6 +209,15 @@ function preserveSpacing(original, translated) {
   return leading + translated + trailing;
 }
 
+function preserveJsxSpacing(original, translated) {
+  const lines = original.split(/\r\n|\r|\n/);
+  const first = lines[0];
+  const last = lines[lines.length - 1];
+  const leading = first.trim() !== "" && /^[ \t]/.test(first) ? " " : "";
+  const trailing = last.trim() !== "" && /[ \t]$/.test(last) ? " " : "";
+  return leading + translated + trailing;
+}
+
 export function translateSource(ts, file, source, dictionary) {
   const { sourceFile, candidates } = inspectSource(ts, file, source);
   const edits = [];
@@ -218,17 +244,19 @@ export function translateSource(ts, file, source, dictionary) {
     if (typeof value !== "string" || value.trim().length === 0) throw new Error(`Invalid Chinese translation: ${text}`);
     const target = preserveTerminology(text, value);
     if (target === text) continue;
-    const spaced = preserveSpacing(node.text, target);
     if (ts.isJsxText(node)) {
+      const spaced = preserveJsxSpacing(node.text, decodeJsxEntities(target));
       edits.push({ start: node.pos, end: node.end, value: `{${JSON.stringify(spaced)}}` });
+    } else if (ts.isStringLiteral(node) && ts.isJsxAttribute(node.parent)) {
+      const spaced = preserveSpacing(node.text, decodeJsxEntities(target));
+      edits.push({ start: node.getStart(sourceFile), end: node.end, value: `{${JSON.stringify(spaced)}}` });
     } else if (ts.isTemplateHead(node) || ts.isTemplateMiddle(node) || ts.isTemplateTail(node)) {
       const endOffset = ts.isTemplateTail(node) ? 1 : 2;
+      const spaced = preserveSpacing(node.text, target);
       const escaped = spaced.replace(/\\/g, "\\\\").replace(/`/g, "\\`").replace(/\$\{/g, "\\${");
       edits.push({ start: node.getStart(sourceFile) + 1, end: node.end - endOffset, value: escaped });
-    } else if (ts.isStringLiteral(node) && ts.isJsxAttribute(node.parent)) {
-      edits.push({ start: node.getStart(sourceFile), end: node.end, value: `{${JSON.stringify(spaced)}}` });
     } else {
-      edits.push({ start: node.getStart(sourceFile), end: node.end, value: JSON.stringify(spaced) });
+      edits.push({ start: node.getStart(sourceFile), end: node.end, value: JSON.stringify(preserveSpacing(node.text, target)) });
     }
     translated += 1;
   }

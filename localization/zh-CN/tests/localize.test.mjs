@@ -116,8 +116,9 @@ test("属性类型内的 Pick 键名和索引访问保持类型系统原值", ()
 });
 
 test("AI 术语按用户要求保持英文，普通中文界面词保持中文", () => {
-  assert.equal(preserveTerminology("Input Tokens and Prompt Embeddings", "输入令牌和提示词嵌入向量"), "输入Token和PromptEmbedding");
-  assert.equal(preserveTerminology("Reasoning Guardrail", "推理防护规则"), "ReasoningGuardrail");
+  assert.equal(preserveTerminology("Input Tokens and Prompt Embeddings", "输入令牌和提示词嵌入向量"), "输入 Token 和 Prompt Embedding");
+  assert.equal(preserveTerminology("Reasoning Guardrail", "推理防护规则"), "Reasoning Guardrail");
+  assert.equal(preserveTerminology("Tokens: 10", "令牌：10"), "Token：10");
   assert.equal(preserveTerminology("Save changes", "保存更改"), "保存更改");
 });
 
@@ -134,4 +135,22 @@ test("指标名称字典翻译展示值，业务索引变量保持原值", () =>
   assert.match(result.source,/spend:"费用"/);
   assert.match(result.source,/noun="investigation"/);
   assert.match(result.source,/metric:"spend"/);
+});
+
+test("多行 JSX 文本只保留 React 实际渲染的首尾空格", () => {
+  const source = `<span className="flex">
+        Public Model Name
+        <Tooltip /></span>; <p><b>Example:</b> If you name it <code>x</code></p>`;
+  const result = translateSource(ts, "spacing.tsx", source, { "Public Model Name": "公开模型名称", "If you name it": "如果命名为" });
+  assert.match(result.source, /<span className="flex">\{"公开模型名称"\}<Tooltip/);
+  assert.match(result.source, /<\/b>\{" 如果命名为 "\}<code>/);
+});
+
+test("JSX 文本和属性中的 HTML 实体译为实际字符，避免页面显示实体原文", () => {
+  const source = '<p title="Say &quot;hi&quot;">Use &quot;team-*&quot; &amp; more</p>';
+  const result = translateSource(ts, "entity.tsx", source, {
+    'Say &quot;hi&quot;': "输入 &quot;hi&quot;", "Use &quot;team-*&quot; &amp; more": "使用 &quot;team-*&quot; &amp; 更多",
+  });
+  assert.match(result.source, /title=\{"输入 \\"hi\\""\}/);
+  assert.match(result.source, /\{"使用 \\"team-\*\\" & 更多"\}/);
 });

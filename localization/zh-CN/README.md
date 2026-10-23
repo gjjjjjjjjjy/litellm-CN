@@ -35,7 +35,7 @@ HTTP_PROXY=http://host.docker.internal:7897 \
 
 `terminology.json` 保留 Token、Prompt、Embedding、Completion、Reasoning、Agent 等术语。服务商名称、模型 ID、API 字段、表单取值、URL、代码示例和用户实际数据保持原值。后端动态内容与远程文章沿用上游内容
 
-词库初稿使用离线翻译模型生成，常用页面和已发现误译经过人工修订。低频功能说明可继续在 `overrides.json` 中校对
+词库初稿使用离线翻译模型生成，界面在用的全部文案已按源码上下文逐条校对，修正误译、残留英文、半角标点和多余空格。译文中不要写 `&quot;` 等 HTML 实体，直接使用实际字符。后续发现的问题可继续在 `overrides.json` 中修订
 
 构建生成 `translation-report.json`，其中 `missing` 列出上游新增或改写的文案及源文件位置。将译文添加到 `overrides.json` 后重新构建。报告属于本地生成文件，由 Git 忽略
 
