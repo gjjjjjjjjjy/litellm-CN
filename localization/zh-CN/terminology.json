@@ -2,7 +2,7 @@
   {"source":"\\btokens?\\b", "preferred":"Token", "translations":["令牌","代币","词元","标记符"]},
   {"source":"\\bprompts?\\b", "preferred":"Prompt", "translations":["提示词","提示语","提示符"]},
   {"source":"\\bembeddings?\\b", "preferred":"Embedding", "translations":["嵌入向量","嵌入"]},
-  {"source":"\\bcompletions?\\b", "preferred":"Completion", "translations":["补全","完成"]},
+  {"source":"\\bcompletions?\\b", "preferred":"Completion", "translations":["补全"]},
   {"source":"\\breasoning\\b", "preferred":"Reasoning", "translations":["推理"]},
   {"source":"\\bagents?\\b|\\bagentic\\b", "preferred":"Agent", "translations":["智能体"]},
   {"source":"\\bguardrails?\\b", "preferred":"Guardrail", "translations":["防护规则","护栏","防护栏"]},

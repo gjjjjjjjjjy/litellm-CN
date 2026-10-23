@@ -2,205 +2,18 @@ import fs from "node:fs";
 import path from "node:path";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
+import { decodeJsxEntities, inspectSource, parseTranslation } from "./units.mjs";
 
-const displayProperties = new Set([
-  "label", "title", "description", "placeholder", "header", "heading", "subheading",
-  "tooltip", "helpText", "helperText", "hint", "emptyText", "emptyMessage", "message",
-  "errorMessage", "successMessage", "buttonText", "confirmText", "cancelText", "okText",
-  "loadingText", "searchPlaceholder", "aria-label", "aria-description", "alt", "caption",
-  "text", "children", "content", "summary", "subtitle", "noResultsText", "triggerLabel",
-  "emptyLabel", "descriptionText", "tooltipText", "actionLabel", "loadingMessage",
-  "groupLabel", "shortLabel", "displayName",
-  "showForAdmin", "showForNonAdmin",
-  "noDataMessage",
-]);
-const machineProperties = new Set([
-  "value", "key", "id", "name", "type", "role", "href", "src", "className", "class",
-  "htmlFor", "accessorKey", "accessor", "dataIndex", "field", "path", "endpoint", "url",
-  "method", "model", "model_name", "api_base", "api_key", "variant", "size", "target",
-  "rel", "testId", "data-testid", "data-slot", "align", "side", "format", "language",
-]);
-const messageMethods = new Set(["error", "success", "warning", "info", "loading", "message", "fromError"]);
-const displayVariable = /(?:labels?|titles?|descriptions?|placeholders?|hints?|tooltips?|messages?|headings?|captions?|emptyText|buttonText|subtitles?|displayName|helpText|display)$/i;
+export { decodeJsxEntities, jsxTextValue, normalize } from "./units.mjs";
+
 const sourceExtensions = new Set([".tsx", ".ts", ".jsx", ".js"]);
 const ignoredDirectories = new Set(["node_modules", ".next", "out", "__tests__", "__mocks__"]);
 const terminology = JSON.parse(fs.readFileSync(new URL("./terminology.json", import.meta.url), "utf8"));
 
-const termBoundary = "\u0000";
-const wordCharacter = /[\p{L}\p{N}]/u;
-
-export function preserveTerminology(original, translation) {
-  let result = translation;
-  for (const term of terminology) {
-    if (!new RegExp(term.source, "i").test(original)) continue;
-    for (const wording of term.translations) result = result.replaceAll(wording, `${termBoundary}${term.preferred}${termBoundary}`);
-  }
-  return result.replace(/\u0000+/g, (marker, offset, text) => {
-    const before = text[offset - 1];
-    const after = text[offset + marker.length];
-    return before !== undefined && after !== undefined && wordCharacter.test(before) && wordCharacter.test(after) ? " " : "";
-  });
-}
-
-const namedEntities = new Map([["quot", '"'], ["apos", "'"], ["amp", "&"], ["lt", "<"], ["gt", ">"], ["nbsp", " "]]);
-
-export function decodeJsxEntities(text) {
-  return text.replace(/&(?:#x([0-9a-fA-F]+)|#(\d+)|([a-zA-Z]+));/g, (entity, hex, decimal, name) => {
-    if (hex !== undefined) return String.fromCodePoint(Number.parseInt(hex, 16));
-    if (decimal !== undefined) return String.fromCodePoint(Number.parseInt(decimal, 10));
-    return namedEntities.has(name) ? namedEntities.get(name) : entity;
-  });
-}
-
-export function normalize(text) {
-  return text.replace(/\s+/g, " ").trim();
-}
-
-function propertyName(ts, node) {
-  if (ts.isIdentifier(node) || ts.isStringLiteral(node)) return node.text;
-  return "";
-}
-
-function isCode(text) {
-  if (/[\u3400-\u9fff]/.test(text)) return true;
-  if (!/[a-zA-Z]/.test(text)) return true;
-  if (/^(?:https?:|data:|\/|\.|#|--)/.test(text)) return true;
-  if (/^\$\{|^\^|^[A-Z][A-Z0-9_]*=|^[a-z][a-z0-9+.-]*:\S/.test(text)) return true;
-  if (/^[a-zA-Z\d_$.-]+(?:_[a-zA-Z\d_$.-]+)+$/.test(text)) return true;
-  if (/^[A-Za-z\d_.+-]*\d[A-Za-z\d_.+-]*$/.test(text)) return true;
-  if (/^[a-zA-Z\d@_-]+\/[a-zA-Z\d@_/*.-]+$/.test(text)) return true;
-  if (/^(?:curl\s|import\s|from\s|SELECT\s|const\s|export\s|npm\s|pip\s|docker\s|pnpm\s)/.test(text)) return true;
-  if (/^@keyframes\b|(?:^|[\s'"])(?:client|resolver|response|result|request|config)\s*=/.test(text)) return true;
-  if (/^\s*[\[{][\s\S]*[\]}]\s*$/.test(text)) return true;
-  if (/^(?:[A-Za-z]+\.)+[A-Za-z]+$/.test(text)) return true;
-  if (/^#[0-9a-fA-F]{3,8}$/.test(text)) return true;
-  return false;
-}
-
-function isComparison(ts, node) {
-  if (!ts.isBinaryExpression(node)) return false;
-  return new Set([
-    ts.SyntaxKind.EqualsEqualsToken, ts.SyntaxKind.EqualsEqualsEqualsToken,
-    ts.SyntaxKind.ExclamationEqualsToken, ts.SyntaxKind.ExclamationEqualsEqualsToken,
-    ts.SyntaxKind.InKeyword, ts.SyntaxKind.InstanceOfKeyword,
-  ]).has(node.operatorToken.kind);
-}
-
-function isVisible(ts, node) {
-  for (let owner = node.parent; owner; owner = owner.parent) {
-    if (ts.isJsxElement(owner) && new Set(["code", "pre", "style", "script", "SyntaxHighlighter", "CodeBlock", "Code", "CodeEditor"]).has(owner.openingElement.tagName.getText())) return false;
-  }
-  if (ts.isJsxText(node)) return true;
-  for (let owner = node.parent; owner; owner = owner.parent) {
-    if (ts.isJsxElement(owner) || ts.isJsxSelfClosingElement(owner)) break;
-    if (ts.isVariableDeclaration(owner) && ts.isIdentifier(owner.name)
-      && /(?:payload|request|requestBody|requestData|body|response|Variants|Sizes|Classes|Colors|Styles|Attributes)$/i.test(owner.name.text)) return false;
-    if (ts.isCallExpression(owner) && owner.expression.getText() === "JSON.stringify") return false;
-  }
-  let current = node;
-  while (current.parent) {
-    const parent = current.parent;
-    if (ts.isParameter(parent)) return parent.initializer === current && ts.isIdentifier(parent.name)
-      && displayProperties.has(parent.name.text);
-    if (ts.isBindingElement(parent) && parent.propertyName === current) return false;
-    if (ts.isBindingElement(parent) && parent.initializer === current) return ts.isIdentifier(parent.name)
-      && displayProperties.has(parent.name.text);
-    if (ts.isComputedPropertyName(parent)) return false;
-    if (ts.isMethodDeclaration(parent) && parent.name === current) return false;
-    if (ts.isTypeNode(parent)) {
-      if (!ts.isLiteralTypeNode(parent)) return false;
-      let owner = parent;
-      while (owner.parent && ts.isUnionTypeNode(owner.parent)) owner = owner.parent;
-      return owner.parent !== undefined && ts.isPropertySignature(owner.parent)
-        && displayProperties.has(propertyName(ts, owner.parent.name));
-    }
-    if (ts.isImportDeclaration(parent) || ts.isExportDeclaration(parent)) return false;
-    if (ts.isElementAccessExpression(parent) || ts.isCaseClause(parent) || isComparison(ts, parent)) return false;
-    if (ts.isPropertyAssignment(parent)) {
-      if (parent.name === current) return false;
-      const name = propertyName(ts, parent.name);
-      if (machineProperties.has(name)) return false;
-      if (displayProperties.has(name)) return true;
-      let owner = parent.parent;
-      while (owner.parent && (ts.isAsExpression(owner.parent) || ts.isSatisfiesExpression(owner.parent) || ts.isParenthesizedExpression(owner.parent))) owner = owner.parent;
-      return owner.parent !== undefined && ts.isVariableDeclaration(owner.parent)
-        && ts.isIdentifier(owner.parent.name) && (displayVariable.test(owner.parent.name.text)
-          || /(?:^|_)NOUNS?$/.test(owner.parent.name.text));
-    }
-    if (ts.isJsxAttribute(parent)) {
-      const name = parent.name.getText();
-      return displayProperties.has(name);
-    }
-    if (ts.isJsxExpression(parent)) {
-      if (ts.isJsxAttribute(parent.parent)) {
-        return displayProperties.has(parent.parent.name.getText());
-      }
-      return true;
-    }
-    if (ts.isVariableDeclaration(parent)) {
-      return ts.isIdentifier(parent.name) && displayVariable.test(parent.name.text);
-    }
-    if (ts.isCallExpression(parent)) {
-      const call = parent.expression;
-      if (ts.isPropertyAccessExpression(call)) {
-        const receiver = call.expression.getText();
-        if (messageMethods.has(call.name.text) && /(?:toast|message|notification|notifications)/i.test(receiver)) return true;
-        if (/(?:labelWithHint|toast|notify|alert|confirm|requiredRule)/i.test(call.name.text)) return true;
-      }
-      if (ts.isIdentifier(call) && /^(?:alert|confirm|prompt|requiredRule|labelWithHint)$/.test(call.text)) return true;
-      return false;
-    }
-    if (ts.isNewExpression(parent)) {
-      if (ts.isIdentifier(parent.expression) && /Error$/.test(parent.expression.text)) return true;
-      current = parent;
-      continue;
-    }
-    if (ts.isEnumMember(parent)) return false;
-    if (ts.isReturnStatement(parent)) {
-      let owner = parent.parent;
-      while (owner && !ts.isFunctionLike(owner)) owner = owner.parent;
-      if (owner && owner.name && (displayVariable.test(owner.name.getText())
-        || /^(?:get|format|render).*(?:Text|Label|Title|Description|Message|DisplayName)$/.test(owner.name.getText()))) return true;
-    }
-    current = parent;
-  }
-  return false;
-}
-
-function collectFiles(directory) {
-  return fs.readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
-    const file = path.join(directory, entry.name);
-    if (entry.isDirectory()) {
-      if (ignoredDirectories.has(entry.name)) return [];
-      return collectFiles(file);
-    }
-    if (!sourceExtensions.has(path.extname(file))) return [];
-    if (/\.(?:test|spec|test-d)\.[^.]+$/.test(file) || file.endsWith(".d.ts")) return [];
-    return [file];
-  });
-}
-
-export function inspectSource(ts, file, source) {
-  const sourceFile = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, file.endsWith("x") ? ts.ScriptKind.TSX : ts.ScriptKind.TS);
-  if (sourceFile.parseDiagnostics.length > 0) {
-    const diagnostic = sourceFile.parseDiagnostics[0];
-    throw new Error(`${file}: ${ts.flattenDiagnosticMessageText(diagnostic.messageText, " ")}`);
-  }
-  const candidates = [];
-  function visit(node) {
-    const literal = ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)
-      || ts.isTemplateHead(node) || ts.isTemplateMiddle(node) || ts.isTemplateTail(node) || ts.isJsxText(node);
-    if (literal && isVisible(ts, node)) {
-      const text = normalize(node.text);
-      if (!isCode(text)) {
-        const location = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile));
-        candidates.push({ text, node, line: location.line + 1 });
-      }
-    }
-    ts.forEachChild(node, visit);
-  }
-  visit(sourceFile);
-  return { sourceFile, candidates };
+export function terminologyViolations(source, translation) {
+  return terminology
+    .filter((term) => new RegExp(term.source, "i").test(source))
+    .flatMap((term) => term.translations.filter((wording) => translation.includes(wording)).map((wording) => ({ term: term.preferred, wording })));
 }
 
 function preserveSpacing(original, translated) {
@@ -218,12 +31,18 @@ function preserveJsxSpacing(original, translated) {
   return leading + translated + trailing;
 }
 
-export function translateSource(ts, file, source, dictionary) {
-  const { sourceFile, candidates } = inspectSource(ts, file, source);
+function escapeTemplate(text) {
+  return text.replace(/\\/g, "\\\\").replace(/`/g, "\\`").replace(/\$\{/g, "\\${");
+}
+
+function applyEdits(text, edits) {
+  return [...edits].sort((left, right) => right.start - left.start)
+    .reduce((result, edit) => result.slice(0, edit.start) + edit.value + result.slice(edit.end), text);
+}
+
+function dateLocaleEdits(ts, sourceFile) {
   const edits = [];
-  const missing = [];
-  let translated = 0;
-  function localizeDate(node) {
+  function visit(node) {
     if (ts.isStringLiteral(node) && /^(?:en|en-US|en-GB)$/.test(node.text)) {
       const parent = node.parent;
       if ((ts.isCallExpression(parent) || ts.isNewExpression(parent)) && parent.arguments
@@ -232,39 +51,92 @@ export function translateSource(ts, file, source, dictionary) {
         edits.push({ start: node.getStart(sourceFile), end: node.end, value: '"zh-CN"' });
       }
     }
-    ts.forEachChild(node, localizeDate);
+    ts.forEachChild(node, visit);
   }
-  localizeDate(sourceFile);
-  for (const { text, node, line } of candidates) {
-    if (!Object.hasOwn(dictionary, text)) {
-      missing.push({ text, line });
-      continue;
+  visit(sourceFile);
+  return edits;
+}
+
+function plainReplacement(ts, unit, translation) {
+  const { node } = unit;
+  if (ts.isJsxText(node)) return `{${JSON.stringify(preserveJsxSpacing(node.text, translation))}}`;
+  if (ts.isStringLiteral(node) && ts.isJsxAttribute(node.parent)) return `{${JSON.stringify(preserveSpacing(decodeJsxEntities(node.text), translation))}}`;
+  return JSON.stringify(preserveSpacing(node.text, translation));
+}
+
+function renderJsx(sourceFile, nodes, sourceWithEdits) {
+  return nodes.map((node) => {
+    if (node.type === "text") return node.value === "" ? "" : `{${JSON.stringify(node.value)}}`;
+    const target = node.placeholder.node;
+    if (node.type === "placeholder") return sourceWithEdits(target.getStart(sourceFile), target.end);
+    const { openingElement, closingElement } = target;
+    return sourceWithEdits(openingElement.getStart(sourceFile), openingElement.end)
+      + renderJsx(sourceFile, node.children, sourceWithEdits)
+      + sourceWithEdits(closingElement.getStart(sourceFile), closingElement.end);
+  }).join("");
+}
+
+function renderTemplate(sourceFile, nodes, sourceWithEdits) {
+  return nodes.map((node) => {
+    if (node.type === "text") return escapeTemplate(node.value);
+    const expression = node.placeholder.node;
+    return `\${${sourceWithEdits(expression.getStart(sourceFile), expression.end)}}`;
+  }).join("");
+}
+
+function messageReplacement(sourceFile, unit, translation, sourceWithEdits) {
+  const nodes = parseTranslation(unit, translation);
+  if (unit.kind === "jsx") {
+    const space = '{" "}';
+    return (unit.leading ? space : "") + renderJsx(sourceFile, nodes, sourceWithEdits) + (unit.trailing ? space : "");
+  }
+  return `\`${unit.leading ? " " : ""}${renderTemplate(sourceFile, nodes, sourceWithEdits)}${unit.trailing ? " " : ""}\``;
+}
+
+export function translateSource(ts, file, source, dictionary) {
+  const { sourceFile, units } = inspectSource(ts, file, source);
+  const missing = [];
+  const violations = [];
+  let translated = 0;
+  function translationOf(unit) {
+    if (!Object.hasOwn(dictionary, unit.key)) {
+      missing.push({ text: unit.key, line: unit.line });
+      return null;
     }
-    const value = dictionary[text];
-    if (typeof value !== "string" || value.trim().length === 0) throw new Error(`Invalid Chinese translation: ${text}`);
-    const target = preserveTerminology(text, value);
-    if (target === text) continue;
-    if (ts.isJsxText(node)) {
-      const spaced = preserveJsxSpacing(node.text, decodeJsxEntities(target));
-      edits.push({ start: node.pos, end: node.end, value: `{${JSON.stringify(spaced)}}` });
-    } else if (ts.isStringLiteral(node) && ts.isJsxAttribute(node.parent)) {
-      const spaced = preserveSpacing(node.text, decodeJsxEntities(target));
-      edits.push({ start: node.getStart(sourceFile), end: node.end, value: `{${JSON.stringify(spaced)}}` });
-    } else if (ts.isTemplateHead(node) || ts.isTemplateMiddle(node) || ts.isTemplateTail(node)) {
-      const endOffset = ts.isTemplateTail(node) ? 1 : 2;
-      const spaced = preserveSpacing(node.text, target);
-      const escaped = spaced.replace(/\\/g, "\\\\").replace(/`/g, "\\`").replace(/\$\{/g, "\\${");
-      edits.push({ start: node.getStart(sourceFile) + 1, end: node.end - endOffset, value: escaped });
-    } else {
-      edits.push({ start: node.getStart(sourceFile), end: node.end, value: JSON.stringify(preserveSpacing(node.text, target)) });
-    }
+    const value = dictionary[unit.key];
+    if (typeof value !== "string" || value.trim().length === 0) throw new Error(`Invalid Chinese translation: ${unit.key}`);
+    for (const violation of terminologyViolations(unit.key, value)) violations.push({ ...violation, text: unit.key, translation: value, line: unit.line });
+    if (value === unit.key) return null;
     translated += 1;
+    return value;
   }
-  let result = source;
-  for (const edit of edits.sort((left, right) => right.start - left.start)) {
-    result = result.slice(0, edit.start) + edit.value + result.slice(edit.end);
+  const plainEdits = units.filter((unit) => unit.kind === "plain").flatMap((unit) => {
+    const translation = translationOf(unit);
+    return translation === null ? [] : [{ start: unit.start, end: unit.end, value: plainReplacement(ts, unit, translation) }];
+  });
+  let edits = [...dateLocaleEdits(ts, sourceFile), ...plainEdits];
+  const within = (edit, start, end) => edit.start >= start && edit.end <= end;
+  const sourceWithEdits = (start, end) => applyEdits(source.slice(start, end), edits
+    .filter((edit) => within(edit, start, end))
+    .map((edit) => ({ ...edit, start: edit.start - start, end: edit.end - start })));
+  const messages = units.filter((unit) => unit.kind !== "plain").sort((left, right) => (left.end - left.start) - (right.end - right.start));
+  for (const unit of messages) {
+    const translation = translationOf(unit);
+    if (translation === null) continue;
+    const value = messageReplacement(sourceFile, unit, translation, sourceWithEdits);
+    edits = [...edits.filter((edit) => !within(edit, unit.start, unit.end)), { start: unit.start, end: unit.end, value }];
   }
-  return { source: result, translated, missing, candidates: candidates.length };
+  return { source: applyEdits(source, edits), translated, missing, violations, units: units.length };
+}
+
+function collectFiles(directory) {
+  return fs.readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+    const file = path.join(directory, entry.name);
+    if (entry.isDirectory()) return ignoredDirectories.has(entry.name) ? [] : collectFiles(file);
+    if (!sourceExtensions.has(path.extname(file))) return [];
+    if (/\.(?:test|spec|test-d)\.[^.]+$/.test(file) || file.endsWith(".d.ts")) return [];
+    return [file];
+  });
 }
 
 function argumentsFrom(argv) {
@@ -281,62 +153,80 @@ function required(values, name) {
   return path.resolve(values.get(name));
 }
 
-export function run(command, argv) {
-  const args = argumentsFrom(argv);
-  const root = required(args, "source");
-  const require = createRequire(path.join(root, "package.json"));
-  const ts = args.has("typescript") ? require(required(args, "typescript")) : require("typescript");
-  const files = collectFiles(path.join(root, "src"));
-  const dictionary = command === "apply" ? {
-    ...JSON.parse(fs.readFileSync(required(args, "catalog"), "utf8")),
-    ...JSON.parse(fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), "overrides.json"), "utf8")),
-  } : {};
-  const contexts = JSON.parse(fs.readFileSync(new URL("./context-overrides.json", import.meta.url), "utf8"));
+function readJson(file) {
+  return JSON.parse(fs.readFileSync(file, "utf8"));
+}
+
+function sourceUnits(ts, root, files) {
+  return files.map((file) => {
+    const source = fs.readFileSync(file, "utf8");
+    return { file, relative: path.relative(root, file), source, units: inspectSource(ts, file, source).units };
+  });
+}
+
+function extract(scanned, output) {
   const entries = new Map();
+  for (const { relative, units } of scanned) {
+    for (const { key, line } of units) {
+      const entry = entries.get(key) ?? { text: key, occurrences: 0, examples: [] };
+      entries.set(key, { ...entry, occurrences: entry.occurrences + 1, examples: entry.examples.length < 3 ? [...entry.examples, `${relative}:${line}`] : entry.examples });
+    }
+  }
+  fs.writeFileSync(output, JSON.stringify([...entries.values()].sort((a, b) => b.occurrences - a.occurrences), null, 2) + "\n");
+  console.log(`已提取 ${entries.size} 条文案，扫描 ${scanned.length} 个源文件`);
+}
+
+function prune(scanned, catalogPath) {
+  const catalog = readJson(catalogPath);
+  const used = new Set(scanned.flatMap(({ units }) => units.map((unit) => unit.key)));
+  const kept = Object.fromEntries(Object.entries(catalog).filter(([key]) => used.has(key)));
+  fs.writeFileSync(catalogPath, JSON.stringify(kept, null, 2) + "\n");
+  console.log(`已删除 ${Object.keys(catalog).length - Object.keys(kept).length} 条未使用的译文，保留 ${Object.keys(kept).length} 条`);
+}
+
+function apply(ts, scanned, catalogPath, output) {
+  const dictionary = readJson(catalogPath);
+  const contexts = readJson(new URL("./context-overrides.json", import.meta.url));
   const missing = new Map();
+  const violations = [];
   let translated = 0;
   let affectedFiles = 0;
-  for (const file of files) {
-    const source = fs.readFileSync(file, "utf8");
-    const relative = path.relative(root, file);
-    const inspection = inspectSource(ts, file, source);
-    for (const { text, line } of inspection.candidates) {
-      if (!entries.has(text)) entries.set(text, { text, occurrences: 0, examples: [] });
-      const entry = entries.get(text);
-      entry.occurrences += 1;
-      if (entry.examples.length < 3) entry.examples.push(`${relative}:${line}`);
-    }
-    if (command === "apply") {
-      const fileDictionary = { ...dictionary };
-      if (Object.hasOwn(contexts, relative)) Object.assign(fileDictionary, contexts[relative]);
-      const result = translateSource(ts, file, source, fileDictionary);
-      for (const item of result.missing) {
-        if (!missing.has(item.text)) missing.set(item.text, []);
-        if (missing.get(item.text).length < 3) missing.get(item.text).push(`${relative}:${item.line}`);
-      }
-      translated += result.translated;
-      if (result.source !== source) {
-        fs.writeFileSync(file, result.source);
-        affectedFiles += 1;
-      }
+  for (const { file, relative, source } of scanned) {
+    const fileDictionary = Object.hasOwn(contexts, relative) ? { ...dictionary, ...contexts[relative] } : dictionary;
+    const result = translateSource(ts, file, source, fileDictionary);
+    for (const item of result.missing) missing.set(item.text, [...(missing.get(item.text) ?? []), `${relative}:${item.line}`].slice(0, 3));
+    violations.push(...result.violations.map((violation) => ({ ...violation, location: `${relative}:${violation.line}` })));
+    translated += result.translated;
+    if (result.source !== source) {
+      fs.writeFileSync(file, result.source);
+      affectedFiles += 1;
     }
   }
-  const output = required(args, "output");
-  if (command === "extract") {
-    fs.writeFileSync(output, JSON.stringify([...entries.values()].sort((a, b) => b.occurrences - a.occurrences), null, 2) + "\n");
-    console.log(`已提取 ${entries.size} 条文案，扫描 ${files.length} 个源文件`);
-    return;
+  if (violations.length > 0) {
+    const details = violations.map(({ location, term, wording, translation }) => `${location}: 「${wording}」应保留为 ${term}：${translation}`);
+    throw new Error(`译文违反术语规则 ${violations.length} 处：\n${details.join("\n")}`);
   }
-  if (command !== "apply") throw new Error(`Unknown command: ${command}`);
   const report = {
-    filesScanned: files.length, filesTranslated: affectedFiles, stringsTranslated: translated,
-    uniqueMessages: entries.size, missing: [...missing].map(([text, examples]) => ({ text, examples })),
+    filesScanned: scanned.length, filesTranslated: affectedFiles, stringsTranslated: translated,
+    missing: [...missing].map(([text, examples]) => ({ text, examples })),
   };
   fs.writeFileSync(output, JSON.stringify(report, null, 2) + "\n");
   console.log(`已翻译 ${translated} 处文案，涉及 ${affectedFiles} 个文件；新增待翻译文案 ${missing.size} 条，详见 ${output}`);
 }
 
+export function run(command, argv) {
+  const args = argumentsFrom(argv);
+  const root = required(args, "source");
+  const require = createRequire(path.join(root, "package.json"));
+  const ts = args.has("typescript") ? require(required(args, "typescript")) : require("typescript");
+  const scanned = sourceUnits(ts, root, collectFiles(path.join(root, "src")));
+  if (command === "extract") return extract(scanned, required(args, "output"));
+  if (command === "prune") return prune(scanned, required(args, "catalog"));
+  if (command === "apply") return apply(ts, scanned, required(args, "catalog"), required(args, "output"));
+  throw new Error(`Unknown command: ${command}`);
+}
+
 if (process.argv[1] !== undefined && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  if (process.argv[2] === undefined) throw new Error("Usage: node localize.mjs extract|apply --source directory --output report.json");
+  if (process.argv[2] === undefined) throw new Error("Usage: node localize.mjs extract|apply|prune --source directory [--catalog zh-CN.json] [--output report.json]");
   run(process.argv[2], process.argv.slice(3));
 }

@@ -1,12 +1,12 @@
 # LiteLLM 中文前端
 
-中文词库、术语规则、人工修订和构建脚本随 Fork 一起维护。构建时在临时源码副本中应用译文，生成中文前端镜像 `litellm-local:zh-cn`
+中文词库、术语规则和构建脚本随 Fork 一起维护。构建时在临时源码副本中应用译文，生成中文前端镜像 `litellm-local:zh-cn`
 
 `litellm_zh_cn` 分支基于 `v1.106.2` 稳定版维护中文功能，`main` 分支用于同步官方上游。`origin` 指向自己的 Fork，`upstream` 指向 `BerriAI/litellm`
 
 ## 构建和启动
 
-在仓库根目录操作。本机需要 Docker、Bash 和 tar，Node 与 pnpm 在构建容器内运行
+在仓库根目录操作。本机需要 Docker、Bash 和 tar，Node 与 npm 在构建容器内运行。依赖按上游 `package-lock.json` 安装，npm 缓存保存在 Docker 卷 `litellm-zh-cn-npm-cache` 中，重复构建时复用
 
 首次部署时，将 `local-dev/.env.example` 复制为根目录 `.env`，填写管理员凭据、数据库密码和内网 IP。将 `local-dev/config.example.yaml` 复制为 `local-dev/config.yaml`。已有部署继续使用原配置
 
@@ -31,13 +31,31 @@ HTTP_PROXY=http://host.docker.internal:7897 \
 
 ## 维护译文
 
-`zh-CN.json` 保存完整词库，`overrides.json` 保存人工修订。`context-overrides.json` 按源文件区分同词异义，例如产品名 Linear 与图表的线性刻度
+`zh-CN.json` 是唯一的词库，键为英文原文，值为中文译文。`context-overrides.json` 按源文件区分同词异义，例如产品名 Linear 与图表的线性刻度
 
-`terminology.json` 保留 Token、Prompt、Embedding、Completion、Reasoning、Agent 等术语。服务商名称、模型 ID、API 字段、表单取值、URL、代码示例和用户实际数据保持原值。后端动态内容与远程文章沿用上游内容
+被行内标签或模板变量拆开的句子按整句提取，用编号占位符表示代码部分，译文可以按中文语序调整占位符位置
 
-词库初稿使用离线翻译模型生成，界面在用的全部文案已按源码上下文逐条校对，修正误译、残留英文、半角标点和多余空格。译文中不要写 `&quot;` 等 HTML 实体，直接使用实际字符。后续发现的问题可继续在 `overrides.json` 中修订
+- `{0}`：运行时的值或表达式，例如 `已选择 {0} 个模型`
+- `<1/>`：整体保留的元素，例如图标、`<code>` 代码片段或组件
+- `<2>文字</2>`：包裹文字的行内元素，例如加粗或链接，只翻译其中的文字
 
-构建生成 `translation-report.json`，其中 `missing` 列出上游新增或改写的文案及源文件位置。将译文添加到 `overrides.json` 后重新构建。报告属于本地生成文件，由 Git 忽略
+译文中的占位符必须与原文一一对应，不能增删、重复或改变形式，否则构建直接报错。译文中不要写 `&quot;` 等 HTML 实体，直接使用实际字符
+
+`terminology.json` 列出保留英文的术语，包括 Token、Prompt、Embedding、Completion、Reasoning、Agent 等。构建时检查译文，出现这些术语的中文译法即报错，不会自动改写。服务商名称、模型 ID、API 字段、表单取值、URL、代码示例和用户实际数据保持原值。后端动态内容与远程文章沿用上游内容
+
+构建生成 `translation-report.json`，其中 `missing` 列出上游新增或改写的文案及源文件位置。将译文添加到 `zh-CN.json` 后重新构建。报告属于本地生成文件，由 Git 忽略
+
+同步上游后删除词库中不再使用的条目，TypeScript 版本与前端 `package.json` 保持一致
+
+```bash
+docker run --rm --mount "type=bind,source=$PWD,target=/repo" \
+  --mount "type=volume,source=litellm-zh-cn-npm-cache,target=/root/.npm" \
+  --env HTTPS_PROXY --env HTTP_PROXY node:24.19-alpine3.24 sh -ec '
+    npm install --no-save --no-audit --no-fund --prefix /tmp/ts typescript@5.9.3
+    node /repo/localization/zh-CN/localize.mjs prune --source /repo/ui/litellm-dashboard \
+      --typescript /tmp/ts/node_modules/typescript --catalog /repo/localization/zh-CN/zh-CN.json
+  '
+```
 
 ## 同步上游
 

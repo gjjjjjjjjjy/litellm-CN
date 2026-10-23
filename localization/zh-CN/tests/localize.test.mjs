@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createRequire } from "node:module";
-import { translateSource, preserveTerminology } from "../localize.mjs";
+import { translateSource, terminologyViolations } from "../localize.mjs";
+import { inspectSource } from "../units.mjs";
 
 const require = createRequire(import.meta.url);
 const ts = require(process.env.TYPESCRIPT_PATH);
@@ -10,6 +11,8 @@ const dictionary = {
   "Active": "已启用", "Inactive": "未启用", "Delete": "删除", "Delete model": "删除模型",
   "Failed to save": "保存失败", "No models found": "未找到模型",
 };
+const keysOf = (source, file = "units.tsx") => inspectSource(ts, file, source).units.map((unit) => unit.key);
+const parses = (source) => ts.createSourceFile("out.tsx", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX).parseDiagnostics.length === 0;
 
 test("本地化可见表单文案，同时保留提交值、协议标识和状态判断", () => {
   const source = `
@@ -32,21 +35,46 @@ test("本地化可见表单文案，同时保留提交值、协议标识和状�
   assert.match(result.source, /model: "model-v1"/);
 });
 
-test("动态文案翻译保留变量和模板表达式", () => {
-  const source = 'toast.error(`Failed to save ${model.id}`);';
-  const result = translateSource(ts, "toast.ts", source, dictionary);
-  assert.equal(result.source, 'toast.error(`保存失败 ${model.id}`);');
+test("模板字符串整句翻译，变量可以随中文语序调整位置", () => {
+  const source = 'toast.error(`Failed to save ${model.id} after ${count} retries`);';
+  const result = translateSource(ts, "toast.ts", source, { "Failed to save {0} after {1} retries": "重试 {1} 次后仍无法保存 {0}" });
+  assert.equal(result.source, 'toast.error(`重试 ${count} 次后仍无法保存 ${model.id}`);');
 });
 
-test("选择项仅翻译标签，保留接口使用的 value 和对象属性名", () => {
-  const source = 'const options = [{label: "Active", value: "active"}, {label: "Delete", value: "delete"}];';
-  const result = translateSource(ts, "select.ts", source, dictionary);
-  assert.match(result.source, /label: "已启用", value: "active"/);
-  assert.match(result.source, /label: "删除", value: "delete"/);
+test("被行内标签拆开的句子按整句提取，翻译后标签和表达式按译文顺序还原", () => {
+  const source = '<p><b className="x">Example:</b> name it <code>a-b</code>, then call {busy ? "Save" : "Delete"}</p>;';
+  assert.deepEqual(keysOf(source).sort(), ["<0>Example:</0> name it <1/>, then call {2}", "Delete", "Save"]);
+  const result = translateSource(ts, "inline.tsx", source, {
+    ...dictionary, "<0>Example:</0> name it <1/>, then call {2}": "<0>示例：</0>先调用 {2}，再命名为 <1/>",
+  });
+  assert.equal(result.source, '<p><b className="x">{"示例："}</b>{"先调用 "}{busy ? "保存" : "删除"}{"，再命名为 "}<code>a-b</code></p>;');
+  assert.ok(parses(result.source));
+});
+
+test("嵌套的独立句子先翻译，再作为整体放入外层句子", () => {
+  const source = "<div>Read the <a href=\"/x\">guide</a> first<Panel><p>Note: see <b>docs</b></p></Panel></div>;";
+  const result = translateSource(ts, "nested.tsx", source, {
+    "Read the <0>guide</0> first<1/>": "请先阅读<0>指南</0><1/>",
+    "Note: see <0>docs</0>": "注意：参见<0>文档</0>",
+  });
+  assert.equal(result.source, '<div>{"请先阅读"}<a href="/x">{"指南"}</a><Panel><p>{"注意：参见"}<b>{"文档"}</b></p></Panel></div>;');
+});
+
+test("译文的占位符与原文不一致时直接报错，不生成残缺页面", () => {
+  const source = "<p>Read the <a>guide</a> first</p>;";
+  assert.throws(() => translateSource(ts, "bad.tsx", source, { "Read the <0>guide</0> first": "请先阅读指南" }), /Placeholder mismatch/);
+  assert.throws(() => translateSource(ts, "bad.tsx", "const message = `Saved ${n}`;", { "Saved {0}": "已保存 {1}" }), /Placeholder mismatch/);
+});
+
+test("英文复数后缀占位符可以在中文译文中省略，其他占位符不能省略", () => {
+  const source = "const message = `Imported ${count} server${count === 1 ? \"\" : \"s\"}`;";
+  const result = translateSource(ts, "plural.ts", source, { "Imported {0} server{1}": "已导入 {0} 个服务" });
+  assert.equal(result.source, "const message = `已导入 ${count} 个服务`;");
+  assert.throws(() => translateSource(ts, "plural.ts", source, { "Imported {0} server{1}": "已导入服务{1}" }), /Placeholder mismatch/);
 });
 
 test("上游新增文案明确列入报告，已应用中文补丁的文件可重复处理", () => {
-  const first = translateSource(ts, "empty.tsx", '<div>No models found<button>New upstream action</button></div>', dictionary);
+  const first = translateSource(ts, "empty.tsx", '<div><p>No models found</p><button>New upstream action</button></div>', dictionary);
   assert.deepEqual(first.missing.map((item) => item.text), ["New upstream action"]);
   const second = translateSource(ts, "empty.tsx", first.source, dictionary);
   assert.equal(second.source, first.source);
@@ -74,10 +102,8 @@ test("日期和数字采用中文地区设置，语言选项的接口取值保�
 });
 
 test("包含引号和 JSON 示例的属性译文仍是有效 JSX", () => {
-  const source = '<input placeholder="API Key" />';
-  const result = translateSource(ts, "quote.tsx", source, {"API Key": '输入 "api_key"，例如 {"value":"key"}'});
-  const parsed = ts.createSourceFile("quote.tsx", result.source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
-  assert.deepEqual(parsed.parseDiagnostics, []);
+  const result = translateSource(ts, "quote.tsx", '<input placeholder="API Key" />', { "API Key": '输入 "api_key"，例如 {"value":"key"}' });
+  assert.ok(parses(result.source));
   assert.match(result.source, /placeholder=\{/);
 });
 
@@ -91,16 +117,27 @@ test("表单 render prop 中的字符串属性解构保持协议名称", () => {
 
 test("A2A 消息类型和遥测状态位于嵌套对象中时仍保持接口取值", () => {
   const source = 'const rpcRequest = {params:{message:{kind:"message",parts:[{kind:"text",text:"Save"}]}}}; const trace = {summary:{status:"error"}};';
-  const dictionary = {message:"消息",text:"文本",error:"错误",Save:"保存"};
-  assert.equal(translateSource(ts, "request.ts", source, dictionary).source, source);
+  assert.equal(translateSource(ts, "request.ts", source, { message: "消息", text: "文本", error: "错误", Save: "保存" }).source, source);
 });
 
 test("样式映射和函数参数保持原值，独立的标题映射可以翻译", () => {
   const source = 'const buttonVariants = {text:"ghost"}; const tooltip = (entity: "key" | "team" = "key") => entity; const STATUS_TITLES = {not_found:"No models found"};';
-  const result = translateSource(ts, "mapping.ts", source, {ghost:"幽灵",key:"密钥","No models found":"未找到模型"});
+  const result = translateSource(ts, "mapping.ts", source, { ghost: "幽灵", key: "密钥", "No models found": "未找到模型" });
   assert.match(result.source, /text:"ghost"/);
   assert.match(result.source, /= "key"/);
   assert.match(result.source, /not_found:"未找到模型"/);
+});
+
+test("Map 和键值对列表只翻译显示值，查找用的键保持原值", () => {
+  const source = 'const FIELD_LABELS = new Map([["projects", "Create and update projects"], ["max_budget", "Max Budget"]]);';
+  assert.deepEqual(keysOf(source, "map.ts"), ["Create and update projects", "Max Budget"]);
+});
+
+test("名称像标签但用于比较或查找的变量保持原值", () => {
+  const source = 'const weekLabel = `Week ${n}`; const entry = rows.find((row) => row.week === weekLabel); const pageTitle = `Week ${n}`; render(pageTitle);';
+  assert.deepEqual(keysOf(source, "week.ts"), ["Week {0}"]);
+  const lookup = 'const statusLabel = "Active"; const found = statuses.get(statusLabel);';
+  assert.deepEqual(keysOf(lookup, "lookup.ts"), []);
 });
 
 test("只包含展示标签的联合类型与返回标签同步翻译", () => {
@@ -112,45 +149,50 @@ test("只包含展示标签的联合类型与返回标签同步翻译", () => {
 
 test("属性类型内的 Pick 键名和索引访问保持类型系统原值", () => {
   const source = 'type Data = {summary: Pick<Stats,"count" | "average">; children: Props["children"]};';
-  assert.equal(translateSource(ts, "types.ts", source, {count:"数量",average:"平均值",children:"子项"}).source, source);
+  assert.equal(translateSource(ts, "types.ts", source, { count: "数量", average: "平均值", children: "子项" }).source, source);
 });
 
-test("AI 术语按用户要求保持英文，普通中文界面词保持中文", () => {
-  assert.equal(preserveTerminology("Input Tokens and Prompt Embeddings", "输入令牌和提示词嵌入向量"), "输入 Token 和 Prompt Embedding");
-  assert.equal(preserveTerminology("Reasoning Guardrail", "推理防护规则"), "Reasoning Guardrail");
-  assert.equal(preserveTerminology("Tokens: 10", "令牌：10"), "Token：10");
-  assert.equal(preserveTerminology("Save changes", "保存更改"), "保存更改");
+test("术语检查报出被译成中文的保留术语，不改写译文", () => {
+  assert.deepEqual(terminologyViolations("Input Tokens", "输入令牌"), [{ term: "Token", wording: "令牌" }]);
+  assert.deepEqual(terminologyViolations("Input Tokens", "输入 Token"), []);
+  assert.deepEqual(terminologyViolations("Task completed", "任务已完成"), []);
+  const result = translateSource(ts, "term.tsx", "<p>Input Tokens</p>", { "Input Tokens": "输入令牌" });
+  assert.equal(result.violations.length, 1);
+  assert.match(result.source, /输入令牌/);
 });
 
 test("组件展示属性的默认值可以翻译，业务参数默认值保持原样", () => {
   const source = 'function Title({title="Save", entity="key"}) {return title;} function message(label="Save",entity="key"){return label;}';
-  const result = translateSource(ts,"props.ts",source,{Save:"保存",key:"密钥"});
-  assert.match(result.source,/title="保存", entity="key"/);
-  assert.match(result.source,/label="保存",entity="key"/);
+  const result = translateSource(ts, "props.ts", source, { Save: "保存", key: "密钥" });
+  assert.match(result.source, /title="保存", entity="key"/);
+  assert.match(result.source, /label="保存",entity="key"/);
 });
 
 test("指标名称字典翻译展示值，业务索引变量保持原值", () => {
   const source = 'const METRIC_NOUN = {spend:"spend"}; const noun="investigation"; const state={metric:"spend"};';
-  const result = translateSource(ts,"metric.ts",source,{spend:"费用",investigation:"调查"});
-  assert.match(result.source,/spend:"费用"/);
-  assert.match(result.source,/noun="investigation"/);
-  assert.match(result.source,/metric:"spend"/);
+  const result = translateSource(ts, "metric.ts", source, { spend: "费用", investigation: "调查" });
+  assert.match(result.source, /spend:"费用"/);
+  assert.match(result.source, /noun="investigation"/);
+  assert.match(result.source, /metric:"spend"/);
 });
 
 test("多行 JSX 文本只保留 React 实际渲染的首尾空格", () => {
   const source = `<span className="flex">
         Public Model Name
-        <Tooltip /></span>; <p><b>Example:</b> If you name it <code>x</code></p>`;
-  const result = translateSource(ts, "spacing.tsx", source, { "Public Model Name": "公开模型名称", "If you name it": "如果命名为" });
-  assert.match(result.source, /<span className="flex">\{"公开模型名称"\}<Tooltip/);
-  assert.match(result.source, /<\/b>\{" 如果命名为 "\}<code>/);
+        <Tooltip /></span>; <div>
+        Plain heading
+      </div>; <p>Hello <b>you</b> </p>`;
+  assert.deepEqual(keysOf(source).sort(), ["Hello <0>you</0>", "Plain heading", "Public Model Name<0/>"]);
+  const result = translateSource(ts, "spacing.tsx", source, { "Public Model Name<0/>": "公开模型名称<0/>", "Plain heading": "普通标题", "Hello <0>you</0>": "你好<0>你</0>" });
+  assert.match(result.source, /<span className="flex">\{"公开模型名称"\}<Tooltip \/><\/span>/);
+  assert.match(result.source, /<div>\{"普通标题"\}<\/div>/);
+  assert.match(result.source, /<p>\{"你好"\}<b>\{"你"\}<\/b>\{" "\}<\/p>/);
 });
 
-test("JSX 文本和属性中的 HTML 实体译为实际字符，避免页面显示实体原文", () => {
+test("JSX 文本和属性中的 HTML 实体按实际字符匹配词库并输出实际字符", () => {
   const source = '<p title="Say &quot;hi&quot;">Use &quot;team-*&quot; &amp; more</p>';
-  const result = translateSource(ts, "entity.tsx", source, {
-    'Say &quot;hi&quot;': "输入 &quot;hi&quot;", "Use &quot;team-*&quot; &amp; more": "使用 &quot;team-*&quot; &amp; 更多",
-  });
+  assert.deepEqual(keysOf(source).sort(), ['Say "hi"', 'Use "team-*" & more']);
+  const result = translateSource(ts, "entity.tsx", source, { 'Say "hi"': '输入 "hi"', 'Use "team-*" & more': '使用 "team-*" 等' });
   assert.match(result.source, /title=\{"输入 \\"hi\\""\}/);
-  assert.match(result.source, /\{"使用 \\"team-\*\\" & 更多"\}/);
+  assert.match(result.source, /\{"使用 \\"team-\*\\" 等"\}/);
 });
