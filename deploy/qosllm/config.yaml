@@ -1,0 +1,19 @@
+model_list: []
+
+litellm_settings:
+  callbacks:
+    - prometheus
+  require_auth_for_metrics_endpoint: true
+  num_retries: 0
+  request_timeout: 60
+
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY
+  background_health_checks: true
+  health_check_interval: 300
+  # Every sign-in uses an account created by an admin; the shared UI_USERNAME/UI_PASSWORD and master-key login is off.
+  disable_env_credential_login: true
+  hide_default_credentials_hint: true
+  # Caddy is the only client of the gateway; trust its X-Forwarded-For so sign-in throttling sees real client addresses.
+  trusted_proxy_ranges:
+    - 172.30.80.0/24
