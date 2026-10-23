@@ -29,6 +29,8 @@ HTTP_PROXY=http://host.docker.internal:7897 \
 
 构建执行补丁测试、TypeScript 检查和 Next.js 静态页面生成。构建结束后自动删除临时源码与依赖
 
+部署到 x86 云服务器时，在本机运行 `./deploy/qosllm/build-image.sh ../qosllm-linux-amd64.tar.gz`。该脚本生成独立的 `litellm-local:zh-cn-amd64` 镜像并导出压缩包，上传、导入和启动方法见 [公网部署说明](../../deploy/qosllm/README.md)
+
 ## 界面名称
 
 界面显示名称为 QosLLM，标志为纯文字。侧边栏标志（展开时为 QosLLM，收起时为 Q）在 `branding/` 中，构建镜像时替换后端自带的 `logo*.png`；浏览器标题和登录页文字在 `zh-CN.json` 中修改。代码、包名和 API 保持 litellm 不变，并保留上游的 MIT 许可证与版权声明
