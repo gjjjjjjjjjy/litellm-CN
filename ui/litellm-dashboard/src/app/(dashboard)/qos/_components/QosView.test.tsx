@@ -29,8 +29,8 @@ const summary = {
   tag: null,
   model_groups: [{ ...metrics, model_group: "qwen3-max" }],
   deployments: [
-    { ...metrics, model_group: "qwen3-max", model_id: "node-a", model: "moark/qwen3.8-max", api_base: "https://node-a/v1" },
-    { ...metrics, model_group: "qwen3-max", model_id: "node-b", model: "moark/qwen3.8-max", api_base: "https://node-b/v1", peak_concurrency: 9 },
+    { ...metrics, model_group: "qwen3-max", model_id: "node-a", model: "moark/qwen3.8-max", api_base: "https://node-a/v1", vendor: "moark" },
+    { ...metrics, model_group: "qwen3-max", model_id: "node-b", model: "moark/qwen3.8-max", api_base: "https://node-b/v1", vendor: "moark", peak_concurrency: 9 },
   ],
 };
 

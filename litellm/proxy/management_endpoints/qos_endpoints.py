@@ -22,6 +22,7 @@ from litellm.proxy.management_endpoints.qos_health import (
     health_node,
     health_probe,
     probe_key,
+    vendor_of,
 )
 from litellm.proxy.management_endpoints.qos_response_check import RESPONSE_CHECK_KEY, record_response_checks
 from litellm.types.llms.base import LiteLLMBaseModel
@@ -111,6 +112,7 @@ WITH base AS (
         COALESCE(model_id, '') AS model_id,
         COALESCE(model, '') AS model,
         COALESCE(api_base, '') AS api_base,
+        COALESCE(custom_llm_provider, '') AS custom_llm_provider,
         status,
         "startTime" AS started,
         "endTime" AS ended,
@@ -155,6 +157,7 @@ SELECT
     {selected_keys},
     MAX(base.model) AS model,
     MAX(base.api_base) AS api_base,
+    MAX(base.custom_llm_provider) AS custom_llm_provider,
     COUNT(*)::int AS requests,
     (COUNT(*) FILTER (WHERE base.status = 'failure'))::int AS failed_requests,
     COUNT(base.ttft_ms)::int AS streamed_requests,
@@ -274,6 +277,7 @@ class QosSummaryRow(LiteLLMBaseModel):
     level_tag: str = ""
     model: str
     api_base: str
+    custom_llm_provider: str
     requests: int
     failed_requests: int
     streamed_requests: int
@@ -379,7 +383,11 @@ def deployment_model_groups(llm_router: "Router | None") -> str:
 
 def deployment_metrics(row: QosSummaryRow) -> QosDeploymentMetrics:
     return QosDeploymentMetrics(
-        **group_metrics(row).model_dump(), model_id=row.model_id, model=row.model, api_base=row.api_base
+        **group_metrics(row).model_dump(),
+        model_id=row.model_id,
+        model=row.model,
+        api_base=row.api_base,
+        vendor=vendor_of(row.custom_llm_provider, row.api_base),
     )
 
 
@@ -580,7 +588,11 @@ def deployment_target_lookup(llm_router: "Router | None") -> Callable[[str], Dep
 
 def target_deployment(model_id: str, target: DeploymentTarget) -> QosTargetDeployment:
     return QosTargetDeployment(
-        model_id=model_id, provider=target.provider, api_base=target.api_base, upstream_model=target.upstream_model
+        model_id=model_id,
+        provider=target.provider,
+        vendor=vendor_of(target.provider, target.api_base),
+        api_base=target.api_base,
+        upstream_model=target.upstream_model,
     )
 
 

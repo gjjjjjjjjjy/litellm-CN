@@ -55,6 +55,9 @@ class QosDeploymentMetrics(QosModelGroupMetrics):
     model_id: str
     model: str
     api_base: str
+    vendor: str = Field(
+        description="Who serves the model: the provider, or the endpoint host for OpenAI-compatible ones"
+    )
 
 
 class QosSummaryResponse(LiteLLMBaseModel):
@@ -164,6 +167,7 @@ class QosTargetDeployment(LiteLLMBaseModel):
 
     model_id: str
     provider: str
+    vendor: str
     api_base: str
     upstream_model: str
 
@@ -186,6 +190,7 @@ class QosHealthNode(LiteLLMBaseModel):
 
     model_name: str
     model_id: str
+    vendor: str
     api_base: str
     upstream_model: str
     checks: int

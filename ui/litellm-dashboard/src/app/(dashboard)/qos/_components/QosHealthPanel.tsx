@@ -20,6 +20,7 @@ import {
   type QosHealthProbe,
   type QosRange,
 } from "./qosData";
+import VendorName from "./VendorName";
 
 const formatTime = (value: string | null | undefined): string =>
   value === null || value === undefined ? "-" : new Date(value).toLocaleString();
@@ -31,7 +32,8 @@ const nodeColumns: ColumnDef<QosHealthNode>[] = [
     header: "Node",
     cell: ({ row }) => (
       <div className="min-w-0">
-        <p className="truncate font-mono text-xs">{row.original.api_base}</p>
+        <VendorName vendor={row.original.vendor} />
+        <p className="truncate font-mono text-xs text-muted-foreground">{row.original.api_base}</p>
         <p className="truncate text-xs text-muted-foreground">{row.original.upstream_model}</p>
       </div>
     ),

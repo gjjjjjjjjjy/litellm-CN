@@ -1,5 +1,6 @@
 from datetime import datetime
 from typing import Final
+from urllib.parse import urlparse
 
 from pydantic import ConfigDict, TypeAdapter
 
@@ -83,10 +84,24 @@ def probe_key(api_base: str, upstream_model: str) -> tuple[str, str]:
     return api_base.rstrip("/"), upstream_model
 
 
+_OPENAI_COMPATIBLE_PROVIDERS: Final = frozenset(
+    {"openai", "openai_like", "custom_openai", "text-completion-openai", "hosted_vllm", "litellm_proxy"}
+)
+
+
+def vendor_of(provider: str, api_base: str) -> str:
+    """An OpenAI-compatible provider says nothing about who serves the model, so name its endpoint host instead."""
+    if provider not in _OPENAI_COMPATIBLE_PROVIDERS:
+        return provider
+    host: Final = urlparse(api_base).hostname
+    return provider if host is None else host
+
+
 def health_node(row: HealthHistoryRow, target: DeploymentTarget) -> QosHealthNode:
     return QosHealthNode(
         model_name=row.model_name,
         model_id=row.model_id,
+        vendor=vendor_of(target.provider, target.api_base),
         api_base=target.api_base,
         upstream_model=target.upstream_model,
         checks=row.checks,

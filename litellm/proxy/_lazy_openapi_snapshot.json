@@ -52101,6 +52101,11 @@
             },
             "ttft_ms": {
               "$ref": "#/components/schemas/QosPercentiles"
+            },
+            "vendor": {
+              "description": "Who serves the model: the provider, or the endpoint host for OpenAI-compatible ones",
+              "title": "Vendor",
+              "type": "string"
             }
           },
           "required": [
@@ -52121,6 +52126,7 @@
             "model_id",
             "model",
             "api_base",
+            "vendor",
             "concurrency",
             "interference"
           ],
@@ -52483,6 +52489,11 @@
             },
             "ttft_ms": {
               "$ref": "#/components/schemas/QosPercentiles"
+            },
+            "vendor": {
+              "description": "Who serves the model: the provider, or the endpoint host for OpenAI-compatible ones",
+              "title": "Vendor",
+              "type": "string"
             }
           },
           "required": [
@@ -52502,7 +52513,8 @@
             "response_checks",
             "model_id",
             "model",
-            "api_base"
+            "api_base",
+            "vendor"
           ],
           "title": "QosDeploymentMetrics",
           "type": "object"
@@ -52568,11 +52580,16 @@
             "upstream_model": {
               "title": "Upstream Model",
               "type": "string"
+            },
+            "vendor": {
+              "title": "Vendor",
+              "type": "string"
             }
           },
           "required": [
             "model_name",
             "model_id",
+            "vendor",
             "api_base",
             "upstream_model",
             "checks",
@@ -52883,11 +52900,16 @@
             "upstream_model": {
               "title": "Upstream Model",
               "type": "string"
+            },
+            "vendor": {
+              "title": "Vendor",
+              "type": "string"
             }
           },
           "required": [
             "model_id",
             "provider",
+            "vendor",
             "api_base",
             "upstream_model"
           ],

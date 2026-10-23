@@ -46,6 +46,7 @@ const deployment = (model_group: string, model_id: string, api_base: string): Qo
   model_id,
   model: "moark/qwen3.8-max",
   api_base,
+  vendor: "moark",
 });
 
 describe("qosData", () => {
@@ -171,19 +172,22 @@ describe("benchmark targets", () => {
   const moark = {
     model_id: "node-moark",
     provider: "moark",
+    vendor: "moark",
     api_base: "https://api.moark.com/v1",
     upstream_model: "Qwen3-Max",
   };
   const gitee = {
     model_id: "node-gitee",
     provider: "openai",
+    vendor: "ai.gitee.com",
     api_base: "https://ai.gitee.com/v1",
     upstream_model: "Qwen3-Max",
   };
 
-  it("labels a provider with its endpoint, or with its name alone when it has no endpoint", () => {
-    expect(providerLabel(moark)).toBe("moark · https://api.moark.com/v1");
-    expect(providerLabel({ ...moark, api_base: "moark" })).toBe("moark");
+  it("labels a deployment with its vendor and endpoint, or with its vendor alone when it has no endpoint", () => {
+    expect(providerLabel(moark)).toBe("Moark (Gitee AI) · https://api.moark.com/v1");
+    expect(providerLabel({ ...moark, api_base: "moark" })).toBe("Moark (Gitee AI)");
+    expect(providerLabel(gitee)).toBe("ai.gitee.com · https://ai.gitee.com/v1");
   });
 
   it("round-trips every target choice through its select value", () => {
@@ -204,7 +208,7 @@ describe("benchmark targets", () => {
 
   it("treats a run as a provider comparison only when more than one provider answered", () => {
     const quiet = { same_deployment: 0, same_endpoint: 0 };
-    const level = { ...metrics, concurrency: 1, model: "Qwen3-Max", api_base: "", interference: quiet };
+    const level = { ...metrics, concurrency: 1, model: "Qwen3-Max", api_base: "", vendor: "", interference: quiet };
     const detail = { run_id: "qos-x", levels: [], deployments: [] };
     expect(
       comparesProviders({

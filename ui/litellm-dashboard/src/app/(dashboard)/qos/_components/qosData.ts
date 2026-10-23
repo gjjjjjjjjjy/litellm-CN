@@ -1,3 +1,4 @@
+import { getProviderLogoAndName } from "@/components/provider_info_helpers";
 import type { components } from "@/lib/http/schema";
 
 export type QosSummary = components["schemas"]["QosSummaryResponse"];
@@ -59,8 +60,12 @@ export type QosBenchmarkDeploymentLevel = components["schemas"]["QosBenchmarkDep
 export type QosTargetModel = components["schemas"]["QosTargetModel"];
 export type QosTargetDeployment = components["schemas"]["QosTargetDeployment"];
 
+export const vendorName = (vendor: string): string => getProviderLogoAndName(vendor).displayName;
+
 export const providerLabel = (deployment: QosTargetDeployment): string =>
-  deployment.api_base === deployment.provider ? deployment.provider : `${deployment.provider} · ${deployment.api_base}`;
+  deployment.api_base === deployment.provider
+    ? vendorName(deployment.vendor)
+    : `${vendorName(deployment.vendor)} · ${deployment.api_base}`;
 
 export type TargetChoice =
   | { readonly kind: "balanced" }

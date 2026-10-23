@@ -20,6 +20,7 @@ import {
   type QosInterference,
   type QosModelGroupMetrics,
 } from "./qosData";
+import VendorName from "./VendorName";
 
 const metricColumns = <T extends QosModelGroupMetrics>(): ColumnDef<T>[] => [
   { id: "requests", header: "Requests", cell: ({ row }) => row.original.requests },
@@ -86,7 +87,8 @@ export const groupColumns: ColumnDef<QosModelGroupMetrics>[] = [
 
 const NodeCell = ({ deployment }: { deployment: QosDeploymentMetrics }) => (
   <div className="min-w-0">
-    <p className="truncate font-mono text-xs">{nodeLabel(deployment)}</p>
+    <VendorName vendor={deployment.vendor} />
+    <p className="truncate font-mono text-xs text-muted-foreground">{nodeLabel(deployment)}</p>
     <p className="truncate text-xs text-muted-foreground">{deployment.model}</p>
   </div>
 );
