@@ -14153,6 +14153,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/qos/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Qos Summary */
+        get: operations["get_qos_summary_qos_summary_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/queue/chat/completions": {
         parameters: {
             query?: never;
@@ -42783,6 +42800,104 @@ export interface components {
                     [key: string]: unknown;
                 };
             } | null;
+        };
+        /** QosDeploymentMetrics */
+        QosDeploymentMetrics: {
+            /** Api Base */
+            api_base: string;
+            e2e_latency_ms: components["schemas"]["QosPercentiles"];
+            /** Failed Requests */
+            failed_requests: number;
+            /**
+             * First Request At
+             * Format: date-time
+             */
+            first_request_at: string;
+            /**
+             * Last Response At
+             * Format: date-time
+             */
+            last_response_at: string;
+            /** Model */
+            model: string;
+            /** Model Group */
+            model_group: string;
+            /** Model Id */
+            model_id: string;
+            /** Output Tokens */
+            output_tokens: number;
+            /** Output Tokens Per Second */
+            output_tokens_per_second: number;
+            /** Peak Concurrency */
+            peak_concurrency: number;
+            /** Requests */
+            requests: number;
+            /** Requests Per Second */
+            requests_per_second: number;
+            /** Streamed Requests */
+            streamed_requests: number;
+            tpot_ms: components["schemas"]["QosPercentiles"];
+            ttft_ms: components["schemas"]["QosPercentiles"];
+        };
+        /** QosModelGroupMetrics */
+        QosModelGroupMetrics: {
+            e2e_latency_ms: components["schemas"]["QosPercentiles"];
+            /** Failed Requests */
+            failed_requests: number;
+            /**
+             * First Request At
+             * Format: date-time
+             */
+            first_request_at: string;
+            /**
+             * Last Response At
+             * Format: date-time
+             */
+            last_response_at: string;
+            /** Model Group */
+            model_group: string;
+            /** Output Tokens */
+            output_tokens: number;
+            /** Output Tokens Per Second */
+            output_tokens_per_second: number;
+            /** Peak Concurrency */
+            peak_concurrency: number;
+            /** Requests */
+            requests: number;
+            /** Requests Per Second */
+            requests_per_second: number;
+            /** Streamed Requests */
+            streamed_requests: number;
+            tpot_ms: components["schemas"]["QosPercentiles"];
+            ttft_ms: components["schemas"]["QosPercentiles"];
+        };
+        /** QosPercentiles */
+        QosPercentiles: {
+            /** P50 */
+            p50: number | null;
+            /** P95 */
+            p95: number | null;
+            /** P99 */
+            p99: number | null;
+        };
+        /** QosSummaryResponse */
+        QosSummaryResponse: {
+            /** Deployments */
+            deployments: components["schemas"]["QosDeploymentMetrics"][];
+            /**
+             * End Time
+             * Format: date-time
+             */
+            end_time: string;
+            /** Model Groups */
+            model_groups: components["schemas"]["QosModelGroupMetrics"][];
+            /**
+             * Start Time
+             * Format: date-time
+             */
+            start_time: string;
+            /** Tag */
+            tag: string | null;
         };
         /**
          * RankingOptions
@@ -71516,6 +71631,44 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["FacetListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_qos_summary_qos_summary_get: {
+        parameters: {
+            query?: {
+                /** @description ISO 8601, defaults to 24 hours before end_time */
+                start_time?: string | null;
+                /** @description ISO 8601, defaults to now */
+                end_time?: string | null;
+                /** @description Only include this public model name */
+                model_group?: string | null;
+                /** @description Only include requests carrying this request tag */
+                tag?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QosSummaryResponse"];
                 };
             };
             /** @description Validation Error */

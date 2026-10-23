@@ -51853,6 +51853,430 @@
       }
     }
   },
+  "qos": {
+    "components": {
+      "schemas": {
+        "HTTPValidationError": {
+          "properties": {
+            "detail": {
+              "items": {
+                "$ref": "#/components/schemas/ValidationError"
+              },
+              "title": "Detail",
+              "type": "array"
+            }
+          },
+          "title": "HTTPValidationError",
+          "type": "object"
+        },
+        "QosDeploymentMetrics": {
+          "properties": {
+            "api_base": {
+              "title": "Api Base",
+              "type": "string"
+            },
+            "e2e_latency_ms": {
+              "$ref": "#/components/schemas/QosPercentiles"
+            },
+            "failed_requests": {
+              "title": "Failed Requests",
+              "type": "integer"
+            },
+            "first_request_at": {
+              "format": "date-time",
+              "title": "First Request At",
+              "type": "string"
+            },
+            "last_response_at": {
+              "format": "date-time",
+              "title": "Last Response At",
+              "type": "string"
+            },
+            "model": {
+              "title": "Model",
+              "type": "string"
+            },
+            "model_group": {
+              "title": "Model Group",
+              "type": "string"
+            },
+            "model_id": {
+              "title": "Model Id",
+              "type": "string"
+            },
+            "output_tokens": {
+              "title": "Output Tokens",
+              "type": "integer"
+            },
+            "output_tokens_per_second": {
+              "title": "Output Tokens Per Second",
+              "type": "number"
+            },
+            "peak_concurrency": {
+              "title": "Peak Concurrency",
+              "type": "integer"
+            },
+            "requests": {
+              "title": "Requests",
+              "type": "integer"
+            },
+            "requests_per_second": {
+              "title": "Requests Per Second",
+              "type": "number"
+            },
+            "streamed_requests": {
+              "title": "Streamed Requests",
+              "type": "integer"
+            },
+            "tpot_ms": {
+              "$ref": "#/components/schemas/QosPercentiles"
+            },
+            "ttft_ms": {
+              "$ref": "#/components/schemas/QosPercentiles"
+            }
+          },
+          "required": [
+            "model_group",
+            "requests",
+            "failed_requests",
+            "streamed_requests",
+            "output_tokens",
+            "peak_concurrency",
+            "first_request_at",
+            "last_response_at",
+            "requests_per_second",
+            "output_tokens_per_second",
+            "ttft_ms",
+            "tpot_ms",
+            "e2e_latency_ms",
+            "model_id",
+            "model",
+            "api_base"
+          ],
+          "title": "QosDeploymentMetrics",
+          "type": "object"
+        },
+        "QosModelGroupMetrics": {
+          "properties": {
+            "e2e_latency_ms": {
+              "$ref": "#/components/schemas/QosPercentiles"
+            },
+            "failed_requests": {
+              "title": "Failed Requests",
+              "type": "integer"
+            },
+            "first_request_at": {
+              "format": "date-time",
+              "title": "First Request At",
+              "type": "string"
+            },
+            "last_response_at": {
+              "format": "date-time",
+              "title": "Last Response At",
+              "type": "string"
+            },
+            "model_group": {
+              "title": "Model Group",
+              "type": "string"
+            },
+            "output_tokens": {
+              "title": "Output Tokens",
+              "type": "integer"
+            },
+            "output_tokens_per_second": {
+              "title": "Output Tokens Per Second",
+              "type": "number"
+            },
+            "peak_concurrency": {
+              "title": "Peak Concurrency",
+              "type": "integer"
+            },
+            "requests": {
+              "title": "Requests",
+              "type": "integer"
+            },
+            "requests_per_second": {
+              "title": "Requests Per Second",
+              "type": "number"
+            },
+            "streamed_requests": {
+              "title": "Streamed Requests",
+              "type": "integer"
+            },
+            "tpot_ms": {
+              "$ref": "#/components/schemas/QosPercentiles"
+            },
+            "ttft_ms": {
+              "$ref": "#/components/schemas/QosPercentiles"
+            }
+          },
+          "required": [
+            "model_group",
+            "requests",
+            "failed_requests",
+            "streamed_requests",
+            "output_tokens",
+            "peak_concurrency",
+            "first_request_at",
+            "last_response_at",
+            "requests_per_second",
+            "output_tokens_per_second",
+            "ttft_ms",
+            "tpot_ms",
+            "e2e_latency_ms"
+          ],
+          "title": "QosModelGroupMetrics",
+          "type": "object"
+        },
+        "QosPercentiles": {
+          "properties": {
+            "p50": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "P50"
+            },
+            "p95": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "P95"
+            },
+            "p99": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "P99"
+            }
+          },
+          "required": [
+            "p50",
+            "p95",
+            "p99"
+          ],
+          "title": "QosPercentiles",
+          "type": "object"
+        },
+        "QosSummaryResponse": {
+          "properties": {
+            "deployments": {
+              "items": {
+                "$ref": "#/components/schemas/QosDeploymentMetrics"
+              },
+              "title": "Deployments",
+              "type": "array"
+            },
+            "end_time": {
+              "format": "date-time",
+              "title": "End Time",
+              "type": "string"
+            },
+            "model_groups": {
+              "items": {
+                "$ref": "#/components/schemas/QosModelGroupMetrics"
+              },
+              "title": "Model Groups",
+              "type": "array"
+            },
+            "start_time": {
+              "format": "date-time",
+              "title": "Start Time",
+              "type": "string"
+            },
+            "tag": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Tag"
+            }
+          },
+          "required": [
+            "start_time",
+            "end_time",
+            "tag",
+            "model_groups",
+            "deployments"
+          ],
+          "title": "QosSummaryResponse",
+          "type": "object"
+        },
+        "ValidationError": {
+          "properties": {
+            "ctx": {
+              "title": "Context",
+              "type": "object"
+            },
+            "input": {
+              "title": "Input"
+            },
+            "loc": {
+              "items": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "integer"
+                  }
+                ]
+              },
+              "title": "Location",
+              "type": "array"
+            },
+            "msg": {
+              "title": "Message",
+              "type": "string"
+            },
+            "type": {
+              "title": "Error Type",
+              "type": "string"
+            }
+          },
+          "required": [
+            "loc",
+            "msg",
+            "type"
+          ],
+          "title": "ValidationError",
+          "type": "object"
+        }
+      }
+    },
+    "paths": {
+      "/qos/summary": {
+        "get": {
+          "operationId": "get_qos_summary_qos_summary_get",
+          "parameters": [
+            {
+              "description": "ISO 8601, defaults to 24 hours before end_time",
+              "in": "query",
+              "name": "start_time",
+              "required": false,
+              "schema": {
+                "anyOf": [
+                  {
+                    "format": "date-time",
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "ISO 8601, defaults to 24 hours before end_time",
+                "title": "Start Time"
+              }
+            },
+            {
+              "description": "ISO 8601, defaults to now",
+              "in": "query",
+              "name": "end_time",
+              "required": false,
+              "schema": {
+                "anyOf": [
+                  {
+                    "format": "date-time",
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "ISO 8601, defaults to now",
+                "title": "End Time"
+              }
+            },
+            {
+              "description": "Only include this public model name",
+              "in": "query",
+              "name": "model_group",
+              "required": false,
+              "schema": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "Only include this public model name",
+                "title": "Model Group"
+              }
+            },
+            {
+              "description": "Only include requests carrying this request tag",
+              "in": "query",
+              "name": "tag",
+              "required": false,
+              "schema": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "Only include requests carrying this request tag",
+                "title": "Tag"
+              }
+            }
+          ],
+          "responses": {
+            "200": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/QosSummaryResponse"
+                  }
+                }
+              },
+              "description": "Successful Response"
+            },
+            "422": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/HTTPValidationError"
+                  }
+                }
+              },
+              "description": "Validation Error"
+            }
+          },
+          "security": [
+            {
+              "APIKeyHeader": []
+            }
+          ],
+          "summary": "Get Qos Summary",
+          "tags": [
+            "qos"
+          ]
+        }
+      }
+    }
+  },
   "realtime": {
     "components": {
       "schemas": {

@@ -39,6 +39,7 @@ import {
   FileText,
   FlaskConical,
   Folder,
+  Gauge,
   HeartPulse,
   House,
   KeyRound,
@@ -79,6 +80,7 @@ import {
   rolesWithWriteAccess,
 } from "../utils/roles";
 import BetaBadge from "./BetaBadge";
+import { HIDDEN_MENU_KEYS } from "./focusMenu";
 import SidebarAccountMenu from "./SidebarAccountMenu/SidebarAccountMenu";
 import SidebarUsageCard from "./SidebarUsageCard";
 import { routeSegmentForPathname, uiHref } from "@/utils/uiHref";
@@ -123,6 +125,7 @@ export interface MenuGroup {
 
 export interface MenuVisibilityContext {
   userRole: string;
+  hiddenMenuKeys?: ReadonlySet<string>;
   isViewOnly: boolean;
   isOrgAdmin: boolean;
   isTeamAdmin: boolean;
@@ -176,6 +179,7 @@ const pageIsEnabledForInternalUser = (item: MenuItem, context: MenuVisibilityCon
 };
 
 const menuItemIsVisible = (item: MenuItem, context: MenuVisibilityContext, isAdmin: boolean): boolean => {
+  if (context.hiddenMenuKeys?.has(item.key)) return false;
   if (item.children && item.children.length === 0) return false;
   if (item.key === "llm-playground" && context.isViewOnly) return false;
   const adminVisibility = adminPageVisibility(item, context, isAdmin);
@@ -305,6 +309,13 @@ const menuGroups: MenuGroup[] = [
             Model Leaderboard <BetaBadge />
           </span>
         ),
+      },
+      {
+        key: "qos",
+        page: "qos",
+        icon: <Gauge {...ICON} />,
+        roles: all_admin_roles,
+        label: "Service Quality",
       },
       {
         key: "cost-optimization",
@@ -573,6 +584,7 @@ const Sidebar_: React.FC<SidebarProps> = ({
   const visibleGroups = useMemo(() => {
     const context: MenuVisibilityContext = {
       userRole,
+      hiddenMenuKeys: HIDDEN_MENU_KEYS,
       isViewOnly,
       isOrgAdmin,
       isTeamAdmin,

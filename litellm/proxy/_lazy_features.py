@@ -140,6 +140,11 @@ LAZY_FEATURES: Final[tuple[LazyFeature, ...]] = (
         path_prefixes=("/model-insights",),
     ),
     LazyFeature(
+        name="qos",
+        module_path="litellm.proxy.management_endpoints.qos_endpoints",
+        path_prefixes=("/qos",),
+    ),
+    LazyFeature(
         name="search_tools",
         module_path="litellm.proxy.search_endpoints.search_tool_management",
         path_prefixes=("/search_tools",),

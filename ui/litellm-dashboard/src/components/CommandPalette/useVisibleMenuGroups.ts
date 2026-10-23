@@ -6,6 +6,7 @@ import useAuthorized from "@/app/(dashboard)/hooks/useAuthorized";
 import { useUISettings } from "@/app/(dashboard)/hooks/uiSettings/useUISettings";
 import useIsOrgAdmin from "@/app/(dashboard)/hooks/useIsOrgAdmin";
 import { isUserTeamAdminForAnyTeam } from "@/utils/roles";
+import { HIDDEN_MENU_KEYS } from "@/components/focusMenu";
 import { menuGroups, visibleMenuGroups, type MenuVisibilityContext } from "@/components/leftnav";
 
 export const useVisibleMenuGroups = () => {
@@ -19,6 +20,7 @@ export const useVisibleMenuGroups = () => {
   return useMemo(() => {
     const context: MenuVisibilityContext = {
       userRole,
+      hiddenMenuKeys: HIDDEN_MENU_KEYS,
       isViewOnly,
       isOrgAdmin,
       isTeamAdmin,

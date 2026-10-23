@@ -1,0 +1,61 @@
+# 模型服务质量评测
+
+网关记录每个请求的开始时间、首个 Token 时间、结束时间、Token 数、处理节点和成功与否。管理界面「服务质量」页面按模型和节点汇总这些记录，压测和评测工具使用 [evalscope](https://github.com/modelscope/evalscope) 1.14.0，通过网关发送请求
+
+## 指标含义
+
+| 指标 | 计算方式 |
+| --- | --- |
+| 成功率 | 成功请求数 / 总请求数 |
+| 峰值并发 | 同一时刻正在处理的请求数最大值 |
+| 每秒请求数 (QPS) | 请求数 / 首个请求开始到最后一个响应结束的时长 |
+| 输出 Token/秒 | 成功请求的输出 Token 总数 / 同一时长 |
+| TTFT | 首个 Token 时间 - 请求开始时间，仅统计流式请求 |
+| TPOT | (结束时间 - 首个 Token 时间) / (输出 Token 数 - 1)，仅统计流式请求 |
+| 总延迟 | 结束时间 - 请求开始时间 |
+
+页面显示 P50 / P95，接口 `/qos/summary` 同时返回 P99。缓存命中的请求不计入统计
+
+## 准备
+
+构建压测镜像，只需执行一次
+
+```bash
+docker build -t litellm-qos-bench:evalscope-1.14.0 qos
+```
+
+建议在管理界面为压测单独创建一个虚拟密钥，并设置为环境变量
+
+```bash
+export LITELLM_API_KEY=sk-...
+```
+
+网关默认地址为 `http://host.docker.internal:4000`，其他地址通过 `LITELLM_BASE_URL` 指定
+
+## 并发与性能压测
+
+依次在每个并发数下发送流式请求，提示词来自 `prompts.txt`，每行一条
+
+```bash
+./qos/run-perf.sh qwen3-max 1 4 16 32
+```
+
+每个并发数发送「并发数 × 8」个请求，可用 `QOS_REQUESTS_PER_WORKER` 调整，最大输出 Token 默认为 512，可用 `QOS_MAX_TOKENS` 调整
+
+脚本结束时打印本次的请求标签，例如 `qos-20261023-001747-qwen3-max`。在「服务质量」页面填入该标签并刷新，即可只看这一轮压测，展开模型行可对比各节点。evalscope 的客户端报告保存在 `qos/results/<标签>/`
+
+## 回答质量评测
+
+使用标准数据集评测模型回答，数据集在首次运行时从 ModelScope 下载
+
+```bash
+./qos/run-eval.sh qwen3-max gsm8k ceval
+```
+
+每个子集默认取 50 条，可用 `QOS_EVAL_LIMIT` 调整。数据集名称见 evalscope 文档，报告保存在 `qos/results/eval-*/reports/`
+
+## 注意事项
+
+- TTFT 和 TPOT 只能从流式请求得到，非流式请求只统计总延迟
+- 网关以多个 worker 运行且未配置 Redis 时，限流和节点健康状态在各 worker 内分别计算。高并发压测前建议配置 Redis，或直接对节点压测一次作为对照，避免网关成为瓶颈
+- 统计数据来自网关的请求日志，写入数据库有数秒延迟，压测结束后稍等再刷新页面

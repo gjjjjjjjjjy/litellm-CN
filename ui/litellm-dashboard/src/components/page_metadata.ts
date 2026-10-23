@@ -22,6 +22,7 @@ export const pageDescriptions: Record<string, string> = {
   new_usage: "View usage analytics and metrics",
   "cost-optimization": "Track and configure cost-saving features: prompt compression, caching, and auto routing",
   "model-insights": "Model Leaderboard: compare usage, spend, tokens, and task mix across this gateway",
+  qos: "Service quality per model and node: concurrency, success rate, TTFT, TPOT and latency",
   logs: "Access request and response logs",
   lens: "Review agent activity and investigate patterns with supporting evidence",
   "guardrails-monitor": "Monitor guardrail performance and view logs",

@@ -1,0 +1,20 @@
+用三句话解释什么是大语言模型。
+请把下面这句话翻译成英文：今天的会议推迟到下午三点。
+写一个 Python 函数，判断一个字符串是否是回文，并给出两个测试用例。
+列出提升网站加载速度的五种方法，每条一句话说明原因。
+简要比较 TCP 和 UDP 的区别，并各举一个适用场景。
+为一家咖啡店写一段 100 字左右的开业宣传文案。
+一个水池有两个进水管，单开甲管 6 小时注满，单开乙管 4 小时注满，两管同时开需要几小时？请给出推理过程。
+解释数据库索引的工作原理，以及为什么索引过多会影响写入性能。
+请总结《三国演义》中赤壁之战的经过，不超过 200 字。
+给出一份为期一周的初学者跑步训练计划。
+What are the main differences between supervised and unsupervised learning? Give one example of each.
+Write a short email to a colleague asking to reschedule a meeting from Monday to Wednesday.
+Explain the CAP theorem in distributed systems in simple terms.
+Summarize the benefits and risks of remote work in five bullet points.
+Write a SQL query that returns the top 3 customers by total order amount from tables customers(id, name) and orders(id, customer_id, amount).
+用通俗的语言解释什么是 Transformer 中的注意力机制。
+请帮我把以下需求整理成用户故事：用户可以上传头像、修改昵称、设置隐私权限。
+分析一下新能源汽车在中国市场快速发展的三个主要原因。
+写一首关于秋天的五言绝句，并解释其中的意象。
+如果一个 API 的 P95 延迟突然升高，你会按什么步骤排查？
