@@ -5,6 +5,7 @@ from typing import Annotated, Final
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import ConfigDict, TypeAdapter
 
+from litellm.constants import LITTELM_INTERNAL_HEALTH_SERVICE_ACCOUNT_NAME
 from litellm.proxy._types import CommonProxyErrors, LitellmUserRoles, UserAPIKeyAuth
 from litellm.proxy.auth.user_api_key_auth import user_api_key_auth
 from litellm.proxy.management_endpoints.qos_benchmark import QOS_RUN_PREFIX, concurrency_of, new_run_id, start_benchmark
@@ -79,8 +80,10 @@ WITH base AS (
     WHERE "startTime" >= $1::timestamp
         AND "startTime" < $2::timestamp
         AND COALESCE(cache_hit, '') <> 'True'
+        AND COALESCE(model, '') <> ''
         AND ($3::text IS NULL OR model_group = $3::text)
         AND {tag_filter}
+        AND {health_check_filter}
 ),
 events AS (
     SELECT {keys}, started AS at, 1 AS delta FROM base
@@ -121,6 +124,7 @@ ORDER BY {selected_keys}
 """
 
 _SPEND_LOGS: Final = '"LiteLLM_SpendLogs"'
+_EXCLUDE_HEALTH_CHECKS: Final = f"NOT COALESCE(request_tags ? '{LITTELM_INTERNAL_HEALTH_SERVICE_ACCOUNT_NAME}', false)"
 _REQUEST_TAG_FILTER: Final = "($4::text IS NULL OR request_tags ? $4::text)"
 
 DEPLOYMENT_SUMMARY_SQL: Final = _SUMMARY_SQL.format(
@@ -129,6 +133,7 @@ DEPLOYMENT_SUMMARY_SQL: Final = _SUMMARY_SQL.format(
     level_column="",
     source=_SPEND_LOGS,
     tag_filter=_REQUEST_TAG_FILTER,
+    health_check_filter=_EXCLUDE_HEALTH_CHECKS,
 )
 MODEL_GROUP_SUMMARY_SQL: Final = _SUMMARY_SQL.format(
     keys="model_group",
@@ -136,6 +141,7 @@ MODEL_GROUP_SUMMARY_SQL: Final = _SUMMARY_SQL.format(
     level_column="",
     source=_SPEND_LOGS,
     tag_filter=_REQUEST_TAG_FILTER,
+    health_check_filter=_EXCLUDE_HEALTH_CHECKS,
 )
 BENCHMARK_LEVEL_SUMMARY_SQL: Final = _SUMMARY_SQL.format(
     keys="model_group, level_tag",
@@ -145,6 +151,7 @@ BENCHMARK_LEVEL_SUMMARY_SQL: Final = _SUMMARY_SQL.format(
     + " CROSS JOIN LATERAL jsonb_array_elements_text("
     + "CASE WHEN jsonb_typeof(request_tags) = 'array' THEN request_tags ELSE '[]'::jsonb END) AS level_tag",
     tag_filter="left(level_tag, length($4::text) + 2) = $4::text || '@c'",
+    health_check_filter=_EXCLUDE_HEALTH_CHECKS,
 )
 
 

@@ -75,6 +75,12 @@ describe("QosView", () => {
     expect(vi.mocked(apiClient.get).mock.calls[1][1]?.query?.tag).toBe("qos-run-1");
   });
 
+  it("names traffic that has no public model name instead of leaving the model blank", async () => {
+    vi.mocked(apiClient.get).mockResolvedValue({ ...summary, model_groups: [{ ...metrics, model_group: "" }], deployments: [] });
+    renderWithProviders(<QosView accessToken="token" />);
+    expect(await screen.findByText("No public model name")).toBeInTheDocument();
+  });
+
   it("shows the server's error message when loading fails", async () => {
     vi.mocked(apiClient.get).mockRejectedValue(new Error("Only proxy admins can view service quality metrics"));
     renderWithProviders(<QosView accessToken="token" />);

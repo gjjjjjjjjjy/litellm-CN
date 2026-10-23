@@ -40,7 +40,16 @@ const ExpandToggle = ({ row }: { row: Row<QosModelGroupMetrics> }) => (
 
 export const groupColumns: ColumnDef<QosModelGroupMetrics>[] = [
   { id: "expand", header: "", cell: ({ row }) => <ExpandToggle row={row} /> },
-  { id: "model_group", header: "Model", cell: ({ row }) => <span className="font-medium">{row.original.model_group}</span> },
+  {
+    id: "model_group",
+    header: "Model",
+    cell: ({ row }) =>
+      row.original.model_group === "" ? (
+        <span className="text-muted-foreground">No public model name</span>
+      ) : (
+        <span className="font-medium">{row.original.model_group}</span>
+      ),
+  },
   ...metricColumns<QosModelGroupMetrics>(),
 ];
 

@@ -44,8 +44,10 @@ export const formatRate = (value: number): string => (value >= 100 ? value.toFix
 export const deploymentsFor = (summary: QosSummary, modelGroup: string): QosDeploymentMetrics[] =>
   summary.deployments.filter((deployment) => deployment.model_group === modelGroup);
 
-export const nodeLabel = (deployment: QosDeploymentMetrics): string =>
-  deployment.api_base !== "" ? deployment.api_base : deployment.model_id;
+export const nodeLabel = (deployment: QosDeploymentMetrics): string => {
+  if (deployment.api_base !== "") return deployment.api_base;
+  return deployment.model_id !== "" ? deployment.model_id : "Unknown node";
+};
 
 export type QosBenchmarkRequest = components["schemas"]["QosBenchmarkRequest"];
 export type QosBenchmarkStarted = components["schemas"]["QosBenchmarkStarted"];

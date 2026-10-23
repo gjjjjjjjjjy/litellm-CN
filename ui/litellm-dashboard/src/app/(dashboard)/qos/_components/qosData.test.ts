@@ -72,6 +72,7 @@ describe("qosData", () => {
       deployments: [deployment("qwen3-max", "a", "https://node-a/v1"), deployment("other", "b", ""), deployment("qwen3-max", "c", "")],
     };
     expect(deploymentsFor(summary, "qwen3-max").map(nodeLabel)).toEqual(["https://node-a/v1", "c"]);
+    expect(nodeLabel(deployment("", "", ""))).toBe("Unknown node");
   });
 });
 
