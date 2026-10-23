@@ -65,7 +65,7 @@ done
 [[ "$health" == "healthy" ]] || { echo "网关 5 分钟内未就绪，请查看日志：docker compose logs litellm" >&2; exit 1; }
 
 admins="$(docker compose exec -T db psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -At \
-  -c "SELECT count(*) FROM \"LiteLLM_UserTable\" WHERE user_role = 'proxy_admin' AND password IS NOT NULL")"
+  -c "SELECT count(*) FROM \"LiteLLM_UserTable\" WHERE user_role = 'proxy_admin' AND password IS NOT NULL" </dev/null)"
 
 echo "已启动：https://$SERVER_IP/ui/"
 if [[ "$admins" == "0" ]]; then
