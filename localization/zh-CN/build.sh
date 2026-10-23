@@ -28,7 +28,8 @@ docker run --rm \
     TYPESCRIPT_PATH=/work/ui/node_modules/typescript node --test /patch/tests/localize.test.mjs
     node /patch/localize.mjs apply --source /work/ui --catalog /patch/zh-CN.json --output /work/translation-report.json
     node /patch/prepare-ui.mjs /work/ui
-    npx next build
+    hidden_menu_keys="$(node /patch/hidden-menus.mjs /work/ui/src/components/leftnav.tsx /patch/hidden-menus.json)"
+    NEXT_PUBLIC_HIDDEN_MENU_KEYS="$hidden_menu_keys" npx next build
   '
 
 cp -R "$build_root/ui/out" "$build_root/runtime/ui"

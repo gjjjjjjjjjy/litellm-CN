@@ -29,6 +29,10 @@ HTTP_PROXY=http://host.docker.internal:7897 \
 
 构建执行补丁测试、TypeScript 检查和 Next.js 静态页面生成。构建结束后自动删除临时源码与依赖
 
+## 精简菜单
+
+`hidden-menus.json` 列出镜像中隐藏的菜单，键名对应 `ui/litellm-dashboard/src/components/leftnav.tsx` 中菜单项的 `key`。隐藏后侧边栏和 Ctrl K 搜索都不再显示，直接访问页面地址仍可打开。上游重命名或删除其中的菜单时构建直接报错，按报错更新列表即可。本地开发和测试不读取该列表，显示完整菜单
+
 ## 维护译文
 
 `zh-CN.json` 是唯一的词库，键为英文原文，值为中文译文。`context-overrides.json` 按源文件区分同词异义，例如产品名 Linear 与图表的线性刻度
