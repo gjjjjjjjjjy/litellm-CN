@@ -3,7 +3,7 @@ set -euo pipefail
 cd "$(dirname "$0")"
 
 if [[ $# -gt 0 ]]; then
-  echo "用法：./start.sh。请在本机运行 build-image.sh，上传并导入镜像后再启动" >&2
+  echo "用法：./start.sh。发布新版时先设置 .env 中的 LITELLM_IMAGE，再运行 docker compose pull --policy always litellm" >&2
   exit 2
 fi
 
@@ -38,18 +38,18 @@ for name in LITELLM_MASTER_KEY LITELLM_SALT_KEY POSTGRES_PASSWORD; do
   (( ${#value} >= 32 )) || { echo "$name 至少需要 32 个字符" >&2; exit 1; }
 done
 
-if image_platform="$(docker image inspect --format '{{.Os}}/{{.Architecture}}' litellm-local:zh-cn-amd64)"; then
-  if [[ "$image_platform" != "linux/amd64" ]]; then
-    echo "服务器镜像架构应为 linux/amd64，当前为 $image_platform，请重新导入本机生成的镜像包" >&2
-    exit 1
-  fi
-else
-  echo "请先上传本机 build-image.sh 生成的镜像包，再执行 docker load -i 镜像包路径" >&2
+if [[ -z "${LITELLM_IMAGE:-}" ]]; then
+  echo "请在 .env 中设置 LITELLM_IMAGE，填写已发布镜像的完整地址和版本" >&2
   exit 1
 fi
 
-if [[ ! -f runtime/backend/litellm/__init__.py || ! -f runtime/ui/index.html ]]; then
-  echo "缺少应用代码，请在本机运行 deploy/qosllm/sync.sh 同步到本目录的 runtime/" >&2
+if image_platform="$(docker image inspect --format '{{.Os}}/{{.Architecture}}' "$LITELLM_IMAGE")"; then
+  if [[ "$image_platform" != "linux/amd64" ]]; then
+    echo "服务器镜像架构应为 linux/amd64，当前为 $image_platform，请拉取本机发布的 amd64 镜像" >&2
+    exit 1
+  fi
+else
+  echo "请先运行 docker compose pull --policy always litellm 拉取已发布的镜像" >&2
   exit 1
 fi
 
