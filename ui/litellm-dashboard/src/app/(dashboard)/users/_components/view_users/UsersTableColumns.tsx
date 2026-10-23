@@ -7,7 +7,7 @@ import { UserInfo } from "@/components/networking";
 import { createSelectionColumn, DataTableSortHeader } from "@/components/shared/DataTable";
 import { CellTooltip, DateCell, IdentityCell, MoneyCell, StatusBadge } from "@/components/shared/table_cells";
 import { Badge } from "@/components/ui/badge";
-import { ACCOUNT_LOCKED_HINT, accountLockedAt } from "@/components/account_lockout/accountLockout";
+import { ACCOUNT_LOCK_HINTS, ACCOUNT_LOCK_LABELS, accountLock } from "@/components/account_lockout/accountLockout";
 import { buttonVariants } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -132,12 +132,13 @@ export const getUsersTableColumns = ({
             />
           );
         }
-        if (accountLockedAt(row.original.metadata) !== null) {
+        const lock = accountLock(row.original.metadata, new Date());
+        if (lock !== null) {
           return (
             <StatusBadge
               tone="error"
-              label="Locked"
-              tooltip={ACCOUNT_LOCKED_HINT}
+              label={ACCOUNT_LOCK_LABELS[lock.kind]}
+              tooltip={ACCOUNT_LOCK_HINTS[lock.kind]}
               dataTestId={`user-status-${row.original.user_id}`}
             />
           );

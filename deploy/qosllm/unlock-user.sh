@@ -13,7 +13,7 @@ set +a
 
 result="$(docker compose exec -T db psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 -v email="$1" -At <<'SQL'
 UPDATE "LiteLLM_UserTable"
-SET metadata = COALESCE(metadata, '{}'::jsonb) - 'login_failed_attempts' - 'login_locked_at'
+SET metadata = metadata - 'login_failed_attempts' - 'login_locked_until' - 'login_locked_at'
 WHERE lower(user_email) = lower(:'email');
 SQL
 )"

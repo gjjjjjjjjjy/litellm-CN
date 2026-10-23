@@ -7,7 +7,8 @@ import { apiClient } from "@/components/networking";
 
 vi.mock("@/components/networking", () => ({ apiClient: { post: vi.fn() } }));
 
-const locked = { login_failed_attempts: 3, login_locked_at: "2026-10-23T06:00:00Z" };
+const locked = { login_failed_attempts: 10, login_locked_at: "2026-10-23T06:00:00Z" };
+const inTenMinutes = () => new Date(Date.now() + 10 * 60_000).toISOString();
 
 describe("AccountLockNotice", () => {
   beforeEach(() => {
@@ -32,6 +33,36 @@ describe("AccountLockNotice", () => {
 
     expect(apiClient.post).toHaveBeenCalledWith("/account_lockout/unlock", { accessToken: "token", body: { user_id: "user-1" } });
     expect(onUnlocked).toHaveBeenCalledOnce();
+  });
+
+  it("lets a proxy admin end a temporary lock early", async () => {
+    const user = userEvent.setup();
+    render(
+      <AccountLockNotice
+        accessToken="token"
+        userId="user-1"
+        metadata={{ login_failed_attempts: 3, login_locked_until: inTenMinutes() }}
+        canUnlock
+        onUnlocked={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("This account is temporarily locked")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Unlock account" }));
+    expect(apiClient.post).toHaveBeenCalledWith("/account_lockout/unlock", { accessToken: "token", body: { user_id: "user-1" } });
+  });
+
+  it("renders nothing once a temporary lock has expired", () => {
+    const { container } = render(
+      <AccountLockNotice
+        accessToken="token"
+        userId="user-1"
+        metadata={{ login_failed_attempts: 3, login_locked_until: "2026-01-01T00:00:00Z" }}
+        canUnlock
+        onUnlocked={vi.fn()}
+      />,
+    );
+    expect(container).toBeEmptyDOMElement();
   });
 
   it("shows the lock without an unlock button to users who cannot unlock", () => {

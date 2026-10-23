@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Final, Literal, cast
 
 import jwt
 from fastapi import HTTPException
+from typing_extensions import assert_never
 
 import litellm
 from litellm._logging import verbose_proxy_logger
@@ -30,8 +31,10 @@ from litellm.proxy._types import (
 )
 from litellm.proxy.auth.account_lockout import (
     ACCOUNT_LOCKED_MESSAGE,
+    PermanentLock,
+    TemporaryLock,
+    account_lock,
     clear_login_failures,
-    is_account_locked,
     record_failed_login,
 )
 from litellm.proxy.auth.auth_utils import is_sso_provider_fully_configured
@@ -171,6 +174,23 @@ def _invalid_credentials_message(general_settings: Mapping[str, object]) -> str:
     if is_env_credential_login_enabled(general_settings):
         return INVALID_UI_CREDENTIALS_MESSAGE
     return INVALID_USER_PASSWORD_MESSAGE
+
+
+def _locked_out(lock: PermanentLock | TemporaryLock, now: datetime) -> ProxyException:
+    match lock:
+        case PermanentLock():
+            return ProxyException(
+                message=ACCOUNT_LOCKED_MESSAGE, type=ProxyErrorTypes.auth_error, param="account_locked", code=403
+            )
+        case TemporaryLock():
+            return ProxyException(
+                message=lock.message(now),
+                type=ProxyErrorTypes.auth_error,
+                param="account_temporarily_locked",
+                code=429,
+            )
+        case _:
+            assert_never(lock)
 
 
 def is_env_credential_login_enabled(general_settings: Mapping[str, object]) -> bool:
@@ -416,14 +436,10 @@ async def _sign_in(
                 code=500,
             )
 
-        if is_account_locked(getattr(_user_row, "metadata", None)):
-            await attempt.failed()
-            raise ProxyException(
-                message=ACCOUNT_LOCKED_MESSAGE,
-                type=ProxyErrorTypes.auth_error,
-                param="account_locked",
-                code=403,
-            )
+        attempted_at: Final = datetime.now(timezone.utc)
+        lock: Final = account_lock(getattr(_user_row, "metadata", None), attempted_at)
+        if lock is not None:
+            raise _locked_out(lock, attempted_at)
 
         if _password is None:
             raise ProxyException(
@@ -482,13 +498,9 @@ async def _sign_in(
             )
         else:
             await attempt.failed()
-            if await record_failed_login(prisma_client, _user_row.user_id):
-                raise ProxyException(
-                    message=ACCOUNT_LOCKED_MESSAGE,
-                    type=ProxyErrorTypes.auth_error,
-                    param="account_locked",
-                    code=403,
-                )
+            lock_after_failure: Final = await record_failed_login(prisma_client, _user_row.user_id, attempted_at)
+            if lock_after_failure is not None:
+                raise _locked_out(lock_after_failure, attempted_at)
             raise ProxyException(
                 message=_invalid_credentials_message(general_settings),
                 type=ProxyErrorTypes.auth_error,

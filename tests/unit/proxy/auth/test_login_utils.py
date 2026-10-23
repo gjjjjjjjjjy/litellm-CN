@@ -51,8 +51,11 @@ from litellm.proxy.auth.account_lockout import (
     CLEAR_LOGIN_FAILURES_SQL,
     FAILED_ATTEMPTS_KEY,
     LOCKED_AT_KEY,
-    LOGIN_LOCKOUT_THRESHOLD,
+    LOCKED_UNTIL_KEY,
+    PERMANENT_LOCK_AFTER,
     RECORD_FAILED_LOGIN_SQL,
+    TEMPORARY_LOCK_EVERY,
+    TEMPORARY_LOCK_MINUTES,
 )
 from litellm.proxy.auth.login_utils import (
     LoginResult,
@@ -69,10 +72,10 @@ from tests._master_key import MASTER_KEY
 _POLICY_NO_BREACH_CHECK = {"password_policy_check_breached_passwords": False}
 
 
-def _raw_sql_prisma(failed_attempts: int = 1) -> MagicMock:
+def _raw_sql_prisma() -> MagicMock:
     """A fake prisma client whose raw SQL calls (the account lockout counter) can be awaited."""
     prisma = MagicMock()
-    prisma.db.query_raw = AsyncMock(return_value=[{"failed_attempts": failed_attempts}])
+    prisma.db.query_raw = AsyncMock(return_value=[{"metadata": {FAILED_ATTEMPTS_KEY: 1}}])
     prisma.db.execute_raw = AsyncMock(return_value=0)
     return prisma
 
@@ -2372,7 +2375,7 @@ class TestScreenLoginPasswordForBreach:
 class TestAccountLockout:
     PASSWORD: Final = "Correct-Horse-9-Battery"
 
-    def _prisma(self, *, metadata: dict, failed_attempts: int) -> MagicMock:
+    def _prisma(self, *, metadata: dict, after_failure: dict | None = None) -> MagicMock:
         user = LiteLLM_UserTable(
             user_id="locked-user",
             user_email="user@example.com",
@@ -2382,11 +2385,11 @@ class TestAccountLockout:
         )
         prisma = MagicMock()
         prisma.db.litellm_usertable.find_first = AsyncMock(return_value=user)
-        prisma.db.query_raw = AsyncMock(return_value=[{"failed_attempts": failed_attempts}])
+        prisma.db.query_raw = AsyncMock(return_value=[{"metadata": after_failure or {FAILED_ATTEMPTS_KEY: 1}}])
         prisma.db.execute_raw = AsyncMock(return_value=1)
         return prisma
 
-    async def _login(self, prisma: MagicMock, password: str) -> LoginResult:
+    async def _login(self, prisma: MagicMock, password: str, throttle: "LoginThrottle | None" = None) -> LoginResult:
         with (
             patch.dict(os.environ, {"DATABASE_URL": "postgresql://test:test@localhost/test"}),
             patch("litellm.proxy.auth.login_utils.generate_key_helper_fn", new_callable=AsyncMock) as generate_key,
@@ -2397,34 +2400,84 @@ class TestAccountLockout:
                 password=password,
                 master_key=MASTER_KEY,
                 prisma_client=prisma,
-                throttle=_unlimited_throttle(),
+                throttle=throttle or _unlimited_throttle(),
                 general_settings=_POLICY_NO_BREACH_CHECK,
             )
 
+    @staticmethod
+    def _in_minutes(minutes: int) -> str:
+        return (datetime.now(timezone.utc) + timedelta(minutes=minutes)).strftime("%Y-%m-%dT%H:%M:%SZ")
+
     @pytest.mark.asyncio
-    async def test_a_locked_account_is_refused_even_with_the_right_password(self) -> None:
-        prisma = self._prisma(metadata={LOCKED_AT_KEY: "2026-10-23T06:00:00Z"}, failed_attempts=3)
+    async def test_a_permanently_locked_account_is_refused_even_with_the_right_password(self) -> None:
+        prisma = self._prisma(metadata={LOCKED_AT_KEY: "2026-10-23T06:00:00Z"})
 
         with pytest.raises(ProxyException) as error:
             await self._login(prisma, self.PASSWORD)
 
-        assert error.value.code == "403"
-        assert error.value.message == ACCOUNT_LOCKED_MESSAGE
+        assert (error.value.code, error.value.message) == ("403", ACCOUNT_LOCKED_MESSAGE)
         prisma.db.query_raw.assert_not_awaited()
 
     @pytest.mark.asyncio
-    async def test_the_third_wrong_password_locks_the_account(self) -> None:
-        prisma = self._prisma(metadata={}, failed_attempts=LOGIN_LOCKOUT_THRESHOLD)
+    async def test_a_temporarily_locked_account_is_refused_until_the_lock_ends(self) -> None:
+        prisma = self._prisma(metadata={LOCKED_UNTIL_KEY: self._in_minutes(TEMPORARY_LOCK_MINUTES)})
+
+        with pytest.raises(ProxyException) as error:
+            await self._login(prisma, self.PASSWORD)
+
+        assert error.value.code == "429"
+        assert (
+            error.value.message == f"Too many failed sign-in attempts. Try again in {TEMPORARY_LOCK_MINUTES} minutes."
+        )
+        prisma.db.query_raw.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_the_right_password_works_once_a_temporary_lock_has_ended(self) -> None:
+        prisma = self._prisma(metadata={FAILED_ATTEMPTS_KEY: 3, LOCKED_UNTIL_KEY: self._in_minutes(-1)})
+
+        result = await self._login(prisma, self.PASSWORD)
+
+        assert result.user_id == "locked-user"
+        prisma.db.execute_raw.assert_awaited_once_with(CLEAR_LOGIN_FAILURES_SQL, "locked-user")
+
+    @pytest.mark.asyncio
+    async def test_a_wrong_password_that_starts_a_temporary_lock_says_when_to_retry(self) -> None:
+        prisma = self._prisma(
+            metadata={FAILED_ATTEMPTS_KEY: 2},
+            after_failure={FAILED_ATTEMPTS_KEY: 3, LOCKED_UNTIL_KEY: self._in_minutes(TEMPORARY_LOCK_MINUTES)},
+        )
+
+        with pytest.raises(ProxyException) as error:
+            await self._login(prisma, "Wrong-Password-1")
+
+        assert error.value.code == "429"
+        assert f"Try again in {TEMPORARY_LOCK_MINUTES} minutes" in error.value.message
+        assert prisma.db.query_raw.await_args.args == (
+            RECORD_FAILED_LOGIN_SQL,
+            "locked-user",
+            PERMANENT_LOCK_AFTER,
+            TEMPORARY_LOCK_EVERY,
+            TEMPORARY_LOCK_MINUTES,
+        )
+
+    @pytest.mark.asyncio
+    async def test_a_wrong_password_that_locks_the_account_for_good_says_so(self) -> None:
+        prisma = self._prisma(
+            metadata={FAILED_ATTEMPTS_KEY: 9},
+            after_failure={FAILED_ATTEMPTS_KEY: 10, LOCKED_AT_KEY: "2026-10-23T06:00:00Z"},
+        )
 
         with pytest.raises(ProxyException) as error:
             await self._login(prisma, "Wrong-Password-1")
 
         assert (error.value.code, error.value.message) == ("403", ACCOUNT_LOCKED_MESSAGE)
-        assert prisma.db.query_raw.await_args.args == (RECORD_FAILED_LOGIN_SQL, "locked-user", LOGIN_LOCKOUT_THRESHOLD)
 
     @pytest.mark.asyncio
-    async def test_earlier_wrong_passwords_only_report_invalid_credentials(self) -> None:
-        prisma = self._prisma(metadata={FAILED_ATTEMPTS_KEY: 1}, failed_attempts=2)
+    async def test_a_wrong_password_without_a_lock_only_reports_invalid_credentials(self) -> None:
+        prisma = self._prisma(
+            metadata={FAILED_ATTEMPTS_KEY: 3, LOCKED_UNTIL_KEY: self._in_minutes(-1)},
+            after_failure={FAILED_ATTEMPTS_KEY: 4, LOCKED_UNTIL_KEY: self._in_minutes(-1)},
+        )
 
         with pytest.raises(ProxyException) as error:
             await self._login(prisma, "Wrong-Password-1")
@@ -2433,8 +2486,31 @@ class TestAccountLockout:
         assert "Invalid credentials" in error.value.message
 
     @pytest.mark.asyncio
+    async def test_retries_against_a_locked_account_do_not_block_the_user_after_an_admin_unlocks_it(self) -> None:
+        from litellm.caching.in_memory_cache import InMemoryCache
+        from litellm.proxy.auth.login_throttle import LoginThrottle
+
+        throttle = LoginThrottle(
+            client_ip="1.2.3.4",
+            source_limit=None,
+            user_limit=2,
+            window_seconds=60,
+            block_seconds=300,
+            counters=InMemoryCache(),
+            blocks=InMemoryCache(),
+        )
+        locked = self._prisma(metadata={LOCKED_AT_KEY: "2026-10-23T06:00:00Z"})
+        for _ in range(5):
+            with pytest.raises(ProxyException):
+                await self._login(locked, self.PASSWORD, throttle)
+
+        result = await self._login(self._prisma(metadata={}), self.PASSWORD, throttle)
+
+        assert result.user_id == "locked-user"
+
+    @pytest.mark.asyncio
     async def test_a_successful_sign_in_clears_earlier_failures(self) -> None:
-        prisma = self._prisma(metadata={FAILED_ATTEMPTS_KEY: 2}, failed_attempts=0)
+        prisma = self._prisma(metadata={FAILED_ATTEMPTS_KEY: 2})
 
         result = await self._login(prisma, self.PASSWORD)
 
