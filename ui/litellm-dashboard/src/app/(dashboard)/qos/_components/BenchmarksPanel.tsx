@@ -11,6 +11,7 @@ import {
 } from "@/app/(dashboard)/hooks/qos/useQosBenchmarks";
 import useAuthorized from "@/app/(dashboard)/hooks/useAuthorized";
 import { DataTable } from "@/components/shared/DataTable";
+import { StatusBadge } from "@/components/shared/table_cells";
 import { Meter, MeterIndicator, MeterTrack } from "@/components/shared/Meter";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import {
@@ -49,6 +50,16 @@ const runColumns: ColumnDef<QosBenchmarkRun>[] = [
   },
   { id: "requests", header: "Requests", cell: ({ row }) => row.original.requests },
   { id: "success_rate", header: "Success rate", cell: ({ row }) => formatRatio(runSuccessRate(row.original)) },
+  {
+    id: "crosstalk",
+    header: "Cross-talk",
+    cell: ({ row }) =>
+      row.original.crosstalk_responses === 0 ? (
+        <span className="text-muted-foreground">-</span>
+      ) : (
+        <StatusBadge tone="error" label={`${row.original.crosstalk_responses} responses`} />
+      ),
+  },
   {
     id: "run_id",
     header: "Run ID",
@@ -173,7 +184,11 @@ export default function BenchmarksPanel({
         <Card>
           <CardHeader>
             <CardTitle className="font-mono text-base">{selectedRunId}</CardTitle>
-            <CardDescription>Results per concurrency level and per node for this run</CardDescription>
+            <CardDescription>
+              Results per concurrency level and per node for this run. Each request asks the model to repeat a code
+              unique to it, so a response carrying another request&apos;s code reveals cross-talk. Other traffic counts
+              requests outside this test that reached the same node while a level ran.
+            </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-6">
             {expectedTotal !== null && <RunProgress detail={detail} total={expectedTotal} />}

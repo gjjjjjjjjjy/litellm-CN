@@ -13,6 +13,7 @@ from litellm.proxy.auth.user_api_key_auth import user_api_key_auth
 from litellm.proxy.management_endpoints.qos_endpoints import (
     BENCHMARK_DELETE_SQL,
     BENCHMARK_DEPLOYMENT_LEVEL_SUMMARY_SQL,
+    BENCHMARK_INTERFERENCE_SQL,
     BENCHMARK_LEVEL_SUMMARY_SQL,
     DEPLOYMENT_SUMMARY_SQL,
     MODEL_GROUP_SUMMARY_SQL,
@@ -21,6 +22,7 @@ from litellm.proxy.management_endpoints.qos_endpoints import (
     resolve_window,
     router,
 )
+from litellm.proxy.management_endpoints.qos_response_check import record_response_checks
 
 NOW: Final = datetime(2026, 10, 22, 12, 0, 0)
 
@@ -47,6 +49,9 @@ def _row(**overrides: object) -> dict[str, object]:
         "e2e_p50": 4600.0,
         "e2e_p95": 7900.0,
         "e2e_p99": 9100.0,
+        "checked_responses": 40,
+        "crosstalk_responses": 0,
+        "marker_missing_responses": 0,
         **overrides,
     }
 
@@ -75,6 +80,15 @@ _QWEN_ON_TWO_PROVIDERS: Final = {
     "node-moark": _deployment("qwen3-max", "Qwen3-Max", None, "moark"),
     "node-gitee": _deployment("qwen3-max", "openai/Qwen3-Max", "https://ai.gitee.com/v1"),
 }
+
+
+def _interference(model_id: str, level_tag: str, same_deployment: int, same_endpoint: int) -> dict[str, object]:
+    return {
+        "model_id": model_id,
+        "level_tag": level_tag,
+        "same_deployment": same_deployment,
+        "same_endpoint": same_endpoint,
+    }
 
 
 def _client(role: LitellmUserRoles) -> TestClient:
@@ -146,6 +160,7 @@ class TestQosSummaryEndpoint:
         assert group["requests_per_second"] == pytest.approx(40 / 20)
         assert group["output_tokens_per_second"] == pytest.approx(8000 / 20)
         assert group["ttft_ms"] == {"p50": 210.0, "p95": 480.5, "p99": 610.0}
+        assert group["response_checks"] == {"checked": 40, "crosstalk": 0, "marker_missing": 0}
         assert "model_id" not in group
         deployment: Final = body["deployments"][0]
         assert (deployment["model_id"], deployment["api_base"]) == ("node-a", "https://api.moark.com/v1")
@@ -182,6 +197,7 @@ class TestBenchmarkEndpoints:
         llm_router.get_model_names.return_value = ["other-model"]
         with (
             patch("litellm.proxy.proxy_server.llm_router", llm_router),
+            patch("litellm.proxy.proxy_server.prisma_client", MagicMock()),
             patch("litellm.proxy.management_endpoints.qos_endpoints.start_benchmark") as start,
         ):
             response = _client(LitellmUserRoles.PROXY_ADMIN).post("/qos/benchmarks", json=_PLAN)
@@ -189,9 +205,11 @@ class TestBenchmarkEndpoints:
         start.assert_not_called()
 
     def test_starting_a_benchmark_targets_this_gateway_with_the_master_key(self) -> None:
+        prisma: Final = MagicMock()
         with (
             patch("litellm.proxy.proxy_server.llm_router", _router(_QWEN_ON_TWO_PROVIDERS)),
             patch("litellm.proxy.proxy_server.master_key", "sk-master"),
+            patch("litellm.proxy.proxy_server.prisma_client", prisma),
             patch("litellm.proxy.management_endpoints.qos_endpoints.start_benchmark") as start,
         ):
             response = _client(LitellmUserRoles.PROXY_ADMIN).post("/qos/benchmarks", json=_PLAN)
@@ -200,7 +218,8 @@ class TestBenchmarkEndpoints:
         body: Final = response.json()
         assert body["total_requests"] == (1 + 4) * 2
         assert body["run_id"].startswith("qos-")
-        base_url, api_key, run_id, plan = start.call_args.args
+        base_url, api_key, run_id, plan, record_checks = start.call_args.args
+        assert (record_checks.func, record_checks.args) == (record_response_checks, (prisma,))
         assert base_url.startswith("http://127.0.0.1:")
         assert (api_key, run_id, plan.concurrency, plan.targets) == (
             "sk-master",
@@ -213,6 +232,7 @@ class TestBenchmarkEndpoints:
         stray: Final = {**_QWEN_ON_TWO_PROVIDERS, "node-glm": _deployment("glm-5", "GLM-5", "https://ai.gitee.com/v1")}
         with (
             patch("litellm.proxy.proxy_server.llm_router", _router(stray)),
+            patch("litellm.proxy.proxy_server.prisma_client", MagicMock()),
             patch("litellm.proxy.management_endpoints.qos_endpoints.start_benchmark") as start,
         ):
             response = _client(LitellmUserRoles.PROXY_ADMIN).post(
@@ -226,6 +246,7 @@ class TestBenchmarkEndpoints:
         with (
             patch("litellm.proxy.proxy_server.llm_router", _router(_QWEN_ON_TWO_PROVIDERS)),
             patch("litellm.proxy.proxy_server.master_key", "sk-master"),
+            patch("litellm.proxy.proxy_server.prisma_client", MagicMock()),
             patch("litellm.proxy.management_endpoints.qos_endpoints.start_benchmark") as start,
         ):
             response = _client(LitellmUserRoles.PROXY_ADMIN).post(
@@ -251,7 +272,12 @@ class TestBenchmarkEndpoints:
                 [
                     _row(model_id="node-moark", level_tag="qos-run-1@c16"),
                     _row(model_id="node-gitee", level_tag="qos-run-1@c4"),
-                    _row(model_id="node-moark", level_tag="qos-run-1@c4", ttft_p50=150.0),
+                    _row(model_id="node-moark", level_tag="qos-run-1@c4", ttft_p50=150.0, crosstalk_responses=3),
+                ],
+                [
+                    _interference("node-moark", "qos-run-1@c16", same_deployment=0, same_endpoint=0),
+                    _interference("node-gitee", "qos-run-1@c4", same_deployment=2, same_endpoint=1),
+                    _interference("node-moark", "qos-run-1@c4", same_deployment=5, same_endpoint=0),
                 ],
             ]
         )
@@ -270,13 +296,21 @@ class TestBenchmarkEndpoints:
             (4, "node-moark"),
             (16, "node-moark"),
         ]
-        assert body["deployment_levels"][1]["ttft_ms"]["p50"] == 150.0
-        queries: Final = [(call.args[0], call.args[3:5]) for call in prisma.db.query_raw.await_args_list]
-        assert queries == [
+        moark_at_4: Final = body["deployment_levels"][1]
+        assert moark_at_4["ttft_ms"]["p50"] == 150.0
+        assert moark_at_4["response_checks"]["crosstalk"] == 3
+        assert moark_at_4["interference"] == {"same_deployment": 5, "same_endpoint": 0}
+        assert [level["interference"] for level in body["levels"]] == [
+            {"same_deployment": 2 + 5, "same_endpoint": 1},
+            {"same_deployment": 0, "same_endpoint": 0},
+        ]
+        calls: Final = prisma.db.query_raw.await_args_list
+        assert [(call.args[0], call.args[3:5]) for call in calls[:3]] == [
             (BENCHMARK_LEVEL_SUMMARY_SQL, (None, "qos-run-1")),
             (DEPLOYMENT_SUMMARY_SQL, (None, "qos-run-1")),
             (BENCHMARK_DEPLOYMENT_LEVEL_SUMMARY_SQL, (None, "qos-run-1")),
         ]
+        assert (calls[3].args[0], calls[3].args[3]) == (BENCHMARK_INTERFERENCE_SQL, "qos-run-1")
 
     def test_targets_list_each_model_with_the_provider_and_endpoint_of_every_deployment(self) -> None:
         with patch("litellm.proxy.proxy_server.llm_router", _router(_QWEN_ON_TWO_PROVIDERS)):

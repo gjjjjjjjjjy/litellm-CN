@@ -22,6 +22,16 @@ class QosPercentiles(LiteLLMBaseModel):
     p99: float | None
 
 
+class QosResponseChecks(LiteLLMBaseModel):
+    """How many benchmark responses were checked for cross-talk with concurrent requests, and what was found."""
+
+    model_config = ConfigDict(frozen=True)
+
+    checked: int
+    crosstalk: int
+    marker_missing: int
+
+
 class QosModelGroupMetrics(LiteLLMBaseModel):
     model_config = ConfigDict(frozen=True)
 
@@ -38,6 +48,7 @@ class QosModelGroupMetrics(LiteLLMBaseModel):
     ttft_ms: QosPercentiles
     tpot_ms: QosPercentiles
     e2e_latency_ms: QosPercentiles
+    response_checks: QosResponseChecks
 
 
 class QosDeploymentMetrics(QosModelGroupMetrics):
@@ -109,6 +120,7 @@ class QosBenchmarkRun(LiteLLMBaseModel):
     model_group: str
     requests: int
     failed_requests: int
+    crosstalk_responses: int
     started_at: UtcDatetime
     last_response_at: UtcDatetime
 
@@ -119,12 +131,23 @@ class QosBenchmarkListResponse(LiteLLMBaseModel):
     runs: tuple[QosBenchmarkRun, ...]
 
 
+class QosInterference(LiteLLMBaseModel):
+    """Requests outside the benchmark that the gateway sent to the same node while a level was running."""
+
+    model_config = ConfigDict(frozen=True)
+
+    same_deployment: int
+    same_endpoint: int
+
+
 class QosBenchmarkLevel(QosModelGroupMetrics):
     concurrency: int
+    interference: QosInterference
 
 
 class QosBenchmarkDeploymentLevel(QosDeploymentMetrics):
     concurrency: int
+    interference: QosInterference
 
 
 class QosBenchmarkDetail(LiteLLMBaseModel):
