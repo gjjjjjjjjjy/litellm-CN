@@ -2,6 +2,7 @@ import json
 import re
 from collections.abc import Callable
 from datetime import datetime, timedelta, timezone
+from functools import partial
 from typing import TYPE_CHECKING, Annotated, Final
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -22,6 +23,7 @@ from litellm.proxy.management_endpoints.qos_health import (
     health_probe,
     probe_key,
 )
+from litellm.proxy.management_endpoints.qos_response_check import RESPONSE_CHECK_KEY, record_response_checks
 from litellm.types.llms.base import LiteLLMBaseModel
 from litellm.types.qos import (
     QosBenchmarkDeleted,
@@ -34,8 +36,10 @@ from litellm.types.qos import (
     QosBenchmarkStarted,
     QosDeploymentMetrics,
     QosHealthResponse,
+    QosInterference,
     QosModelGroupMetrics,
     QosPercentiles,
+    QosResponseChecks,
     QosSummaryResponse,
     QosTargetDeployment,
     QosTargetModel,
@@ -50,6 +54,8 @@ router: Final = APIRouter()
 QOS_DEFAULT_WINDOW: Final = timedelta(hours=24)
 QOS_MAX_WINDOW: Final = timedelta(days=31)
 QOS_RUNS_DEFAULT_WINDOW: Final = timedelta(days=7)
+RESPONSE_CHECK_RECORD_ATTEMPTS: Final = 30
+RESPONSE_CHECK_RETRY_SECONDS: Final = 5.0
 _RUN_ID: Final = re.compile(rf"{QOS_RUN_PREFIX}[A-Za-z0-9.-]+")
 
 BENCHMARK_DELETE_SQL: Final = """
@@ -82,6 +88,7 @@ SELECT
     MAX({_logged_model_group("$3")}) AS model_group,
     COUNT(*)::int AS requests,
     (COUNT(*) FILTER (WHERE status = 'failure'))::int AS failed_requests,
+    (COUNT(*) FILTER (WHERE metadata->>'{RESPONSE_CHECK_KEY}' = 'crosstalk'))::int AS crosstalk_responses,
     MIN("startTime") AS started_at,
     MAX("endTime") AS last_response_at
 FROM "LiteLLM_SpendLogs"
@@ -108,6 +115,7 @@ WITH base AS (
         "startTime" AS started,
         "endTime" AS ended,
         completion_tokens,
+        metadata->>'{response_check_key}' AS response_check,
         EXTRACT(epoch FROM ("endTime" - "startTime")) * 1000 AS e2e_ms,
         CASE
             WHEN status IS DISTINCT FROM 'failure'
@@ -154,6 +162,9 @@ SELECT
     MAX(peaks.peak_concurrency)::int AS peak_concurrency,
     MIN(base.started) AS first_request_at,
     MAX(base.ended) AS last_response_at,
+    COUNT(base.response_check)::int AS checked_responses,
+    (COUNT(*) FILTER (WHERE base.response_check = 'crosstalk'))::int AS crosstalk_responses,
+    (COUNT(*) FILTER (WHERE base.response_check = 'marker_missing'))::int AS marker_missing_responses,
     percentile_cont(0.5) WITHIN GROUP (ORDER BY base.ttft_ms) AS ttft_p50,
     percentile_cont(0.95) WITHIN GROUP (ORDER BY base.ttft_ms) AS ttft_p95,
     percentile_cont(0.99) WITHIN GROUP (ORDER BY base.ttft_ms) AS ttft_p99,
@@ -185,6 +196,7 @@ DEPLOYMENT_SUMMARY_SQL: Final = _SUMMARY_SQL.format(
     selected_keys="base.model_group, base.model_id",
     level_column="",
     model_group=_SUMMARY_MODEL_GROUP,
+    response_check_key=RESPONSE_CHECK_KEY,
     source=_SPEND_LOGS,
     tag_filter=_REQUEST_TAG_FILTER,
     health_check_filter=_EXCLUDE_HEALTH_CHECKS,
@@ -194,6 +206,7 @@ MODEL_GROUP_SUMMARY_SQL: Final = _SUMMARY_SQL.format(
     selected_keys="base.model_group",
     level_column="",
     model_group=_SUMMARY_MODEL_GROUP,
+    response_check_key=RESPONSE_CHECK_KEY,
     source=_SPEND_LOGS,
     tag_filter=_REQUEST_TAG_FILTER,
     health_check_filter=_EXCLUDE_HEALTH_CHECKS,
@@ -203,6 +216,7 @@ BENCHMARK_LEVEL_SUMMARY_SQL: Final = _SUMMARY_SQL.format(
     selected_keys="base.model_group, base.level_tag",
     level_column=",\n        level_tag",
     model_group=_SUMMARY_MODEL_GROUP,
+    response_check_key=RESPONSE_CHECK_KEY,
     source=_LEVEL_SOURCE,
     tag_filter=_LEVEL_TAG_FILTER,
     health_check_filter=_EXCLUDE_HEALTH_CHECKS,
@@ -212,10 +226,44 @@ BENCHMARK_DEPLOYMENT_LEVEL_SUMMARY_SQL: Final = _SUMMARY_SQL.format(
     selected_keys="base.model_group, base.model_id, base.level_tag",
     level_column=",\n        level_tag",
     model_group=_SUMMARY_MODEL_GROUP,
+    response_check_key=RESPONSE_CHECK_KEY,
     source=_LEVEL_SOURCE,
     tag_filter=_LEVEL_TAG_FILTER,
     health_check_filter=_EXCLUDE_HEALTH_CHECKS,
 )
+
+_LONGEST_OVERLAPPING_REQUEST: Final = "1 hour"
+BENCHMARK_INTERFERENCE_SQL: Final = f"""
+WITH run_levels AS (
+    SELECT
+        COALESCE(model_id, '') AS model_id,
+        level_tag,
+        MAX(COALESCE(api_base, '')) AS api_base,
+        MIN("startTime") AS level_start,
+        MAX("endTime") AS level_end
+    FROM {_LEVEL_SOURCE}
+    WHERE "startTime" >= $1::timestamp
+        AND "startTime" < $2::timestamp
+        AND left(level_tag, length($3::text) + 2) = $3::text || '@c'
+    GROUP BY 1, 2
+)
+SELECT
+    run_levels.model_id,
+    run_levels.level_tag,
+    (COUNT(other.request_id) FILTER (WHERE COALESCE(other.model_id, '') = run_levels.model_id))::int AS same_deployment,
+    (COUNT(other.request_id) FILTER (WHERE COALESCE(other.model_id, '') <> run_levels.model_id))::int AS same_endpoint
+FROM run_levels
+LEFT JOIN {_SPEND_LOGS} AS other
+    ON other."startTime" >= run_levels.level_start - interval '{_LONGEST_OVERLAPPING_REQUEST}'
+    AND other."startTime" < run_levels.level_end
+    AND other."endTime" > run_levels.level_start
+    AND NOT COALESCE(other.request_tags ? $3::text, false)
+    AND (
+        COALESCE(other.model_id, '') = run_levels.model_id
+        OR (run_levels.api_base <> '' AND COALESCE(other.api_base, '') = run_levels.api_base)
+    )
+GROUP BY run_levels.model_id, run_levels.level_tag
+"""
 
 
 class QosSummaryRow(LiteLLMBaseModel):
@@ -233,6 +281,9 @@ class QosSummaryRow(LiteLLMBaseModel):
     peak_concurrency: int
     first_request_at: datetime
     last_response_at: datetime
+    checked_responses: int
+    crosstalk_responses: int
+    marker_missing_responses: int
     ttft_p50: float | None
     ttft_p95: float | None
     ttft_p99: float | None
@@ -244,7 +295,17 @@ class QosSummaryRow(LiteLLMBaseModel):
     e2e_p99: float | None
 
 
+class InterferenceRow(LiteLLMBaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    model_id: str
+    level_tag: str
+    same_deployment: int
+    same_endpoint: int
+
+
 _ROWS: Final = TypeAdapter(list[QosSummaryRow])
+_INTERFERENCE_ROWS: Final = TypeAdapter(list[InterferenceRow])
 _RUNS: Final = TypeAdapter(list[QosBenchmarkRun])
 
 
@@ -283,6 +344,24 @@ def group_metrics(row: QosSummaryRow) -> QosModelGroupMetrics:
         ttft_ms=QosPercentiles(p50=row.ttft_p50, p95=row.ttft_p95, p99=row.ttft_p99),
         tpot_ms=QosPercentiles(p50=row.tpot_p50, p95=row.tpot_p95, p99=row.tpot_p99),
         e2e_latency_ms=QosPercentiles(p50=row.e2e_p50, p95=row.e2e_p95, p99=row.e2e_p99),
+        response_checks=QosResponseChecks(
+            checked=row.checked_responses,
+            crosstalk=row.crosstalk_responses,
+            marker_missing=row.marker_missing_responses,
+        ),
+    )
+
+
+def deployment_interference(row: InterferenceRow) -> QosInterference:
+    return QosInterference(same_deployment=row.same_deployment, same_endpoint=row.same_endpoint)
+
+
+def level_interference(level_tag: str, rows: list[InterferenceRow]) -> QosInterference:
+    """A level's outside traffic summed over the deployments it ran on."""
+    at_level: Final = tuple(row for row in rows if row.level_tag == level_tag)
+    return QosInterference(
+        same_deployment=sum(row.same_deployment for row in at_level),
+        same_endpoint=sum(row.same_endpoint for row in at_level),
     )
 
 
@@ -366,9 +445,11 @@ async def start_qos_benchmark(
     plan: QosBenchmarkRequest,
     user_api_key_dict: Annotated[UserAPIKeyAuth, Depends(user_api_key_auth)],
 ) -> QosBenchmarkStarted:
-    from litellm.proxy.proxy_server import llm_router, master_key
+    from litellm.proxy.proxy_server import llm_router, master_key, prisma_client
 
     _require_role(user_api_key_dict, (LitellmUserRoles.PROXY_ADMIN,))
+    if prisma_client is None:
+        raise HTTPException(status_code=500, detail=CommonProxyErrors.db_not_connected_error.value)
     if llm_router is None or plan.model_group not in llm_router.get_model_names():
         raise HTTPException(status_code=404, detail=f"Model {plan.model_group} is not configured on this gateway")
     unknown_deployments: Final = set(plan.deployment_ids) - set(llm_router.get_model_ids(model_name=plan.model_group))
@@ -379,7 +460,14 @@ async def start_qos_benchmark(
         )
     started_at: Final = _utc_now()
     run_id: Final = new_run_id(plan.model_group, started_at)
-    start_benchmark(_loopback_base_url(request), master_key, run_id, plan)
+    record_checks: Final = partial(
+        record_response_checks,
+        prisma_client,
+        since=started_at,
+        attempts=RESPONSE_CHECK_RECORD_ATTEMPTS,
+        retry_seconds=RESPONSE_CHECK_RETRY_SECONDS,
+    )
+    start_benchmark(_loopback_base_url(request), master_key, run_id, plan, record_checks)
     return QosBenchmarkStarted(
         run_id=run_id,
         model_group=plan.model_group,
@@ -442,13 +530,23 @@ async def get_qos_benchmark(
     deployment_level_rows: Final = _ROWS.validate_python(
         await prisma_client.db.query_raw(BENCHMARK_DEPLOYMENT_LEVEL_SUMMARY_SQL, start, end, None, run_id, groups)
     )
+    interference_rows: Final = _INTERFERENCE_ROWS.validate_python(
+        await prisma_client.db.query_raw(BENCHMARK_INTERFERENCE_SQL, start, end, run_id)
+    )
+    interference: Final = {(row.model_id, row.level_tag): row for row in interference_rows}
     levels: Final = (
-        QosBenchmarkLevel(**group_metrics(row).model_dump(), concurrency=concurrency_of(row.level_tag, run_id))
+        QosBenchmarkLevel(
+            **group_metrics(row).model_dump(),
+            concurrency=concurrency_of(row.level_tag, run_id),
+            interference=level_interference(row.level_tag, interference_rows),
+        )
         for row in level_rows
     )
     deployment_levels: Final = (
         QosBenchmarkDeploymentLevel(
-            **deployment_metrics(row).model_dump(), concurrency=concurrency_of(row.level_tag, run_id)
+            **deployment_metrics(row).model_dump(),
+            concurrency=concurrency_of(row.level_tag, run_id),
+            interference=deployment_interference(interference[(row.model_id, row.level_tag)]),
         )
         for row in deployment_level_rows
     )

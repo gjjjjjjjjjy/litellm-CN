@@ -42915,6 +42915,7 @@ export interface components {
              * Format: date-time
              */
             first_request_at: string;
+            interference: components["schemas"]["QosInterference"];
             /**
              * Last Response At
              * Format: date-time
@@ -42936,6 +42937,7 @@ export interface components {
             requests: number;
             /** Requests Per Second */
             requests_per_second: number;
+            response_checks: components["schemas"]["QosResponseChecks"];
             /** Streamed Requests */
             streamed_requests: number;
             tpot_ms: components["schemas"]["QosPercentiles"];
@@ -42964,6 +42966,7 @@ export interface components {
              * Format: date-time
              */
             first_request_at: string;
+            interference: components["schemas"]["QosInterference"];
             /**
              * Last Response At
              * Format: date-time
@@ -42981,6 +42984,7 @@ export interface components {
             requests: number;
             /** Requests Per Second */
             requests_per_second: number;
+            response_checks: components["schemas"]["QosResponseChecks"];
             /** Streamed Requests */
             streamed_requests: number;
             tpot_ms: components["schemas"]["QosPercentiles"];
@@ -43010,6 +43014,8 @@ export interface components {
         };
         /** QosBenchmarkRun */
         QosBenchmarkRun: {
+            /** Crosstalk Responses */
+            crosstalk_responses: number;
             /** Failed Requests */
             failed_requests: number;
             /**
@@ -43084,6 +43090,7 @@ export interface components {
             requests: number;
             /** Requests Per Second */
             requests_per_second: number;
+            response_checks: components["schemas"]["QosResponseChecks"];
             /** Streamed Requests */
             streamed_requests: number;
             tpot_ms: components["schemas"]["QosPercentiles"];
@@ -43149,6 +43156,16 @@ export interface components {
              */
             start_time: string;
         };
+        /**
+         * QosInterference
+         * @description Requests outside the benchmark that the gateway sent to the same node while a level was running.
+         */
+        QosInterference: {
+            /** Same Deployment */
+            same_deployment: number;
+            /** Same Endpoint */
+            same_endpoint: number;
+        };
         /** QosModelGroupMetrics */
         QosModelGroupMetrics: {
             e2e_latency_ms: components["schemas"]["QosPercentiles"];
@@ -43176,6 +43193,7 @@ export interface components {
             requests: number;
             /** Requests Per Second */
             requests_per_second: number;
+            response_checks: components["schemas"]["QosResponseChecks"];
             /** Streamed Requests */
             streamed_requests: number;
             tpot_ms: components["schemas"]["QosPercentiles"];
@@ -43189,6 +43207,18 @@ export interface components {
             p95: number | null;
             /** P99 */
             p99: number | null;
+        };
+        /**
+         * QosResponseChecks
+         * @description How many benchmark responses were checked for cross-talk with concurrent requests, and what was found.
+         */
+        QosResponseChecks: {
+            /** Checked */
+            checked: number;
+            /** Crosstalk */
+            crosstalk: number;
+            /** Marker Missing */
+            marker_missing: number;
         };
         /** QosSummaryResponse */
         QosSummaryResponse: {

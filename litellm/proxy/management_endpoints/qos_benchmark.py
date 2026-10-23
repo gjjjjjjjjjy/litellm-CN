@@ -1,13 +1,23 @@
 import asyncio
 import re
 import secrets
-from collections.abc import Mapping
+import uuid
+from collections.abc import Awaitable, Callable, Mapping
 from datetime import datetime
-from typing import Final
+from itertools import chain, product
+from typing import Final, TypeAlias
 
 import httpx
+from pydantic import ValidationError
 
 from litellm._logging import verbose_proxy_logger
+from litellm.proxy.management_endpoints.qos_response_check import (
+    ResponseCheck,
+    chunk_text,
+    marked_prompt,
+    new_marker,
+    verdict,
+)
 from litellm.types.qos import QosBenchmarkRequest
 
 QOS_RUN_PREFIX: Final = "qos-"
@@ -44,21 +54,45 @@ def concurrency_of(tag: str, run_id: str) -> int:
     return int(tag.removeprefix(f"{run_id}{_LEVEL_SEPARATOR}"))
 
 
-async def _send(client: httpx.AsyncClient, url: str, headers: Mapping[str, str], body: Mapping[str, object]) -> None:
-    async with client.stream("POST", url, json=body, headers=headers) as response:
-        async for _ in response.aiter_bytes():
-            pass
+RecordChecks: TypeAlias = Callable[[tuple[ResponseCheck, ...]], Awaitable[None]]
+
+
+async def _send(
+    client: httpx.AsyncClient, url: str, headers: Mapping[str, str], body: Mapping[str, object], marker: str
+) -> ResponseCheck | None:
+    call_id: Final = uuid.uuid4().hex
+    async with client.stream("POST", url, json=body, headers={**headers, "x-litellm-call-id": call_id}) as response:
+        text: Final = "".join([chunk_text(line) async for line in response.aiter_lines()])
         if response.status_code >= 400:
             verbose_proxy_logger.warning("QoS benchmark request failed with HTTP %s", response.status_code)
+            return None
+    return ResponseCheck(call_id=call_id, verdict=verdict(marker, text))
 
 
-def _request_body(plan: QosBenchmarkRequest, target: str, sequence: int) -> Mapping[str, object]:
+def _request_body(plan: QosBenchmarkRequest, target: str, sequence: int, marker: str) -> Mapping[str, object]:
+    prompt: Final = BENCHMARK_PROMPTS[sequence % len(BENCHMARK_PROMPTS)]
     return {
         "model": target,
         "stream": True,
         "max_tokens": plan.max_tokens,
-        "messages": [{"role": "user", "content": BENCHMARK_PROMPTS[sequence % len(BENCHMARK_PROMPTS)]}],
+        "messages": [{"role": "user", "content": marked_prompt(marker, prompt)}],
     }
+
+
+async def _attempt(
+    client: httpx.AsyncClient,
+    url: str,
+    headers: Mapping[str, str],
+    plan: QosBenchmarkRequest,
+    target: str,
+    sequence: int,
+) -> ResponseCheck | None:
+    marker: Final = new_marker()
+    try:
+        return await _send(client, url, headers, _request_body(plan, target, sequence, marker), marker)
+    except (httpx.HTTPError, ValidationError) as error:
+        verbose_proxy_logger.warning("QoS benchmark request did not complete: %s", error)
+        return None
 
 
 async def _worker(
@@ -68,46 +102,66 @@ async def _worker(
     plan: QosBenchmarkRequest,
     target: str,
     worker_index: int,
-) -> None:
-    for request_index in range(plan.requests_per_worker):
-        try:
-            await _send(
-                client,
-                url,
-                headers,
-                _request_body(plan, target, worker_index * plan.requests_per_worker + request_index),
-            )
-        except httpx.HTTPError as error:
-            verbose_proxy_logger.warning("QoS benchmark request did not complete: %s", error)
+) -> tuple[ResponseCheck, ...]:
+    first: Final = worker_index * plan.requests_per_worker
+    checks: Final = [
+        await _attempt(client, url, headers, plan, target, sequence)
+        for sequence in range(first, first + plan.requests_per_worker)
+    ]
+    return tuple(check for check in checks if check is not None)
 
 
 def _level_headers(auth: Mapping[str, str], run_id: str, concurrency: int) -> Mapping[str, str]:
     return {**auth, "x-litellm-tags": f"{run_id},{level_tag(run_id, concurrency)}"}
 
 
+async def _run_level(
+    client: httpx.AsyncClient,
+    url: str,
+    headers: Mapping[str, str],
+    plan: QosBenchmarkRequest,
+    target: str,
+    concurrency: int,
+    record_checks: RecordChecks,
+) -> "asyncio.Task[None]":
+    per_worker: Final = await asyncio.gather(
+        *(_worker(client, url, headers, plan, target, index) for index in range(concurrency))
+    )
+    return asyncio.create_task(record_checks(tuple(chain.from_iterable(per_worker))))
+
+
 async def run_benchmark(
-    client: httpx.AsyncClient, base_url: str, api_key: str | None, run_id: str, plan: QosBenchmarkRequest
+    client: httpx.AsyncClient,
+    base_url: str,
+    api_key: str | None,
+    run_id: str,
+    plan: QosBenchmarkRequest,
+    record_checks: RecordChecks,
 ) -> None:
+    """Run every level against each target in turn; a level's response checks are recorded while the next runs."""
     url: Final = f"{base_url.rstrip('/')}/v1/chat/completions"
     auth: Final = {} if api_key is None else {"Authorization": f"Bearer {api_key}"}
-    for target in plan.targets:
-        for concurrency in plan.concurrency:
-            await asyncio.gather(
-                *(
-                    _worker(client, url, _level_headers(auth, run_id, concurrency), plan, target, index)
-                    for index in range(concurrency)
-                )
-            )
+    recordings: Final = [
+        await _run_level(
+            client, url, _level_headers(auth, run_id, concurrency), plan, target, concurrency, record_checks
+        )
+        for target, concurrency in product(plan.targets, plan.concurrency)
+    ]
+    await asyncio.gather(*recordings)
 
 
-async def _run_in_background(base_url: str, api_key: str | None, run_id: str, plan: QosBenchmarkRequest) -> None:
+async def _run_in_background(
+    base_url: str, api_key: str | None, run_id: str, plan: QosBenchmarkRequest, record_checks: RecordChecks
+) -> None:
     limits: Final = httpx.Limits(max_connections=max(plan.concurrency), max_keepalive_connections=max(plan.concurrency))
     async with httpx.AsyncClient(timeout=httpx.Timeout(600.0), limits=limits) as client:
-        await run_benchmark(client, base_url, api_key, run_id, plan)
+        await run_benchmark(client, base_url, api_key, run_id, plan, record_checks)
     verbose_proxy_logger.info("QoS benchmark %s finished", run_id)
 
 
-def start_benchmark(base_url: str, api_key: str | None, run_id: str, plan: QosBenchmarkRequest) -> None:
-    task: Final = asyncio.create_task(_run_in_background(base_url, api_key, run_id, plan))
+def start_benchmark(
+    base_url: str, api_key: str | None, run_id: str, plan: QosBenchmarkRequest, record_checks: RecordChecks
+) -> None:
+    task: Final = asyncio.create_task(_run_in_background(base_url, api_key, run_id, plan, record_checks))
     _running.add(task)
     task.add_done_callback(_running.discard)

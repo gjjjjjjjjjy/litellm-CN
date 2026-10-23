@@ -3,9 +3,13 @@
 import type { ColumnDef, Row } from "@tanstack/react-table";
 import { ChevronDown, ChevronRight } from "lucide-react";
 
+import { StatusBadge } from "@/components/shared/table_cells";
 import { Button } from "@/components/ui/button";
 import {
   formatPercentiles,
+  interferenceLabel,
+  otherTraffic,
+  responseCheckBadge,
   formatRate,
   formatRatio,
   nodeLabel,
@@ -13,6 +17,7 @@ import {
   type QosBenchmarkDeploymentLevel,
   type QosBenchmarkLevel,
   type QosDeploymentMetrics,
+  type QosInterference,
   type QosModelGroupMetrics,
 } from "./qosData";
 
@@ -25,6 +30,31 @@ const metricColumns = <T extends QosModelGroupMetrics>(): ColumnDef<T>[] => [
   { id: "ttft", header: "TTFT P50 / P95", cell: ({ row }) => formatPercentiles(row.original.ttft_ms) },
   { id: "tpot", header: "TPOT P50 / P95", cell: ({ row }) => formatPercentiles(row.original.tpot_ms) },
   { id: "e2e", header: "Latency P50 / P95", cell: ({ row }) => formatPercentiles(row.original.e2e_latency_ms) },
+];
+
+const ResponseCheckCell = ({ metrics }: { metrics: QosModelGroupMetrics }) => {
+  const badge = responseCheckBadge(metrics.response_checks);
+  if (badge === null) return <span className="text-muted-foreground">-</span>;
+  return <StatusBadge tone={badge.tone} label={badge.label} tooltip={badge.tooltip} />;
+};
+
+const OtherTrafficCell = ({ interference }: { interference: QosInterference }) => (
+  <StatusBadge
+    tone={otherTraffic(interference) === 0 ? "neutral" : "warning"}
+    label={String(otherTraffic(interference))}
+    tooltip={interferenceLabel(interference)}
+  />
+);
+
+const benchmarkColumns = <
+  T extends QosModelGroupMetrics & { readonly interference: QosInterference },
+>(): ColumnDef<T>[] => [
+  { id: "response_check", header: "Response check", cell: ({ row }) => <ResponseCheckCell metrics={row.original} /> },
+  {
+    id: "other_traffic",
+    header: "Other traffic",
+    cell: ({ row }) => <OtherTrafficCell interference={row.original.interference} />,
+  },
 ];
 
 const ExpandToggle = ({ row }: { row: Row<QosModelGroupMetrics> }) => (
@@ -73,6 +103,7 @@ export const deploymentLevelColumns: ColumnDef<QosBenchmarkDeploymentLevel>[] = 
     cell: ({ row }) => <span className="font-medium">{row.original.concurrency}</span>,
   },
   { id: "node", header: "Provider", cell: ({ row }) => <NodeCell deployment={row.original} /> },
+  ...benchmarkColumns<QosBenchmarkDeploymentLevel>(),
   ...metricColumns<QosBenchmarkDeploymentLevel>(),
 ];
 
@@ -82,5 +113,6 @@ export const levelColumns: ColumnDef<QosBenchmarkLevel>[] = [
     header: "Concurrency",
     cell: ({ row }) => <span className="font-medium">{row.original.concurrency}</span>,
   },
+  ...benchmarkColumns<QosBenchmarkLevel>(),
   ...metricColumns<QosBenchmarkLevel>(),
 ];

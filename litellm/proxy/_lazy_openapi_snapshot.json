@@ -52049,6 +52049,9 @@
               "title": "First Request At",
               "type": "string"
             },
+            "interference": {
+              "$ref": "#/components/schemas/QosInterference"
+            },
             "last_response_at": {
               "format": "date-time",
               "title": "Last Response At",
@@ -52086,6 +52089,9 @@
               "title": "Requests Per Second",
               "type": "number"
             },
+            "response_checks": {
+              "$ref": "#/components/schemas/QosResponseChecks"
+            },
             "streamed_requests": {
               "title": "Streamed Requests",
               "type": "integer"
@@ -52111,10 +52117,12 @@
             "ttft_ms",
             "tpot_ms",
             "e2e_latency_ms",
+            "response_checks",
             "model_id",
             "model",
             "api_base",
-            "concurrency"
+            "concurrency",
+            "interference"
           ],
           "title": "QosBenchmarkDeploymentLevel",
           "type": "object"
@@ -52174,6 +52182,9 @@
               "title": "First Request At",
               "type": "string"
             },
+            "interference": {
+              "$ref": "#/components/schemas/QosInterference"
+            },
             "last_response_at": {
               "format": "date-time",
               "title": "Last Response At",
@@ -52203,6 +52214,9 @@
               "title": "Requests Per Second",
               "type": "number"
             },
+            "response_checks": {
+              "$ref": "#/components/schemas/QosResponseChecks"
+            },
             "streamed_requests": {
               "title": "Streamed Requests",
               "type": "integer"
@@ -52228,7 +52242,9 @@
             "ttft_ms",
             "tpot_ms",
             "e2e_latency_ms",
-            "concurrency"
+            "response_checks",
+            "concurrency",
+            "interference"
           ],
           "title": "QosBenchmarkLevel",
           "type": "object"
@@ -52302,6 +52318,10 @@
         },
         "QosBenchmarkRun": {
           "properties": {
+            "crosstalk_responses": {
+              "title": "Crosstalk Responses",
+              "type": "integer"
+            },
             "failed_requests": {
               "title": "Failed Requests",
               "type": "integer"
@@ -52334,6 +52354,7 @@
             "model_group",
             "requests",
             "failed_requests",
+            "crosstalk_responses",
             "started_at",
             "last_response_at"
           ],
@@ -52450,6 +52471,9 @@
               "title": "Requests Per Second",
               "type": "number"
             },
+            "response_checks": {
+              "$ref": "#/components/schemas/QosResponseChecks"
+            },
             "streamed_requests": {
               "title": "Streamed Requests",
               "type": "integer"
@@ -52475,6 +52499,7 @@
             "ttft_ms",
             "tpot_ms",
             "e2e_latency_ms",
+            "response_checks",
             "model_id",
             "model",
             "api_base"
@@ -52630,6 +52655,25 @@
           "title": "QosHealthResponse",
           "type": "object"
         },
+        "QosInterference": {
+          "description": "Requests outside the benchmark that the gateway sent to the same node while a level was running.",
+          "properties": {
+            "same_deployment": {
+              "title": "Same Deployment",
+              "type": "integer"
+            },
+            "same_endpoint": {
+              "title": "Same Endpoint",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "same_deployment",
+            "same_endpoint"
+          ],
+          "title": "QosInterference",
+          "type": "object"
+        },
         "QosModelGroupMetrics": {
           "properties": {
             "e2e_latency_ms": {
@@ -52673,6 +52717,9 @@
               "title": "Requests Per Second",
               "type": "number"
             },
+            "response_checks": {
+              "$ref": "#/components/schemas/QosResponseChecks"
+            },
             "streamed_requests": {
               "title": "Streamed Requests",
               "type": "integer"
@@ -52697,7 +52744,8 @@
             "output_tokens_per_second",
             "ttft_ms",
             "tpot_ms",
-            "e2e_latency_ms"
+            "e2e_latency_ms",
+            "response_checks"
           ],
           "title": "QosModelGroupMetrics",
           "type": "object"
@@ -52744,6 +52792,30 @@
             "p99"
           ],
           "title": "QosPercentiles",
+          "type": "object"
+        },
+        "QosResponseChecks": {
+          "description": "How many benchmark responses were checked for cross-talk with concurrent requests, and what was found.",
+          "properties": {
+            "checked": {
+              "title": "Checked",
+              "type": "integer"
+            },
+            "crosstalk": {
+              "title": "Crosstalk",
+              "type": "integer"
+            },
+            "marker_missing": {
+              "title": "Marker Missing",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "checked",
+            "crosstalk",
+            "marker_missing"
+          ],
+          "title": "QosResponseChecks",
           "type": "object"
         },
         "QosSummaryResponse": {

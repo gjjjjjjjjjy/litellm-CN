@@ -1,4 +1,4 @@
-import { fireEvent, screen } from "@testing-library/react";
+import { fireEvent, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -27,7 +27,10 @@ const metrics = {
   ttft_ms: { p50: 300, p95: 610, p99: 640 },
   tpot_ms: { p50: 20, p95: 40, p99: 42 },
   e2e_latency_ms: { p50: 1500, p95: 2800, p99: 2900 },
+  response_checks: { checked: 8, crosstalk: 0, marker_missing: 0 },
 };
+
+const quiet = { same_deployment: 0, same_endpoint: 0 };
 
 const started = {
   run_id: "qos-20261023-090000-qwen3-max-ab12",
@@ -45,6 +48,7 @@ const pastRun = {
   model_group: "glm-5",
   requests: 42,
   failed_requests: 0,
+  crosstalk_responses: 3,
   started_at: "2026-10-22T04:00:00Z",
   last_response_at: "2026-10-22T04:01:00Z",
 };
@@ -54,32 +58,67 @@ const qwenProviders = [
   { model_id: "node-gitee", provider: "openai", api_base: "https://ai.gitee.com/v1", upstream_model: "Qwen3-Max" },
 ];
 
-const providerLevel = (model_id: string, api_base: string, concurrency: number, ttft: number) => ({
+interface ProviderLevel {
+  readonly model_id: string;
+  readonly api_base: string;
+  readonly ttft: number;
+  readonly crosstalk: number;
+  readonly sameDeployment: number;
+}
+
+const providerLevel = ({ model_id, api_base, ttft, crosstalk, sameDeployment }: ProviderLevel) => ({
   ...metrics,
   model_id,
   model: "Qwen3-Max",
   api_base,
-  concurrency,
+  concurrency: 1,
   ttft_ms: { p50: ttft, p95: ttft * 2, p99: ttft * 2 },
+  response_checks: { checked: 4, crosstalk, marker_missing: 0 },
+  interference: { same_deployment: sameDeployment, same_endpoint: 0 },
 });
+
+const crossedGitee: ProviderLevel = {
+  model_id: "node-gitee",
+  api_base: "https://ai.gitee.com/v1",
+  ttft: 900,
+  crosstalk: 2,
+  sameDeployment: 0,
+};
+const busyMoark: ProviderLevel = {
+  model_id: "node-moark",
+  api_base: "https://api.moark.com/v1",
+  ttft: 300,
+  crosstalk: 0,
+  sameDeployment: 5,
+};
 
 const singleProviderDetail = {
   run_id: started.run_id,
-  levels: [{ ...metrics, concurrency: 4, requests: 8 }],
+  levels: [{ ...metrics, concurrency: 4, requests: 8, interference: quiet }],
   deployments: [{ ...metrics, model_id: "node-a", model: "moark/qwen3.8-max", api_base: "https://node-a/v1" }],
   deployment_levels: [
-    { ...metrics, model_id: "node-a", model: "moark/qwen3.8-max", api_base: "https://node-a/v1", concurrency: 4 },
+    {
+      ...metrics,
+      model_id: "node-a",
+      model: "moark/qwen3.8-max",
+      api_base: "https://node-a/v1",
+      concurrency: 4,
+      interference: quiet,
+    },
   ],
 };
 
 const comparisonDetail = {
   run_id: started.run_id,
-  levels: [{ ...metrics, concurrency: 1, requests: 4 }],
+  levels: [{ ...metrics, concurrency: 1, requests: 4, interference: quiet }],
   deployments: [],
-  deployment_levels: [
-    providerLevel("node-gitee", "https://ai.gitee.com/v1", 1, 900),
-    providerLevel("node-moark", "https://api.moark.com/v1", 1, 300),
-  ],
+  deployment_levels: [providerLevel(crossedGitee), providerLevel(busyMoark)],
+};
+
+const rowContaining = (text: string): HTMLElement => {
+  const row = screen.getAllByRole("row").find((candidate) => within(candidate).queryByText(text) !== null);
+  if (row === undefined) throw new Error(`No table row contains ${text}`);
+  return row;
 };
 
 const respondWith =
@@ -162,6 +201,10 @@ describe("QoS benchmarks", () => {
     expect(screen.getByText("https://ai.gitee.com/v1")).toBeInTheDocument();
     expect(screen.getByText("300 ms / 600 ms")).toBeInTheDocument();
     expect(screen.getByText("900 ms / 1.80 s")).toBeInTheDocument();
+    expect(within(rowContaining("https://ai.gitee.com/v1")).getByText("2 cross-talk")).toBeInTheDocument();
+    const moarkRow = within(rowContaining("https://api.moark.com/v1"));
+    expect(moarkRow.getByText("4 passed")).toBeInTheDocument();
+    expect(moarkRow.getByText("5")).toBeInTheDocument();
   });
 
   it("keeps the start button disabled and says why while the plan is invalid", async () => {
@@ -190,6 +233,13 @@ describe("QoS benchmarks", () => {
     await user.click(await screen.findByRole("button", { name: "Delete" }));
 
     expect(apiClient.delete).toHaveBeenCalledWith(`/qos/benchmarks/${pastRun.run_id}`, { accessToken: "token" });
+  });
+
+  it("flags past runs whose responses crossed with other requests", async () => {
+    renderWithProviders(<QosView accessToken="token" />, { searchParams: { tab: "benchmarks" } });
+
+    await screen.findByText(pastRun.run_id);
+    expect(within(rowContaining(pastRun.run_id)).getByText("3 responses")).toBeInTheDocument();
   });
 
   it("shows view-only admins the results without start or delete controls", async () => {

@@ -14,6 +14,9 @@ import {
   qosWindow,
   recordedRequests,
   successRate,
+  interferenceLabel,
+  otherTraffic,
+  responseCheckBadge,
   targetChoiceValue,
   type QosDeploymentMetrics,
   type QosSummary,
@@ -34,6 +37,7 @@ const metrics = {
   ttft_ms: { p50: 210, p95: 1480.5, p99: null },
   tpot_ms: { p50: 22, p95: 35, p99: 41 },
   e2e_latency_ms: { p50: 4600, p95: 7900, p99: 9100 },
+  response_checks: { checked: 0, crosstalk: 0, marker_missing: 0 },
 };
 
 const deployment = (model_group: string, model_id: string, api_base: string): QosDeploymentMetrics => ({
@@ -152,7 +156,7 @@ describe("benchmark plan", () => {
   });
 
   it("sums recorded requests across levels for progress", () => {
-    const level = { ...metrics, concurrency: 1 };
+    const level = { ...metrics, concurrency: 1, interference: { same_deployment: 0, same_endpoint: 0 } };
     const detail = {
       run_id: "qos-x",
       levels: [level, { ...level, concurrency: 4, requests: 10 }],
@@ -199,7 +203,8 @@ describe("benchmark targets", () => {
   });
 
   it("treats a run as a provider comparison only when more than one provider answered", () => {
-    const level = { ...metrics, concurrency: 1, model: "Qwen3-Max", api_base: "" };
+    const quiet = { same_deployment: 0, same_endpoint: 0 };
+    const level = { ...metrics, concurrency: 1, model: "Qwen3-Max", api_base: "", interference: quiet };
     const detail = { run_id: "qos-x", levels: [], deployments: [] };
     expect(
       comparesProviders({
@@ -219,5 +224,32 @@ describe("benchmark targets", () => {
         ],
       }),
     ).toBe(true);
+  });
+});
+
+describe("cross-talk and interference", () => {
+  it("leaves responses that were never checked blank", () => {
+    expect(responseCheckBadge({ checked: 0, crosstalk: 0, marker_missing: 0 })).toBeNull();
+  });
+
+  it("reports cross-talk before missing codes, and passes only clean levels", () => {
+    expect(responseCheckBadge({ checked: 12, crosstalk: 2, marker_missing: 3 })).toMatchObject({
+      tone: "error",
+      label: "2 cross-talk",
+    });
+    expect(responseCheckBadge({ checked: 12, crosstalk: 0, marker_missing: 3 })).toMatchObject({
+      tone: "warning",
+      label: "3 without code",
+    });
+    expect(responseCheckBadge({ checked: 12, crosstalk: 0, marker_missing: 0 })).toMatchObject({
+      tone: "success",
+      label: "12 passed",
+    });
+  });
+
+  it("adds up outside traffic on the deployment and on its endpoint", () => {
+    const interference = { same_deployment: 4, same_endpoint: 2 };
+    expect(otherTraffic(interference)).toBe(6);
+    expect(interferenceLabel(interference)).toBe("4 on this deployment · 2 on its endpoint");
   });
 });

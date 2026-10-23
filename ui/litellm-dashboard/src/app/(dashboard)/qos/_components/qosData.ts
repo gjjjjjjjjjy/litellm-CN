@@ -98,6 +98,44 @@ export const deploymentIdsFor = (choice: TargetChoice, deployments: readonly Qos
   }
 };
 
+export type QosResponseChecks = components["schemas"]["QosResponseChecks"];
+export type QosInterference = components["schemas"]["QosInterference"];
+
+export interface CheckBadge {
+  readonly tone: "success" | "warning" | "error";
+  readonly label: string;
+  readonly tooltip: string;
+}
+
+export const responseCheckBadge = (checks: QosResponseChecks): CheckBadge | null => {
+  if (checks.checked === 0) return null;
+  if (checks.crosstalk > 0) {
+    return {
+      tone: "error",
+      label: `${checks.crosstalk} cross-talk`,
+      tooltip: `${checks.crosstalk} of ${checks.checked} responses carried the code of another request`,
+    };
+  }
+  if (checks.marker_missing > 0) {
+    return {
+      tone: "warning",
+      label: `${checks.marker_missing} without code`,
+      tooltip: `${checks.marker_missing} of ${checks.checked} responses did not repeat their code, so cross-talk cannot be ruled out for them`,
+    };
+  }
+  return {
+    tone: "success",
+    label: `${checks.checked} passed`,
+    tooltip: "Every checked response repeated its own code and no other",
+  };
+};
+
+export const otherTraffic = (interference: QosInterference): number =>
+  interference.same_deployment + interference.same_endpoint;
+
+export const interferenceLabel = (interference: QosInterference): string =>
+  `${interference.same_deployment} on this deployment · ${interference.same_endpoint} on its endpoint`;
+
 export const comparesProviders = (detail: QosBenchmarkDetail): boolean =>
   new Set(detail.deployment_levels.map((level) => level.model_id)).size > 1;
 
