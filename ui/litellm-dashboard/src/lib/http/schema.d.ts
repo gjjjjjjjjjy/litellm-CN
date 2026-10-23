@@ -14153,6 +14153,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/qos/benchmarks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Qos Benchmarks */
+        get: operations["list_qos_benchmarks_qos_benchmarks_get"];
+        put?: never;
+        /** Start Qos Benchmark */
+        post: operations["start_qos_benchmark_qos_benchmarks_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/qos/benchmarks/{run_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Qos Benchmark */
+        get: operations["get_qos_benchmark_qos_benchmarks__run_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/qos/summary": {
         parameters: {
             query?: never;
@@ -42800,6 +42835,106 @@ export interface components {
                     [key: string]: unknown;
                 };
             } | null;
+        };
+        /** QosBenchmarkDetail */
+        QosBenchmarkDetail: {
+            /** Deployments */
+            deployments: components["schemas"]["QosDeploymentMetrics"][];
+            /** Levels */
+            levels: components["schemas"]["QosBenchmarkLevel"][];
+            /** Run Id */
+            run_id: string;
+        };
+        /** QosBenchmarkLevel */
+        QosBenchmarkLevel: {
+            /** Concurrency */
+            concurrency: number;
+            e2e_latency_ms: components["schemas"]["QosPercentiles"];
+            /** Failed Requests */
+            failed_requests: number;
+            /**
+             * First Request At
+             * Format: date-time
+             */
+            first_request_at: string;
+            /**
+             * Last Response At
+             * Format: date-time
+             */
+            last_response_at: string;
+            /** Model Group */
+            model_group: string;
+            /** Output Tokens */
+            output_tokens: number;
+            /** Output Tokens Per Second */
+            output_tokens_per_second: number;
+            /** Peak Concurrency */
+            peak_concurrency: number;
+            /** Requests */
+            requests: number;
+            /** Requests Per Second */
+            requests_per_second: number;
+            /** Streamed Requests */
+            streamed_requests: number;
+            tpot_ms: components["schemas"]["QosPercentiles"];
+            ttft_ms: components["schemas"]["QosPercentiles"];
+        };
+        /** QosBenchmarkListResponse */
+        QosBenchmarkListResponse: {
+            /** Runs */
+            runs: components["schemas"]["QosBenchmarkRun"][];
+        };
+        /** QosBenchmarkRequest */
+        QosBenchmarkRequest: {
+            /** Concurrency */
+            concurrency: number[];
+            /** Max Tokens */
+            max_tokens: number;
+            /** Model Group */
+            model_group: string;
+            /** Requests Per Worker */
+            requests_per_worker: number;
+        };
+        /** QosBenchmarkRun */
+        QosBenchmarkRun: {
+            /** Failed Requests */
+            failed_requests: number;
+            /**
+             * Last Response At
+             * Format: date-time
+             */
+            last_response_at: string;
+            /** Model Group */
+            model_group: string;
+            /** Requests */
+            requests: number;
+            /** Run Id */
+            run_id: string;
+            /**
+             * Started At
+             * Format: date-time
+             */
+            started_at: string;
+        };
+        /** QosBenchmarkStarted */
+        QosBenchmarkStarted: {
+            /** Concurrency */
+            concurrency: number[];
+            /** Max Tokens */
+            max_tokens: number;
+            /** Model Group */
+            model_group: string;
+            /** Requests Per Worker */
+            requests_per_worker: number;
+            /** Run Id */
+            run_id: string;
+            /**
+             * Started At
+             * Format: date-time
+             */
+            started_at: string;
+            /** Total Requests */
+            total_requests: number;
         };
         /** QosDeploymentMetrics */
         QosDeploymentMetrics: {
@@ -71631,6 +71766,104 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["FacetListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_qos_benchmarks_qos_benchmarks_get: {
+        parameters: {
+            query?: {
+                /** @description ISO 8601, defaults to 7 days before end_time */
+                start_time?: string | null;
+                /** @description ISO 8601, defaults to now */
+                end_time?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QosBenchmarkListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    start_qos_benchmark_qos_benchmarks_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["QosBenchmarkRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QosBenchmarkStarted"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_qos_benchmark_qos_benchmarks__run_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QosBenchmarkDetail"];
                 };
             };
             /** @description Validation Error */

@@ -51869,6 +51869,255 @@
           "title": "HTTPValidationError",
           "type": "object"
         },
+        "QosBenchmarkDetail": {
+          "properties": {
+            "deployments": {
+              "items": {
+                "$ref": "#/components/schemas/QosDeploymentMetrics"
+              },
+              "title": "Deployments",
+              "type": "array"
+            },
+            "levels": {
+              "items": {
+                "$ref": "#/components/schemas/QosBenchmarkLevel"
+              },
+              "title": "Levels",
+              "type": "array"
+            },
+            "run_id": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          },
+          "required": [
+            "run_id",
+            "levels",
+            "deployments"
+          ],
+          "title": "QosBenchmarkDetail",
+          "type": "object"
+        },
+        "QosBenchmarkLevel": {
+          "properties": {
+            "concurrency": {
+              "title": "Concurrency",
+              "type": "integer"
+            },
+            "e2e_latency_ms": {
+              "$ref": "#/components/schemas/QosPercentiles"
+            },
+            "failed_requests": {
+              "title": "Failed Requests",
+              "type": "integer"
+            },
+            "first_request_at": {
+              "format": "date-time",
+              "title": "First Request At",
+              "type": "string"
+            },
+            "last_response_at": {
+              "format": "date-time",
+              "title": "Last Response At",
+              "type": "string"
+            },
+            "model_group": {
+              "title": "Model Group",
+              "type": "string"
+            },
+            "output_tokens": {
+              "title": "Output Tokens",
+              "type": "integer"
+            },
+            "output_tokens_per_second": {
+              "title": "Output Tokens Per Second",
+              "type": "number"
+            },
+            "peak_concurrency": {
+              "title": "Peak Concurrency",
+              "type": "integer"
+            },
+            "requests": {
+              "title": "Requests",
+              "type": "integer"
+            },
+            "requests_per_second": {
+              "title": "Requests Per Second",
+              "type": "number"
+            },
+            "streamed_requests": {
+              "title": "Streamed Requests",
+              "type": "integer"
+            },
+            "tpot_ms": {
+              "$ref": "#/components/schemas/QosPercentiles"
+            },
+            "ttft_ms": {
+              "$ref": "#/components/schemas/QosPercentiles"
+            }
+          },
+          "required": [
+            "model_group",
+            "requests",
+            "failed_requests",
+            "streamed_requests",
+            "output_tokens",
+            "peak_concurrency",
+            "first_request_at",
+            "last_response_at",
+            "requests_per_second",
+            "output_tokens_per_second",
+            "ttft_ms",
+            "tpot_ms",
+            "e2e_latency_ms",
+            "concurrency"
+          ],
+          "title": "QosBenchmarkLevel",
+          "type": "object"
+        },
+        "QosBenchmarkListResponse": {
+          "properties": {
+            "runs": {
+              "items": {
+                "$ref": "#/components/schemas/QosBenchmarkRun"
+              },
+              "title": "Runs",
+              "type": "array"
+            }
+          },
+          "required": [
+            "runs"
+          ],
+          "title": "QosBenchmarkListResponse",
+          "type": "object"
+        },
+        "QosBenchmarkRequest": {
+          "properties": {
+            "concurrency": {
+              "items": {
+                "maximum": 256.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              "maxItems": 8,
+              "minItems": 1,
+              "title": "Concurrency",
+              "type": "array"
+            },
+            "max_tokens": {
+              "maximum": 8192.0,
+              "minimum": 1.0,
+              "title": "Max Tokens",
+              "type": "integer"
+            },
+            "model_group": {
+              "minLength": 1,
+              "title": "Model Group",
+              "type": "string"
+            },
+            "requests_per_worker": {
+              "maximum": 50.0,
+              "minimum": 1.0,
+              "title": "Requests Per Worker",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "model_group",
+            "concurrency",
+            "requests_per_worker",
+            "max_tokens"
+          ],
+          "title": "QosBenchmarkRequest",
+          "type": "object"
+        },
+        "QosBenchmarkRun": {
+          "properties": {
+            "failed_requests": {
+              "title": "Failed Requests",
+              "type": "integer"
+            },
+            "last_response_at": {
+              "format": "date-time",
+              "title": "Last Response At",
+              "type": "string"
+            },
+            "model_group": {
+              "title": "Model Group",
+              "type": "string"
+            },
+            "requests": {
+              "title": "Requests",
+              "type": "integer"
+            },
+            "run_id": {
+              "title": "Run Id",
+              "type": "string"
+            },
+            "started_at": {
+              "format": "date-time",
+              "title": "Started At",
+              "type": "string"
+            }
+          },
+          "required": [
+            "run_id",
+            "model_group",
+            "requests",
+            "failed_requests",
+            "started_at",
+            "last_response_at"
+          ],
+          "title": "QosBenchmarkRun",
+          "type": "object"
+        },
+        "QosBenchmarkStarted": {
+          "properties": {
+            "concurrency": {
+              "items": {
+                "type": "integer"
+              },
+              "title": "Concurrency",
+              "type": "array"
+            },
+            "max_tokens": {
+              "title": "Max Tokens",
+              "type": "integer"
+            },
+            "model_group": {
+              "title": "Model Group",
+              "type": "string"
+            },
+            "requests_per_worker": {
+              "title": "Requests Per Worker",
+              "type": "integer"
+            },
+            "run_id": {
+              "title": "Run Id",
+              "type": "string"
+            },
+            "started_at": {
+              "format": "date-time",
+              "title": "Started At",
+              "type": "string"
+            },
+            "total_requests": {
+              "title": "Total Requests",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "run_id",
+            "model_group",
+            "concurrency",
+            "requests_per_worker",
+            "max_tokens",
+            "total_requests",
+            "started_at"
+          ],
+          "title": "QosBenchmarkStarted",
+          "type": "object"
+        },
         "QosDeploymentMetrics": {
           "properties": {
             "api_base": {
@@ -52163,6 +52412,173 @@
       }
     },
     "paths": {
+      "/qos/benchmarks": {
+        "get": {
+          "operationId": "list_qos_benchmarks_qos_benchmarks_get",
+          "parameters": [
+            {
+              "description": "ISO 8601, defaults to 7 days before end_time",
+              "in": "query",
+              "name": "start_time",
+              "required": false,
+              "schema": {
+                "anyOf": [
+                  {
+                    "format": "date-time",
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "ISO 8601, defaults to 7 days before end_time",
+                "title": "Start Time"
+              }
+            },
+            {
+              "description": "ISO 8601, defaults to now",
+              "in": "query",
+              "name": "end_time",
+              "required": false,
+              "schema": {
+                "anyOf": [
+                  {
+                    "format": "date-time",
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "ISO 8601, defaults to now",
+                "title": "End Time"
+              }
+            }
+          ],
+          "responses": {
+            "200": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/QosBenchmarkListResponse"
+                  }
+                }
+              },
+              "description": "Successful Response"
+            },
+            "422": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/HTTPValidationError"
+                  }
+                }
+              },
+              "description": "Validation Error"
+            }
+          },
+          "security": [
+            {
+              "APIKeyHeader": []
+            }
+          ],
+          "summary": "List Qos Benchmarks",
+          "tags": [
+            "qos"
+          ]
+        },
+        "post": {
+          "operationId": "start_qos_benchmark_qos_benchmarks_post",
+          "requestBody": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QosBenchmarkRequest"
+                }
+              }
+            },
+            "required": true
+          },
+          "responses": {
+            "200": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/QosBenchmarkStarted"
+                  }
+                }
+              },
+              "description": "Successful Response"
+            },
+            "422": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/HTTPValidationError"
+                  }
+                }
+              },
+              "description": "Validation Error"
+            }
+          },
+          "security": [
+            {
+              "APIKeyHeader": []
+            }
+          ],
+          "summary": "Start Qos Benchmark",
+          "tags": [
+            "qos"
+          ]
+        }
+      },
+      "/qos/benchmarks/{run_id}": {
+        "get": {
+          "operationId": "get_qos_benchmark_qos_benchmarks__run_id__get",
+          "parameters": [
+            {
+              "in": "path",
+              "name": "run_id",
+              "required": true,
+              "schema": {
+                "title": "Run Id",
+                "type": "string"
+              }
+            }
+          ],
+          "responses": {
+            "200": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/QosBenchmarkDetail"
+                  }
+                }
+              },
+              "description": "Successful Response"
+            },
+            "422": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/HTTPValidationError"
+                  }
+                }
+              },
+              "description": "Validation Error"
+            }
+          },
+          "security": [
+            {
+              "APIKeyHeader": []
+            }
+          ],
+          "summary": "Get Qos Benchmark",
+          "tags": [
+            "qos"
+          ]
+        }
+      },
       "/qos/summary": {
         "get": {
           "operationId": "get_qos_summary_qos_summary_get",

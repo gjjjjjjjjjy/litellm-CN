@@ -5,6 +5,8 @@ export type QosModelGroupMetrics = components["schemas"]["QosModelGroupMetrics"]
 export type QosDeploymentMetrics = components["schemas"]["QosDeploymentMetrics"];
 export type QosPercentiles = components["schemas"]["QosPercentiles"];
 
+export const QOS_BENCHMARK_MODEL_PARAM = "benchmark";
+
 export type QosRange = "15m" | "1h" | "6h" | "24h" | "7d";
 
 const RANGE_MINUTES: Readonly<Record<QosRange, number>> = { "15m": 15, "1h": 60, "6h": 360, "24h": 1440, "7d": 10080 };
@@ -44,3 +46,78 @@ export const deploymentsFor = (summary: QosSummary, modelGroup: string): QosDepl
 
 export const nodeLabel = (deployment: QosDeploymentMetrics): string =>
   deployment.api_base !== "" ? deployment.api_base : deployment.model_id;
+
+export type QosBenchmarkRequest = components["schemas"]["QosBenchmarkRequest"];
+export type QosBenchmarkStarted = components["schemas"]["QosBenchmarkStarted"];
+export type QosBenchmarkRun = components["schemas"]["QosBenchmarkRun"];
+export type QosBenchmarkDetail = components["schemas"]["QosBenchmarkDetail"];
+export type QosBenchmarkLevel = components["schemas"]["QosBenchmarkLevel"];
+
+export const MAX_CONCURRENCY = 256;
+export const MAX_CONCURRENCY_LEVELS = 8;
+export const MAX_BENCHMARK_REQUESTS = 5000;
+
+export type ConcurrencyParse =
+  | { readonly ok: true; readonly levels: readonly number[] }
+  | { readonly ok: false; readonly message: string };
+
+export const parseConcurrency = (text: string): ConcurrencyParse => {
+  const parts = text
+    .split(/[,，\s]+/)
+    .map((part) => part.trim())
+    .filter((part) => part !== "");
+  if (parts.length === 0) return { ok: false, message: "Enter at least one concurrency level" };
+  if (parts.length > MAX_CONCURRENCY_LEVELS)
+    return { ok: false, message: `At most ${MAX_CONCURRENCY_LEVELS} concurrency levels` };
+  const levels = parts.map(Number);
+  if (!levels.every((level) => Number.isInteger(level) && level >= 1 && level <= MAX_CONCURRENCY))
+    return { ok: false, message: `Concurrency levels must be whole numbers from 1 to ${MAX_CONCURRENCY}` };
+  return { ok: true, levels };
+};
+
+export const plannedRequests = (levels: readonly number[], requestsPerWorker: number): number =>
+  levels.reduce((total, level) => total + level, 0) * requestsPerWorker;
+
+export const recordedRequests = (detail: QosBenchmarkDetail): number =>
+  detail.levels.reduce((total, level) => total + level.requests, 0);
+
+export interface BenchmarkFormInput {
+  readonly model: string;
+  readonly concurrency: string;
+  readonly requestsPerWorker: string;
+  readonly maxTokens: string;
+}
+
+export type BenchmarkPlanCheck =
+  | { readonly ok: true; readonly plan: QosBenchmarkRequest; readonly total: number }
+  | { readonly ok: false; readonly message: string };
+
+const wholeNumberIn = (text: string, min: number, max: number): number | null => {
+  const trimmed = text.trim();
+  const value = Number(trimmed);
+  const isWholeNumber = trimmed !== "" && Number.isInteger(value);
+  return isWholeNumber && value >= min && value <= max ? value : null;
+};
+
+export const checkBenchmarkPlan = (input: BenchmarkFormInput): BenchmarkPlanCheck => {
+  if (input.model === "") return { ok: false, message: "Choose a model to test" };
+  const concurrency = parseConcurrency(input.concurrency);
+  if (!concurrency.ok) return concurrency;
+  const requestsPerWorker = wholeNumberIn(input.requestsPerWorker, 1, 50);
+  if (requestsPerWorker === null) return { ok: false, message: "Requests per worker must be from 1 to 50" };
+  const maxTokens = wholeNumberIn(input.maxTokens, 1, 8192);
+  if (maxTokens === null) return { ok: false, message: "Max output tokens must be from 1 to 8192" };
+  const total = plannedRequests(concurrency.levels, requestsPerWorker);
+  if (total > MAX_BENCHMARK_REQUESTS)
+    return { ok: false, message: `This plan sends ${total} requests; the limit is ${MAX_BENCHMARK_REQUESTS}` };
+  return {
+    ok: true,
+    total,
+    plan: {
+      model_group: input.model,
+      concurrency: [...concurrency.levels],
+      requests_per_worker: requestsPerWorker,
+      max_tokens: maxTokens,
+    },
+  };
+};
