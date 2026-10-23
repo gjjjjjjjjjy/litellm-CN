@@ -48,6 +48,11 @@ else
   exit 1
 fi
 
+if [[ ! -f runtime/backend/litellm/__init__.py || ! -f runtime/ui/index.html ]]; then
+  echo "缺少应用代码，请在本机运行 deploy/qosllm/sync.sh 同步到本目录的 runtime/" >&2
+  exit 1
+fi
+
 docker compose up -d
 
 echo "等待网关就绪（首次启动需要初始化数据库，约 1~3 分钟）..."
