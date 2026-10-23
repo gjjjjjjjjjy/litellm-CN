@@ -46,6 +46,14 @@ from litellm.proxy._types import (
     ProxyException,
     hash_token,
 )
+from litellm.proxy.auth.account_lockout import (
+    ACCOUNT_LOCKED_MESSAGE,
+    CLEAR_LOGIN_FAILURES_SQL,
+    FAILED_ATTEMPTS_KEY,
+    LOCKED_AT_KEY,
+    LOGIN_LOCKOUT_THRESHOLD,
+    RECORD_FAILED_LOGIN_SQL,
+)
 from litellm.proxy.auth.login_utils import (
     LoginResult,
     authenticate_user,
@@ -53,11 +61,20 @@ from litellm.proxy.auth.login_utils import (
     is_env_credential_login_enabled,
     screen_login_password_for_breach,
 )
+from litellm.proxy.utils import hash_password
 from tests._master_key import MASTER_KEY
 
 # Successful DB-user logins schedule the background HIBP screen; disable it so
 # no test ever does live network I/O to haveibeenpwned.com from CI.
 _POLICY_NO_BREACH_CHECK = {"password_policy_check_breached_passwords": False}
+
+
+def _raw_sql_prisma(failed_attempts: int = 1) -> MagicMock:
+    """A fake prisma client whose raw SQL calls (the account lockout counter) can be awaited."""
+    prisma = MagicMock()
+    prisma.db.query_raw = AsyncMock(return_value=[{"failed_attempts": failed_attempts}])
+    prisma.db.execute_raw = AsyncMock(return_value=0)
+    return prisma
 
 
 def test_get_ui_credentials_prefers_explicit_password():
@@ -99,7 +116,7 @@ async def test_authenticate_user_admin_login_with_ui_credentials():
     ui_username = "admin"
     ui_password = MASTER_KEY
 
-    mock_prisma_client = MagicMock()
+    mock_prisma_client = _raw_sql_prisma()
     mock_prisma_client.db.litellm_usertable.find_first = AsyncMock(return_value=None)
 
     with patch.dict(
@@ -150,7 +167,7 @@ async def test_authenticate_user_admin_login_with_master_key_as_password(monkeyp
     master_key = MASTER_KEY
     ui_username = "admin"
 
-    mock_prisma_client = MagicMock()
+    mock_prisma_client = _raw_sql_prisma()
     mock_prisma_client.db.litellm_usertable.find_first = AsyncMock(return_value=None)
 
     env_vars = {
@@ -206,7 +223,7 @@ async def test_authenticate_user_invalid_credentials():
     ui_username = "admin"
     wrong_password = "wrong-password"
 
-    mock_prisma_client = MagicMock()
+    mock_prisma_client = _raw_sql_prisma()
     mock_prisma_client.db.litellm_usertable.find_first = AsyncMock(return_value=None)
 
     with patch.dict(os.environ, {"UI_USERNAME": ui_username, "UI_PASSWORD": "correct-password"}):
@@ -228,7 +245,7 @@ async def test_authenticate_user_invalid_credentials():
 @pytest.mark.asyncio
 async def test_authenticate_user_missing_master_key():
     """Test authentication failure when master_key is None"""
-    mock_prisma_client = MagicMock()
+    mock_prisma_client = _raw_sql_prisma()
 
     with pytest.raises(ProxyException) as exc_info:
         await authenticate_user(
@@ -260,7 +277,7 @@ async def test_authenticate_user_wrong_password():
         user_role=LitellmUserRoles.INTERNAL_USER,
     )
 
-    mock_prisma_client = MagicMock()
+    mock_prisma_client = _raw_sql_prisma()
     mock_prisma_client.db.litellm_usertable.find_first = AsyncMock(return_value=mock_user)
 
     with patch.dict(
@@ -311,7 +328,7 @@ async def test_authenticate_user_email_case_insensitive_login():
             return mock_user
         return None
 
-    mock_prisma_client = MagicMock()
+    mock_prisma_client = _raw_sql_prisma()
     mock_prisma_client.db.litellm_usertable.find_first = AsyncMock(side_effect=mock_find_first)
 
     with patch.dict(
@@ -366,7 +383,7 @@ async def test_authenticate_user_database_required_for_admin(monkeypatch):
     ui_username = "admin"
     ui_password = MASTER_KEY
 
-    mock_prisma_client = MagicMock()
+    mock_prisma_client = _raw_sql_prisma()
     mock_prisma_client.db.litellm_usertable.find_first = AsyncMock(return_value=None)
 
     with patch.dict(os.environ, {"UI_USERNAME": ui_username, "UI_PASSWORD": ui_password}):
@@ -405,7 +422,7 @@ async def test_authenticate_user_admin_login_with_non_ascii_characters():
     ui_username = "admin£test"
     ui_password = "sk-9876£pass"
 
-    mock_prisma_client = MagicMock()
+    mock_prisma_client = _raw_sql_prisma()
     mock_prisma_client.db.litellm_usertable.find_first = AsyncMock(return_value=None)
 
     with patch.dict(
@@ -479,7 +496,7 @@ async def test_authenticate_user_multiple_logins_generate_unique_tokens():
     ui_username = "admin"
     ui_password = MASTER_KEY
 
-    mock_prisma_client = MagicMock()
+    mock_prisma_client = _raw_sql_prisma()
     mock_prisma_client.db.litellm_usertable.find_first = AsyncMock(return_value=None)
 
     with patch.dict(
@@ -566,7 +583,7 @@ async def test_authenticate_user_database_login_with_non_ascii_password():
             return mock_user
         return None
 
-    mock_prisma_client = MagicMock()
+    mock_prisma_client = _raw_sql_prisma()
     mock_prisma_client.db.litellm_usertable.find_first = AsyncMock(side_effect=mock_find_first)
 
     with patch.dict(
@@ -738,7 +755,7 @@ async def _db_login(throttle, username: str, password: str, *, correct: bool):
             username=username,
             password=password,
             master_key="sk-master",
-            prisma_client=MagicMock(),
+            prisma_client=_raw_sql_prisma(),
             throttle=throttle,
             general_settings=_POLICY_NO_BREACH_CHECK,
         )
@@ -798,7 +815,7 @@ async def test_a_blocked_key_is_refused_before_the_password_is_looked_at(monkeyp
             username="user@corp.com",
             password="right",
             master_key="sk-master",
-            prisma_client=MagicMock(),
+            prisma_client=_raw_sql_prisma(),
             throttle=throttle,
         )
 
@@ -1293,7 +1310,7 @@ async def test_a_user_with_no_password_set_does_not_consume_the_budget(monkeypat
                     username="nopass@example.com",
                     password="x",
                     master_key="sk-master",
-                    prisma_client=MagicMock(),
+                    prisma_client=_raw_sql_prisma(),
                     throttle=throttle,
                 )
             assert exc.value.code == "401"
@@ -1768,7 +1785,7 @@ class TestDisablePasswordLoginWhenSSOEnabled:
         master_key = MASTER_KEY
         ui_username = "admin"
 
-        mock_prisma_client = MagicMock()
+        mock_prisma_client = _raw_sql_prisma()
         mock_prisma_client.db.litellm_usertable.find_first = AsyncMock(return_value=None)
 
         with patch.dict(os.environ, {"UI_USERNAME": ui_username, "UI_PASSWORD": master_key}):
@@ -1801,7 +1818,7 @@ class TestDisablePasswordLoginWhenSSOEnabled:
             password=hash_token(token=password),
             user_role=LitellmUserRoles.INTERNAL_USER,
         )
-        mock_prisma_client = MagicMock()
+        mock_prisma_client = _raw_sql_prisma()
         mock_prisma_client.db.litellm_usertable.find_first = AsyncMock(return_value=mock_user)
 
         with patch.dict(os.environ, {"UI_USERNAME": "admin", "UI_PASSWORD": "unrelated"}):
@@ -1827,7 +1844,7 @@ class TestDisablePasswordLoginWhenSSOEnabled:
         master_key = MASTER_KEY
         ui_username = "admin"
 
-        mock_prisma_client = MagicMock()
+        mock_prisma_client = _raw_sql_prisma()
         mock_prisma_client.db.litellm_usertable.find_first = AsyncMock(return_value=None)
 
         with patch.dict(
@@ -1864,7 +1881,7 @@ class TestDisablePasswordLoginWhenSSOEnabled:
         master_key = MASTER_KEY
         ui_username = "admin"
 
-        mock_prisma_client = MagicMock()
+        mock_prisma_client = _raw_sql_prisma()
         mock_prisma_client.db.litellm_usertable.find_first = AsyncMock(return_value=None)
 
         with patch.dict(
@@ -1898,7 +1915,7 @@ class TestDisablePasswordLoginWhenSSOEnabled:
         master_key = MASTER_KEY
         ui_username = "admin"
 
-        mock_prisma_client = MagicMock()
+        mock_prisma_client = _raw_sql_prisma()
         mock_prisma_client.db.litellm_usertable.find_first = AsyncMock(return_value=None)
 
         with patch.dict(
@@ -1938,7 +1955,7 @@ class TestDisableEnvCredentialLogin:
         ui_username = "admin"
         ui_password = "env-only-password"
 
-        mock_prisma_client = MagicMock()
+        mock_prisma_client = _raw_sql_prisma()
         mock_prisma_client.db.litellm_usertable.find_first = AsyncMock(return_value=None)
 
         with patch.dict(os.environ, {"UI_USERNAME": ui_username, "UI_PASSWORD": ui_password}):
@@ -1963,7 +1980,7 @@ class TestDisableEnvCredentialLogin:
         setting must reject it too or it protects nothing by default."""
         master_key = MASTER_KEY
 
-        mock_prisma_client = MagicMock()
+        mock_prisma_client = _raw_sql_prisma()
         mock_prisma_client.db.litellm_usertable.find_first = AsyncMock(return_value=None)
 
         with patch.dict(os.environ, {"UI_USERNAME": "admin"}, clear=True):
@@ -1996,7 +2013,7 @@ class TestDisableEnvCredentialLogin:
             password=hash_token(token=password),
             user_role=LitellmUserRoles.PROXY_ADMIN,
         )
-        mock_prisma_client = MagicMock()
+        mock_prisma_client = _raw_sql_prisma()
         mock_prisma_client.db.litellm_usertable.find_first = AsyncMock(return_value=mock_user)
 
         with patch.dict(
@@ -2036,7 +2053,7 @@ class TestDisableEnvCredentialLogin:
         master_key = MASTER_KEY
         ui_username = "admin"
 
-        mock_prisma_client = MagicMock()
+        mock_prisma_client = _raw_sql_prisma()
         mock_prisma_client.db.litellm_usertable.find_first = AsyncMock(return_value=None)
 
         with patch.dict(
@@ -2103,7 +2120,7 @@ def _db_user_row(*, password: str, password_reset_required: bool | None = None, 
 
 
 def _prisma_with_user(row) -> MagicMock:
-    mock_prisma_client = MagicMock()
+    mock_prisma_client = _raw_sql_prisma()
     mock_prisma_client.db.litellm_usertable.find_first = AsyncMock(return_value=row)
     mock_prisma_client.db.litellm_usertable.update = AsyncMock(return_value=row)
     return mock_prisma_client
@@ -2350,3 +2367,76 @@ class TestScreenLoginPasswordForBreach:
             )
             is True
         )
+
+
+class TestAccountLockout:
+    PASSWORD: Final = "Correct-Horse-9-Battery"
+
+    def _prisma(self, *, metadata: dict, failed_attempts: int) -> MagicMock:
+        user = LiteLLM_UserTable(
+            user_id="locked-user",
+            user_email="user@example.com",
+            password=hash_password(self.PASSWORD),
+            user_role=LitellmUserRoles.INTERNAL_USER,
+            metadata=metadata,
+        )
+        prisma = MagicMock()
+        prisma.db.litellm_usertable.find_first = AsyncMock(return_value=user)
+        prisma.db.query_raw = AsyncMock(return_value=[{"failed_attempts": failed_attempts}])
+        prisma.db.execute_raw = AsyncMock(return_value=1)
+        return prisma
+
+    async def _login(self, prisma: MagicMock, password: str) -> LoginResult:
+        with (
+            patch.dict(os.environ, {"DATABASE_URL": "postgresql://test:test@localhost/test"}),
+            patch("litellm.proxy.auth.login_utils.generate_key_helper_fn", new_callable=AsyncMock) as generate_key,
+        ):
+            generate_key.return_value = {"token": "session-token"}
+            return await authenticate_user(
+                username="user@example.com",
+                password=password,
+                master_key=MASTER_KEY,
+                prisma_client=prisma,
+                throttle=_unlimited_throttle(),
+                general_settings=_POLICY_NO_BREACH_CHECK,
+            )
+
+    @pytest.mark.asyncio
+    async def test_a_locked_account_is_refused_even_with_the_right_password(self) -> None:
+        prisma = self._prisma(metadata={LOCKED_AT_KEY: "2026-10-23T06:00:00Z"}, failed_attempts=3)
+
+        with pytest.raises(ProxyException) as error:
+            await self._login(prisma, self.PASSWORD)
+
+        assert error.value.code == "403"
+        assert error.value.message == ACCOUNT_LOCKED_MESSAGE
+        prisma.db.query_raw.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_the_third_wrong_password_locks_the_account(self) -> None:
+        prisma = self._prisma(metadata={}, failed_attempts=LOGIN_LOCKOUT_THRESHOLD)
+
+        with pytest.raises(ProxyException) as error:
+            await self._login(prisma, "Wrong-Password-1")
+
+        assert (error.value.code, error.value.message) == ("403", ACCOUNT_LOCKED_MESSAGE)
+        assert prisma.db.query_raw.await_args.args == (RECORD_FAILED_LOGIN_SQL, "locked-user", LOGIN_LOCKOUT_THRESHOLD)
+
+    @pytest.mark.asyncio
+    async def test_earlier_wrong_passwords_only_report_invalid_credentials(self) -> None:
+        prisma = self._prisma(metadata={FAILED_ATTEMPTS_KEY: 1}, failed_attempts=2)
+
+        with pytest.raises(ProxyException) as error:
+            await self._login(prisma, "Wrong-Password-1")
+
+        assert error.value.code == "401"
+        assert "Invalid credentials" in error.value.message
+
+    @pytest.mark.asyncio
+    async def test_a_successful_sign_in_clears_earlier_failures(self) -> None:
+        prisma = self._prisma(metadata={FAILED_ATTEMPTS_KEY: 2}, failed_attempts=0)
+
+        result = await self._login(prisma, self.PASSWORD)
+
+        assert result.user_id == "locked-user"
+        prisma.db.execute_raw.assert_awaited_once_with(CLEAR_LOGIN_FAILURES_SQL, "locked-user")

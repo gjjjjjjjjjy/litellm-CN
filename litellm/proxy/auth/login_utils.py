@@ -28,6 +28,12 @@ from litellm.proxy._types import (
     UpdateUserRequest,
     UserAPIKeyAuth,
 )
+from litellm.proxy.auth.account_lockout import (
+    ACCOUNT_LOCKED_MESSAGE,
+    clear_login_failures,
+    is_account_locked,
+    record_failed_login,
+)
 from litellm.proxy.auth.auth_utils import is_sso_provider_fully_configured
 from litellm.proxy.auth.login_throttle import LoginAttempt, LoginThrottle
 from litellm.proxy.auth.password_policy import is_breach_check_enabled, is_password_breached
@@ -402,6 +408,22 @@ async def _sign_in(
         user_role = getattr(_user_row, "user_role", LitellmUserRoles.INTERNAL_USER_VIEW_ONLY)
         user_email: Final = getattr(_user_row, "user_email", "unknown")
         _password: Final = getattr(_user_row, "password", "unknown")
+        if prisma_client is None:
+            raise ProxyException(
+                message="No Database connected. Set DATABASE_URL in .env.",
+                type=ProxyErrorTypes.auth_error,
+                param="DATABASE_URL",
+                code=500,
+            )
+
+        if is_account_locked(getattr(_user_row, "metadata", None)):
+            await attempt.failed()
+            raise ProxyException(
+                message=ACCOUNT_LOCKED_MESSAGE,
+                type=ProxyErrorTypes.auth_error,
+                param="account_locked",
+                code=403,
+            )
 
         if _password is None:
             raise ProxyException(
@@ -412,8 +434,9 @@ async def _sign_in(
             )
 
         if verify_password(password, _password):
+            await clear_login_failures(prisma_client, _user_row.user_id)
             await _rehash_password_if_needed(_user_row.user_id, password, _password)
-            breached_now: Final = prisma_client is not None and await screen_login_password_for_breach(
+            breached_now: Final = await screen_login_password_for_breach(
                 user_id=_user_row.user_id,
                 password=password,
                 last_breach_check_at=getattr(_user_row, "last_breach_check_at", None),
@@ -459,6 +482,13 @@ async def _sign_in(
             )
         else:
             await attempt.failed()
+            if await record_failed_login(prisma_client, _user_row.user_id):
+                raise ProxyException(
+                    message=ACCOUNT_LOCKED_MESSAGE,
+                    type=ProxyErrorTypes.auth_error,
+                    param="account_locked",
+                    code=403,
+                )
             raise ProxyException(
                 message=_invalid_credentials_message(general_settings),
                 type=ProxyErrorTypes.auth_error,

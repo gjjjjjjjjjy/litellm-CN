@@ -140,6 +140,11 @@ LAZY_FEATURES: Final[tuple[LazyFeature, ...]] = (
         path_prefixes=("/model-insights",),
     ),
     LazyFeature(
+        name="account_lockout",
+        module_path="litellm.proxy.management_endpoints.account_lockout_endpoints",
+        path_prefixes=("/account_lockout",),
+    ),
+    LazyFeature(
         name="qos",
         module_path="litellm.proxy.management_endpoints.qos_endpoints",
         path_prefixes=("/qos",),

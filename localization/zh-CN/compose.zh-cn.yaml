@@ -1,4 +1,0 @@
-services:
-  litellm:
-    image: litellm-local:zh-cn
-    pull_policy: never

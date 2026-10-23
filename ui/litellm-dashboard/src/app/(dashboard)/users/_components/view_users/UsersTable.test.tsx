@@ -204,6 +204,13 @@ describe("UsersTable", () => {
     expect(screen.getByTestId("user-status-user-1")).toHaveTextContent("Active");
   });
 
+  it("marks an account locked after failed sign-ins", () => {
+    render(
+      <Harness data={[makeUser({ metadata: { login_failed_attempts: 3, login_locked_at: "2026-10-23T06:00:00Z" } } as Partial<UserInfo>)]} />,
+    );
+    expect(screen.getByTestId("user-status-user-1")).toHaveTextContent("Locked");
+  });
+
   describe("row selection", () => {
     const twoUsers = [
       makeUser({ user_id: "user-1", user_email: "ada@example.com" }),

@@ -38,6 +38,8 @@ import { ArrowLeft, CheckIcon, CopyIcon, Plus, RefreshCw, Trash2 } from "lucide-
 import { toast } from "@/lib/toast";
 import { getBudgetDurationLabel } from "@/components/common_components/budget_duration_dropdown";
 import DeleteResourceModal from "@/components/common_components/DeleteResourceModal";
+import AccountLockNotice from "@/components/account_lockout/AccountLockNotice";
+import { withoutLock } from "@/components/account_lockout/accountLockout";
 import useAuthorized from "@/app/(dashboard)/hooks/useAuthorized";
 import MCPServerPermissions from "@/components/permissions/MCPServerPermissions";
 import { useMCPServers } from "@/app/(dashboard)/hooks/mcpServers/useMCPServers";
@@ -456,6 +458,14 @@ export default function UserInfoView({
           </div>
         )}
       </div>
+
+      <AccountLockNotice
+        accessToken={accessToken}
+        userId={userData.user_id}
+        metadata={userData.metadata}
+        canUnlock={isProxyAdmin}
+        onUnlocked={() => setUserData({ ...userData, metadata: withoutLock(userData.metadata ?? {}) })}
+      />
 
       <DeleteResourceModal
         isOpen={isDeleteModalOpen}
