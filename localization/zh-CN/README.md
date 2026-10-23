@@ -29,7 +29,9 @@ HTTP_PROXY=http://host.docker.internal:7897 \
 
 构建执行补丁测试、TypeScript 检查和 Next.js 静态页面生成。构建结束后自动删除临时源码与依赖
 
-部署到 x86 云服务器时，在本机运行 `./deploy/qosllm/build-image.sh ../qosllm-linux-amd64.tar.gz`。该脚本生成独立的 `litellm-local:zh-cn-amd64` 镜像并导出压缩包，上传、导入和启动方法见 [公网部署说明](../../deploy/qosllm/README.md)
+`build.sh` 依次调用 `build-ui.sh`（编译中文前端）和 `stage-backend.sh`（整理后端代码并换上 QosLLM 标志），再打包镜像。公网部署的 `sync.sh` 复用这两个脚本，只同步代码而不重新打包镜像
+
+部署到 x86 云服务器时，在本机运行 `./deploy/qosllm/build-image.sh ../qosllm-linux-amd64.tar.gz`。该脚本生成独立的 `litellm-local:zh-cn-amd64` 镜像并导出压缩包，只在首次部署或升级上游版本时需要。上传、导入、日常增量同步和启动方法见 [公网部署说明](../../deploy/qosllm/README.md)
 
 ## 界面名称
 
