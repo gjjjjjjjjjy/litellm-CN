@@ -52,7 +52,7 @@ services:
       - "80:80"
       - "443:443"
     environment:
-      SITE_ADDRESS: ${SITE_ADDRESS:?set SITE_ADDRESS in .env}
+      SERVER_IP: ${SERVER_IP:?set SERVER_IP in .env}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data

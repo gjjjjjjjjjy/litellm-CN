@@ -16,7 +16,7 @@ if [[ ! -f .env ]]; then
     .env.example > .env
   chmod 600 .env
   echo "已生成 .env，其中的密钥为随机生成，请妥善备份（LITELLM_SALT_KEY 丢失后已保存的服务商密钥将无法解密）"
-  echo "请编辑 .env 填写 SITE_ADDRESS（解析到本服务器的域名），然后重新运行 ./start.sh"
+  echo "请编辑 .env 填写 SERVER_IP（本服务器的公网 IP），然后重新运行 ./start.sh"
   exit 1
 fi
 
@@ -24,14 +24,11 @@ set -a
 . ./.env
 set +a
 
-[[ -n "${SITE_ADDRESS:-}" ]] || { echo "请在 .env 中设置 SITE_ADDRESS" >&2; exit 1; }
+[[ "${SERVER_IP:-}" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]] || { echo "请在 .env 中把 SERVER_IP 设为服务器公网 IPv4 地址" >&2; exit 1; }
 for name in LITELLM_MASTER_KEY LITELLM_SALT_KEY POSTGRES_PASSWORD; do
   value="${!name:-}"
   (( ${#value} >= 32 )) || { echo "$name 至少需要 32 个字符" >&2; exit 1; }
 done
-if [[ "$SITE_ADDRESS" == :* ]]; then
-  echo "警告：SITE_ADDRESS 未使用域名，登录密码将通过未加密的 HTTP 传输，仅适合临时测试" >&2
-fi
 
 if [[ "${1:-}" == "--build" ]] || ! docker image inspect litellm-local:zh-cn >/dev/null 2>&1; then
   repo_root="$(cd ../.. && pwd)"
@@ -54,11 +51,7 @@ done
 admins="$(docker compose exec -T db psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -At \
   -c "SELECT count(*) FROM \"LiteLLM_UserTable\" WHERE user_role = 'proxy_admin' AND password IS NOT NULL")"
 
-if [[ "$SITE_ADDRESS" == :* ]]; then
-  echo "已启动：http://<服务器 IP>${SITE_ADDRESS#:80}/ui/"
-else
-  echo "已启动：https://$SITE_ADDRESS/ui/"
-fi
+echo "已启动：https://$SERVER_IP/ui/"
 if [[ "$admins" == "0" ]]; then
   echo "还没有管理员账号，请运行：./create-admin.sh 管理员邮箱"
 fi

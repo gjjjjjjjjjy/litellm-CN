@@ -1,4 +1,9 @@
-{$SITE_ADDRESS} {
+{
+	default_sni {$SERVER_IP}
+}
+
+{$SERVER_IP} {
+	tls internal
 	encode zstd gzip
 	reverse_proxy litellm:4000
 }
