@@ -4,6 +4,7 @@ import { ColumnFiltersState, OnChangeFn, PaginationState, SortingState } from "@
 import { Search, Settings } from "lucide-react";
 import { useMemo, useState } from "react";
 
+import type { QosDeploymentMetrics } from "@/app/(dashboard)/qos/_components/qosData";
 import { ModelData } from "@/components/model_dashboard/types";
 import {
   DataTable,
@@ -29,6 +30,8 @@ export type ModelViewMode = "all" | "current_team";
 export const PERSONAL_TEAM_VALUE = "personal";
 export const ALL_MODEL_GROUPS_VALUE = "all";
 export const WILDCARD_MODEL_GROUP_VALUE = "wildcard";
+
+export const MODEL_TABLE_PAGE_SIZE_OPTIONS = [10, 25, 50, 100];
 
 const MODEL_TABLE_BODY_HEIGHT = 600;
 const ALL_PROXY_MODELS_LABEL = "All Proxy Models";
@@ -81,6 +84,7 @@ interface AllModelsTableProps {
   onTogglePauseClick: (modelId: string, blocked: boolean) => void | Promise<void>;
   pausingModelId: string | null;
   credentialLabels?: ReadonlyMap<string, string>;
+  qosMetrics?: ReadonlyMap<string, QosDeploymentMetrics>;
 }
 
 function EmptyState() {
@@ -130,6 +134,7 @@ export function AllModelsTable({
   onTogglePauseClick,
   pausingModelId,
   credentialLabels,
+  qosMetrics,
 }: AllModelsTableProps) {
   const [filtersOpen, setFiltersOpen] = useState(false);
 
@@ -144,6 +149,7 @@ export function AllModelsTable({
       onTogglePauseClick,
       pausingModelId,
       credentialLabels,
+      qosMetrics,
     };
     return getModelsTableColumns(columnDeps);
   }, [
@@ -156,6 +162,7 @@ export function AllModelsTable({
     onTogglePauseClick,
     pausingModelId,
     credentialLabels,
+    qosMetrics,
   ]);
 
   const modelGroupOptions = useMemo(
@@ -199,7 +206,7 @@ export function AllModelsTable({
       pagination={pagination}
       onPaginationChange={onPaginationChange}
       rowCount={rowCount}
-      pageSizeOptions={[10, 25, 50]}
+      pageSizeOptions={MODEL_TABLE_PAGE_SIZE_OPTIONS}
       filterMode="server"
       columnFilters={columnFilters}
       onColumnFiltersChange={onColumnFiltersChange}
@@ -223,7 +230,11 @@ export function AllModelsTable({
             filterLabels={FILTER_LABELS}
             formatFilterValue={formatFilterValue}
           >
-            <Select value={selectedTeamValue} onValueChange={(value) => onTeamChange(String(value))}>
+            <Select
+              value={selectedTeamValue}
+              onValueChange={(value) => onTeamChange(String(value))}
+              disabled={viewMode === "all"}
+            >
               <SelectTrigger
                 size="sm"
                 aria-label="Current team"

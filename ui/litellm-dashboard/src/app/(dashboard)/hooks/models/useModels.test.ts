@@ -128,6 +128,30 @@ describe("useModelsInfo", () => {
     expect(modelInfoCall).toHaveBeenCalledTimes(1);
   });
 
+  it("keeps the previous page on screen while the next page loads", async () => {
+    const nextPage: PaginatedModelInfoResponse = { ...mockPaginatedModelInfoResponse, current_page: 2 };
+    let resolveNextPage: (value: PaginatedModelInfoResponse) => void = () => undefined;
+    vi.mocked(modelInfoCall)
+      .mockResolvedValueOnce(mockPaginatedModelInfoResponse)
+      .mockReturnValueOnce(new Promise((resolve) => (resolveNextPage = resolve)));
+
+    const { result, rerender } = renderHook(({ page }) => useModelsInfo(page), {
+      wrapper,
+      initialProps: { page: 1 },
+    });
+    await waitFor(() => expect(result.current.data).toEqual(mockPaginatedModelInfoResponse));
+
+    rerender({ page: 2 });
+
+    await waitFor(() => expect(result.current.isFetching).toBe(true));
+    expect(result.current.isLoading).toBe(false);
+    expect(result.current.isPlaceholderData).toBe(true);
+    expect(result.current.data).toEqual(mockPaginatedModelInfoResponse);
+
+    act(() => resolveNextPage(nextPage));
+    await waitFor(() => expect(result.current.data).toEqual(nextPage));
+  });
+
   it("should use custom page and size parameters", async () => {
     (modelInfoCall as any).mockResolvedValue(mockPaginatedModelInfoResponse);
 

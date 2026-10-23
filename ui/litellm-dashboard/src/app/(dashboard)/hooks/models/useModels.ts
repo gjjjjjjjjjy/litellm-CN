@@ -1,4 +1,4 @@
-import { useQuery, useInfiniteQuery, useQueryClient, UseQueryResult } from "@tanstack/react-query";
+import { keepPreviousData, useQuery, useInfiniteQuery, useQueryClient, UseQueryResult } from "@tanstack/react-query";
 import { useMemo } from "react";
 import { createQueryKeys } from "../common/queryKeysFactory";
 import { modelInfoCall, modelHubCall, modelAvailableCall } from "@/components/networking";
@@ -84,6 +84,7 @@ export const useModelsInfo = (
         wildcardOnly,
       ),
     enabled: Boolean(accessToken && userId && userRole),
+    placeholderData: keepPreviousData,
   });
 };
 

@@ -2,6 +2,7 @@ import { fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
+import type { QosDeploymentMetrics } from "@/app/(dashboard)/qos/_components/qosData";
 import { ModelData } from "@/components/model_dashboard/types";
 
 import { AllModelsTable } from "./AllModelsTable";
@@ -66,6 +67,25 @@ const baseProps = {
   onTogglePauseClick: vi.fn(),
   pausingModelId: null,
 };
+
+const qosDeployment = (modelId: string): QosDeploymentMetrics => ({
+  model_group: "gpt-4-public",
+  model_id: modelId,
+  model: "openai/gpt-4",
+  api_base: "",
+  requests: 40,
+  failed_requests: 2,
+  streamed_requests: 38,
+  output_tokens: 8000,
+  peak_concurrency: 16,
+  first_request_at: "2026-10-22T11:00:00",
+  last_response_at: "2026-10-22T11:00:20",
+  requests_per_second: 2,
+  output_tokens_per_second: 400,
+  ttft_ms: { p50: 210, p95: 1480.5, p99: null },
+  tpot_ms: { p50: 22, p95: 35, p99: 41 },
+  e2e_latency_ms: { p50: 4600, p95: 7900, p99: 9100 },
+});
 
 const row = (modelId: string): HTMLElement => {
   const element = document.querySelector(`[data-row-id="${modelId}"]`);
@@ -357,6 +377,55 @@ describe("AllModelsTable", () => {
     });
   });
 
+  describe("service quality", () => {
+    const twoModels = [makeModel(), makeModel({ model_info: { id: "model-2" } as ModelData["model_info"] })];
+
+    it("joins 24h metrics to the row with the matching deployment id and shows a dash for the rest", () => {
+      render(
+        <AllModelsTable {...baseProps} data={twoModels} qosMetrics={new Map([["model-1", qosDeployment("model-1")]])} />,
+      );
+
+      expect(screen.getByRole("columnheader", { name: "Success rate (24h)" })).toBeInTheDocument();
+      expect(screen.getByRole("columnheader", { name: "TTFT P95 (24h)" })).toBeInTheDocument();
+      expect(within(row("model-1")).getByTestId("model-qos-success-model-1")).toHaveTextContent("95.0%");
+      expect(within(row("model-1")).getByTestId("model-qos-ttft-model-1")).toHaveTextContent("1.48 s");
+      expect(within(row("model-2")).getByTestId("model-qos-success-model-2")).toHaveTextContent("-");
+      expect(within(row("model-2")).getByTestId("model-qos-ttft-model-2")).toHaveTextContent("-");
+    });
+
+    it("does not offer server sorting on the metric columns", () => {
+      render(<AllModelsTable {...baseProps} qosMetrics={new Map()} />);
+
+      expect(screen.queryByTestId("sort-header-qos_success_rate_24h")).not.toBeInTheDocument();
+      expect(screen.queryByTestId("sort-header-qos_ttft_p95_24h")).not.toBeInTheDocument();
+    });
+
+    it("omits the metric columns when the caller cannot read service quality", () => {
+      render(<AllModelsTable {...baseProps} />);
+
+      expect(screen.queryByRole("columnheader", { name: "Success rate (24h)" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("columnheader", { name: "TTFT P95 (24h)" })).not.toBeInTheDocument();
+    });
+
+    it("links an admin to the service quality page with the row's model group preselected", () => {
+      render(<AllModelsTable {...baseProps} />);
+
+      expect(screen.getByRole("link", { name: "Test service quality" })).toHaveAttribute(
+        "href",
+        "/ui/qos?benchmark=gpt-4-public",
+      );
+    });
+
+    it.each([
+      ["a non-admin", { userRole: "Internal User" }],
+      ["a view-only admin", { isViewOnly: true }],
+    ])("hides the service quality test from %s", (_label, overrides) => {
+      render(<AllModelsTable {...baseProps} {...overrides} />);
+
+      expect(screen.queryByRole("link", { name: "Test service quality" })).not.toBeInTheDocument();
+    });
+  });
+
   describe("delete", () => {
     it("lets an admin delete a DB model", async () => {
       const user = userEvent.setup();
@@ -442,6 +511,12 @@ describe("AllModelsTable", () => {
 
       expect(screen.getByTestId("models-team-select")).toHaveTextContent("Personal");
       expect(screen.getByTestId("models-view-select")).toHaveTextContent("Current Team Models");
+    });
+
+    it("locks the team picker while viewing all proxy models", () => {
+      render(<AllModelsTable {...baseProps} viewMode="all" />);
+
+      expect(screen.getByTestId("models-team-select")).toBeDisabled();
     });
 
     it("switches the current team", async () => {

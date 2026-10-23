@@ -2,8 +2,15 @@
 
 import { ColumnDef } from "@tanstack/react-table";
 import { CredentialIdentity } from "@/components/shared/CredentialIdentity";
-import { Copy, Info, Loader2, Pencil, RefreshCw, Trash2 } from "lucide-react";
+import { Copy, Gauge, Info, Loader2, Pencil, RefreshCw, Trash2 } from "lucide-react";
 
+import { QOS_BENCHMARK_MODEL_PARAM } from "@/app/(dashboard)/qos/_components/qosData";
+import {
+  formatMs,
+  formatRatio,
+  successRate,
+  type QosDeploymentMetrics,
+} from "@/app/(dashboard)/qos/_components/qosData";
 import { ProviderLogo } from "@/components/molecules/models/ProviderLogo";
 import { ModelData } from "@/components/model_dashboard/types";
 import { DataTableSortHeader } from "@/components/shared/DataTable";
@@ -14,6 +21,7 @@ import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/h
 import { Switch } from "@/components/ui/switch";
 import { getDisplayModelName } from "@/components/view_model/model_name_display";
 import { copyToClipboard, formatPerSecondCost } from "@/utils/dataUtils";
+import { uiHref } from "@/utils/uiHref";
 
 export const MODEL_ID_COLUMN_ID = "model_info_id";
 export const MODEL_NAME_COLUMN_ID = "model_name";
@@ -24,6 +32,8 @@ export const COSTS_COLUMN_ID = "input_cost";
 export const TEAM_ID_COLUMN_ID = "model_info_team_id";
 export const ACCESS_GROUPS_COLUMN_ID = "model_info_access_groups";
 export const STATUS_COLUMN_ID = "model_info_db_model";
+export const QOS_SUCCESS_RATE_COLUMN_ID = "qos_success_rate_24h";
+export const QOS_TTFT_P95_COLUMN_ID = "qos_ttft_p95_24h";
 
 export const MODEL_TABLE_SORT_COLUMN_IDS = [
   MODEL_NAME_COLUMN_ID,
@@ -298,6 +308,8 @@ function ModelRowActions({
     return isBlocked ? "Resume model — restore normal routing." : "Pause model — stop routing requests until resumed.";
   };
 
+  const benchmarkHref = uiHref(`qos?${new URLSearchParams({ [QOS_BENCHMARK_MODEL_PARAM]: model.model_name })}`);
+
   const deleteTooltip = isConfigModel
     ? "Config model cannot be deleted on the dashboard. Please delete it from the config file."
     : "Delete model";
@@ -332,6 +344,25 @@ function ModelRowActions({
           />
         )}
       </span>
+      {isAdmin && (
+        <CellTooltip
+          content="Test service quality"
+          trigger={
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              nativeButton={false}
+              role="link"
+              aria-label="Test service quality"
+              data-testid={`model-qos-test-${modelId}`}
+              className="text-muted-foreground"
+              render={<a href={benchmarkHref} />}
+            >
+              <Gauge className="size-4" />
+            </Button>
+          }
+        />
+      )}
       <CellTooltip
         content={deleteTooltip}
         trigger={
@@ -368,7 +399,43 @@ export interface ModelsTableColumnDeps {
   onTogglePauseClick?: (modelId: string, blocked: boolean) => void | Promise<void>;
   pausingModelId?: string | null;
   credentialLabels?: ReadonlyMap<string, string>;
+  qosMetrics?: ReadonlyMap<string, QosDeploymentMetrics>;
 }
+
+const qosColumns = (qosMetrics: ReadonlyMap<string, QosDeploymentMetrics>): ColumnDef<ModelData>[] => [
+  {
+    id: QOS_SUCCESS_RATE_COLUMN_ID,
+    meta: { title: "Success rate (24h)", numeric: true },
+    header: "Success rate (24h)",
+    enableSorting: false,
+    size: 130,
+    minSize: 100,
+    cell: ({ row }) => {
+      const metrics = qosMetrics.get(row.original.model_info.id);
+      return (
+        <span className="text-sm tabular-nums" data-testid={`model-qos-success-${row.original.model_info.id}`}>
+          {metrics ? formatRatio(successRate(metrics)) : "-"}
+        </span>
+      );
+    },
+  },
+  {
+    id: QOS_TTFT_P95_COLUMN_ID,
+    meta: { title: "TTFT P95 (24h)", numeric: true },
+    header: "TTFT P95 (24h)",
+    enableSorting: false,
+    size: 120,
+    minSize: 90,
+    cell: ({ row }) => {
+      const metrics = qosMetrics.get(row.original.model_info.id);
+      return (
+        <span className="text-sm tabular-nums" data-testid={`model-qos-ttft-${row.original.model_info.id}`}>
+          {metrics ? formatMs(metrics.ttft_ms.p95) : "-"}
+        </span>
+      );
+    },
+  },
+];
 
 export const getModelsTableColumns = ({
   userRole,
@@ -380,6 +447,7 @@ export const getModelsTableColumns = ({
   onTogglePauseClick,
   pausingModelId,
   credentialLabels,
+  qosMetrics,
 }: ModelsTableColumnDeps): ColumnDef<ModelData>[] => [
   {
     id: MODEL_ID_COLUMN_ID,
@@ -498,6 +566,7 @@ export const getModelsTableColumns = ({
         <StatusBadge tone="neutral" label="Config Model" />
       ),
   },
+  ...(qosMetrics ? qosColumns(qosMetrics) : []),
   {
     id: "actions",
     meta: { title: "Actions", className: "text-right", headerClassName: "text-right" },
@@ -505,8 +574,8 @@ export const getModelsTableColumns = ({
     enableSorting: false,
     enableHiding: false,
     enableResizing: false,
-    size: 110,
-    minSize: 110,
+    size: 150,
+    minSize: 150,
     cell: ({ row }) => (
       <ModelRowActions
         model={row.original}

@@ -5,11 +5,13 @@ import { useTeams } from "@/app/(dashboard)/hooks/teams/useTeams";
 import { useCredentials } from "@/app/(dashboard)/hooks/credentials/useCredentials";
 import { credentialLabelsByName } from "@/components/shared/credentialOptions";
 import useAuthorized from "@/app/(dashboard)/hooks/useAuthorized";
+import { useQosSummary } from "@/app/(dashboard)/hooks/qos/useQosSummary";
+import type { QosDeploymentMetrics } from "@/app/(dashboard)/qos/_components/qosData";
 import DeleteResourceModal from "@/components/common_components/DeleteResourceModal";
 import ModelSettingsModal from "@/components/model_dashboard/ModelSettingsModal/ModelSettingsModal";
 import { ModelData } from "@/components/model_dashboard/types";
 import { toast } from "@/lib/toast";
-import { isProxyAdminRole } from "@/utils/roles";
+import { isProxyAdminRole, isProxyAdminTierRole } from "@/utils/roles";
 import { uiHref } from "@/utils/uiHref";
 import { modelDeleteCall, modelPatchUpdateCall } from "@/components/networking";
 import { useQueryClient } from "@tanstack/react-query";
@@ -24,6 +26,7 @@ import { transformModelData } from "../utils/modelDataTransformer";
 import {
   ALL_MODEL_GROUPS_VALUE,
   AllModelsTable,
+  MODEL_TABLE_PAGE_SIZE_OPTIONS,
   ModelViewMode,
   PERSONAL_TEAM_VALUE,
   WILDCARD_MODEL_GROUP_VALUE,
@@ -38,7 +41,7 @@ import {
 
 const SEARCH_DEBOUNCE_WAIT_MS = 200;
 const DEFAULT_PAGE_SIZE = 50;
-const MAX_PAGE_SIZE = 100;
+const MAX_PAGE_SIZE = Math.max(...MODEL_TABLE_PAGE_SIZE_OPTIONS);
 const MAX_PAGE = 100_000;
 
 const MODEL_VIEW_MODES = ["current_team", "all"] as const satisfies readonly ModelViewMode[];
@@ -61,6 +64,21 @@ const TABLE_STATE = {
   sort_order: parseAsStringLiteral(["asc", "desc"] as const).withDefault("asc"),
   page: boundedInteger(1, MAX_PAGE, 1),
   page_size: boundedInteger(1, MAX_PAGE_SIZE, DEFAULT_PAGE_SIZE),
+};
+
+const teamScopeForQuery = (viewMode: ModelViewMode, teamValue: string): string | undefined =>
+  viewMode === "current_team" && teamValue !== PERSONAL_TEAM_VALUE ? teamValue : undefined;
+
+const useDeploymentQosMetrics = (
+  accessToken: string | null,
+  userRole: string,
+): ReadonlyMap<string, QosDeploymentMetrics> | undefined => {
+  const canViewQos = isProxyAdminTierRole(userRole);
+  const { data: qosSummary } = useQosSummary(canViewQos ? accessToken : null, "24h", "");
+  return useMemo(() => {
+    if (!canViewQos) return undefined;
+    return new Map((qosSummary?.deployments ?? []).map((deployment) => [deployment.model_id, deployment]));
+  }, [canViewQos, qosSummary]);
 };
 
 interface AllModelsTabProps {
@@ -88,6 +106,7 @@ const AllModelsTab = ({
     () => credentialLabelsByName(credentialsResponse?.credentials ?? []),
     [credentialsResponse],
   );
+  const qosMetrics = useDeploymentQosMetrics(accessToken, userRole);
   const queryClient = useQueryClient();
 
   const [tableState, setTableState] = useQueryStates(TABLE_STATE);
@@ -109,7 +128,7 @@ const AllModelsTab = ({
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [pausingModelId, setPausingModelId] = useState<string | null>(null);
 
-  const teamIdForQuery = selectedTeamValue === PERSONAL_TEAM_VALUE ? undefined : selectedTeamValue;
+  const teamIdForQuery = teamScopeForQuery(modelViewMode, selectedTeamValue);
   const isConcreteModelGroup =
     Boolean(selectedModelGroup) &&
     selectedModelGroup !== ALL_MODEL_GROUPS_VALUE &&
@@ -218,7 +237,7 @@ const AllModelsTab = ({
   };
 
   const handleViewModeChange = (value: ModelViewMode) => {
-    void setTableState({ view_mode: value });
+    void setTableState({ view_mode: value, page: null });
   };
 
   const resetFilters = () => {
@@ -252,8 +271,7 @@ const AllModelsTab = ({
       setDeleteLoading(true);
       await modelDeleteCall(accessToken, deleteModalModelId);
       toast.success("Model deleted successfully");
-      queryClient.invalidateQueries({ queryKey: ["models", "list"] });
-      refetchModels();
+      void queryClient.invalidateQueries({ queryKey: ["models", "list"] });
     } catch (error) {
       console.error("Error deleting model:", error);
       toast.fromError(error);
@@ -333,6 +351,7 @@ const AllModelsTab = ({
           onTogglePauseClick={handleTogglePause}
           pausingModelId={pausingModelId}
           credentialLabels={credentialLabels}
+          qosMetrics={qosMetrics}
         />
 
         {modelViewMode === "current_team" && (

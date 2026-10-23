@@ -94,6 +94,30 @@ vi.mock("../../hooks/teams/useTeams", () => ({
   useTeams: () => ({ data: mockTeams, isLoading: false, error: null, refetch: vi.fn() }),
 }));
 
+const mockUseQosSummary = vi.hoisted(() => vi.fn());
+vi.mock("@/app/(dashboard)/hooks/qos/useQosSummary", () => ({
+  useQosSummary: mockUseQosSummary,
+}));
+
+const qosDeployment = (modelId: string) => ({
+  model_group: "gpt-4",
+  model_id: modelId,
+  model: "openai/gpt-4",
+  api_base: "",
+  requests: 200,
+  failed_requests: 1,
+  streamed_requests: 180,
+  output_tokens: 1000,
+  peak_concurrency: 4,
+  first_request_at: "2026-10-22T11:00:00",
+  last_response_at: "2026-10-22T12:00:00",
+  requests_per_second: 1,
+  output_tokens_per_second: 10,
+  ttft_ms: { p50: 120, p95: 640, p99: 900 },
+  tpot_ms: { p50: 20, p95: 30, p99: 40 },
+  e2e_latency_ms: { p50: 1000, p95: 2000, p99: 3000 },
+});
+
 const BASE_MODEL_INFO = {
   id: "model-1",
   db_model: true,
@@ -138,7 +162,9 @@ const MOCK_AUTHORIZED = {
   isViewOnly: false,
   premiumUser: true,
   disabledPersonalKeyCreation: false,
+  loginMethod: "username_password",
   showSSOBanner: false,
+  passwordResetRequired: false,
 };
 
 const mockSetSelectedModelGroup = vi.fn();
@@ -164,6 +190,63 @@ describe("AllModelsTab", () => {
       data: enabled ? { credentials: mockCredentials } : undefined,
       isLoading: false,
     }));
+    mockUseQosSummary.mockReturnValue({ data: undefined });
+  });
+
+  describe("service quality", () => {
+    it("asks for the 24h summary as an admin and shows each deployment's metrics on its own row", () => {
+      mockUseQosSummary.mockReturnValue({
+        data: { deployments: [qosDeployment("model-1"), { ...qosDeployment("other"), failed_requests: 100 }] },
+      });
+      setModelsInfo([makeRow(), makeRow({ model_info: { id: "model-2" } })], 2);
+      renderWithProviders(<AllModelsTab {...defaultProps} />);
+
+      expect(mockUseQosSummary).toHaveBeenLastCalledWith("mock-access-token", "24h", "");
+      expect(screen.getByTestId("model-qos-success-model-1")).toHaveTextContent("99.5%");
+      expect(screen.getByTestId("model-qos-ttft-model-1")).toHaveTextContent("640 ms");
+      expect(screen.getByTestId("model-qos-success-model-2")).toHaveTextContent("-");
+      expect(screen.getByTestId("model-qos-ttft-model-2")).toHaveTextContent("-");
+    });
+
+    it("skips the admin-only summary for other roles and hides the metric columns", () => {
+      vi.spyOn(useAuthorizedModule, "default").mockReturnValue({ ...MOCK_AUTHORIZED, userRole: "Internal User" });
+      renderWithProviders(<AllModelsTab {...defaultProps} />);
+
+      expect(mockUseQosSummary).toHaveBeenLastCalledWith(null, "24h", "");
+      expect(screen.queryByRole("columnheader", { name: "Success rate (24h)" })).not.toBeInTheDocument();
+    });
+  });
+
+  describe("view mode", () => {
+    it("drops the team scope from the query when switching to all proxy models", async () => {
+      const user = userEvent.setup();
+      renderWithProviders(<AllModelsTab {...defaultProps} />, { searchParams: { filter_team: "team-1" } });
+      expect(lastModelsInfoCall().teamId).toBe("team-1");
+
+      await user.click(screen.getByTestId("models-view-select"));
+      await user.click(await screen.findByRole("option", { name: "All Proxy Models" }));
+
+      await waitFor(() => expect(lastModelsInfoCall().teamId).toBeUndefined());
+    });
+
+    it("ignores the stored team when the URL asks for all proxy models", () => {
+      renderWithProviders(<AllModelsTab {...defaultProps} />, {
+        searchParams: { filter_team: "team-1", view_mode: "all" },
+      });
+
+      expect(lastModelsInfoCall().teamId).toBeUndefined();
+    });
+  });
+
+  it("offers the largest page size the URL accepts", async () => {
+    setModelsInfo([makeRow()], 500);
+    const user = userEvent.setup();
+    renderWithProviders(<AllModelsTab {...defaultProps} />);
+
+    await user.click(screen.getByTestId("pagination-page-size"));
+    await user.click(await screen.findByRole("option", { name: "100" }));
+
+    await waitFor(() => expect(lastModelsInfoCall().size).toBe(100));
   });
 
   describe("credential labels", () => {
@@ -536,6 +619,18 @@ describe("AllModelsTab", () => {
     await waitFor(() => {
       expect(mockModelDeleteCall).toHaveBeenCalledWith("mock-access-token", "model-1");
     });
+  });
+
+  it("refreshes the model list exactly once after a delete", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<AllModelsTab {...defaultProps} />);
+
+    await user.click(await screen.findByTestId("model-delete-model-1"));
+    await user.click(await screen.findByRole("button", { name: /^delete$/i }));
+
+    await waitFor(() => expect(mockInvalidateQueries).toHaveBeenCalledWith({ queryKey: ["models", "list"] }));
+    expect(mockInvalidateQueries).toHaveBeenCalledTimes(1);
+    expect(mockRefetch).not.toHaveBeenCalled();
   });
 
   it("pauses a model through the row toggle", async () => {
