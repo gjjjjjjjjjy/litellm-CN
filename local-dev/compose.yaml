@@ -1,6 +1,7 @@
 services:
   litellm:
-    image: ghcr.io/berriai/litellm:main-stable
+    image: litellm-local:zh-cn
+    pull_policy: never
     container_name: litellm-local
     ports:
       - "127.0.0.1:4000:4000"

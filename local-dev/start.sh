@@ -1,4 +1,4 @@
 #!/bin/sh
 set -eu
 cd "$(dirname "$0")/.."
-exec ./localization/zh-CN/start.sh "$PWD"
+exec docker compose --project-name litellm-local --env-file .env -f local-dev/compose.yaml up -d

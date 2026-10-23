@@ -20,4 +20,4 @@ Prometheus 指标地址为 http://127.0.0.1:4000/metrics/，请求使用 `.env` 
 
 停止服务可运行 `docker compose --project-name litellm-local --env-file .env -f local-dev/compose.yaml down`，数据库保存在 `litellm_local_postgres_data` 卷中
 
-中文镜像基于官方稳定后端，修改克隆的 Python 源码后需要构建后端镜像才能生效。恢复官方英文界面时，直接使用 `local-dev/compose.yaml` 启动
+修改界面或 Python 源码后，按 `localization/zh-CN/README.md` 重新构建镜像并运行启动脚本。恢复官方英文界面时，把 `local-dev/compose.yaml` 中的镜像改为同版本的 `ghcr.io/berriai/litellm`
