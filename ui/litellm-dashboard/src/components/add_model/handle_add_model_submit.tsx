@@ -3,6 +3,35 @@ import { Model, modelCreateCall } from "../networking";
 import { provider_map } from "../provider_info_helpers";
 import { ptuPickerToUtcIso } from "../../utils/ptuDatetime";
 
+const hasValue = (value: unknown): boolean => value !== undefined && value !== null && value !== "";
+
+const perToken = (perMillion: unknown): number => Number(perMillion) / 1000000;
+
+/**
+ * Converts the per-million-token prices entered in the form to per-token prices, once for all deployments.
+ * Cache read defaults to the input price; cache write stays unset so the backend keeps the model default.
+ */
+const withPerTokenCosts = (formValues: Record<string, any>): Record<string, any> => {
+  const {
+    input_cost_per_token,
+    output_cost_per_token,
+    cache_read_input_token_cost,
+    cache_creation_input_token_cost,
+    ...rest
+  } = formValues;
+  const inputCost = hasValue(input_cost_per_token) ? perToken(input_cost_per_token) : undefined;
+  const cacheReadCost = hasValue(cache_read_input_token_cost) ? perToken(cache_read_input_token_cost) : inputCost;
+  return {
+    ...rest,
+    ...(inputCost !== undefined && { input_cost_per_token: inputCost }),
+    ...(hasValue(output_cost_per_token) && { output_cost_per_token: perToken(output_cost_per_token) }),
+    ...(cacheReadCost !== undefined && { cache_read_input_token_cost: cacheReadCost }),
+    ...(hasValue(cache_creation_input_token_cost) && {
+      cache_creation_input_token_cost: perToken(cache_creation_input_token_cost),
+    }),
+  };
+};
+
 export const prepareModelAddRequest = async (formValues: Record<string, any>, accessToken: string, form: any) => {
   try {
     // Get model mappings and safely remove from formValues
@@ -26,6 +55,8 @@ export const prepareModelAddRequest = async (formValues: Record<string, any>, ac
       formValues["model"] = wildcardModel;
     }
 
+    const pricedValues = withPerTokenCosts(formValues);
+
     // Create a deployment for each mapping
     const deployments = [];
     for (const mapping of modelMappings) {
@@ -36,58 +67,9 @@ export const prepareModelAddRequest = async (formValues: Record<string, any>, ac
       const modelName = mapping.public_name;
       litellmParamsObj["model"] = mapping.litellm_model;
 
-      // Handle pricing conversion before processing other fields
-      // Use explicit checks to allow 0 (zero cost models for budget bypass)
-      if (
-        formValues.input_cost_per_token !== undefined &&
-        formValues.input_cost_per_token !== null &&
-        formValues.input_cost_per_token !== ""
-      ) {
-        formValues.input_cost_per_token = Number(formValues.input_cost_per_token) / 1000000;
-      }
-      if (
-        formValues.output_cost_per_token !== undefined &&
-        formValues.output_cost_per_token !== null &&
-        formValues.output_cost_per_token !== ""
-      ) {
-        formValues.output_cost_per_token = Number(formValues.output_cost_per_token) / 1000000;
-      }
-
-      // Cache Read Cost: if blank, default to Input Cost (already token-unit converted above)
-      if (
-        formValues.cache_read_input_token_cost !== undefined &&
-        formValues.cache_read_input_token_cost !== null &&
-        formValues.cache_read_input_token_cost !== ""
-      ) {
-        formValues.cache_read_input_token_cost = Number(formValues.cache_read_input_token_cost) / 1000000;
-      } else if (
-        formValues.input_cost_per_token !== undefined &&
-        formValues.input_cost_per_token !== null &&
-        formValues.input_cost_per_token !== ""
-      ) {
-        formValues.cache_read_input_token_cost = Number(formValues.input_cost_per_token);
-      } else {
-        delete formValues.cache_read_input_token_cost;
-      }
-
-      // Cache Write Cost: explicit value if provided, else leave unset so the
-      // backend keeps the model-level default (per-second pricing, model_prices
-      // entries, etc.). Sending 0 here would overwrite that default.
-      // The backend falls back to input_cost_per_token when this key is absent.
-      if (
-        formValues.cache_creation_input_token_cost !== undefined &&
-        formValues.cache_creation_input_token_cost !== null &&
-        formValues.cache_creation_input_token_cost !== ""
-      ) {
-        formValues.cache_creation_input_token_cost = Number(formValues.cache_creation_input_token_cost) / 1000000;
-      } else {
-        delete formValues.cache_creation_input_token_cost;
-      }
-      // Keep input_cost_per_second as is, no conversion needed
-
       // Iterate through the key-value pairs in formValues
       litellmParamsObj["model"] = mapping.litellm_model;
-      for (const [key, value] of Object.entries(formValues)) {
+      for (const [key, value] of Object.entries(pricedValues)) {
         if (value === "") {
           continue;
         }
@@ -98,8 +80,8 @@ export const prepareModelAddRequest = async (formValues: Record<string, any>, ac
         if (key === "custom_pricing" || key === "pricing_model" || key === "cache_control") {
           continue;
         }
-        if (key == "model_name") {
-          litellmParamsObj["model"] = value;
+        if (key === "model_name" || key === "custom_model_name") {
+          continue;
         } else if (key == "custom_llm_provider") {
           const providerKey = value as string;
           const mappingResult = provider_map[providerKey as keyof typeof provider_map] ?? providerKey.toLowerCase();
@@ -120,8 +102,6 @@ export const prepareModelAddRequest = async (formValues: Record<string, any>, ac
 
           // remove "mode" from litellmParams
           delete litellmParamsObj["mode"];
-        } else if (key === "custom_model_name") {
-          litellmParamsObj["model"] = value;
         } else if (key == "litellm_extra_params") {
           let litellmExtraParams = {};
           if (value && value != undefined) {
@@ -200,12 +180,17 @@ export const prepareModelAddRequest = async (formValues: Record<string, any>, ac
   }
 };
 
-export const handleAddModelSubmit = async (values: any, accessToken: string, form: any, callback?: () => void) => {
+export const handleAddModelSubmit = async (
+  values: any,
+  accessToken: string,
+  form: any,
+  callback?: () => void,
+): Promise<boolean> => {
   try {
     const deployments = await prepareModelAddRequest(values, accessToken, form);
 
     if (!deployments || deployments.length === 0) {
-      return; // Exit if preparation failed or no deployments
+      return false;
     }
 
     // Create each deployment
@@ -223,7 +208,9 @@ export const handleAddModelSubmit = async (values: any, accessToken: string, for
 
     callback && callback();
     form.resetFields();
+    return true;
   } catch (error) {
     toast.fromError("Failed to add model: " + error);
+    return false;
   }
 };

@@ -133,9 +133,14 @@ const testTeam: Team = {
   members_with_roles: [],
 };
 
-const createTestProps = (userRole = "proxy_admin", userId = "user-1", isTeamAdmin = false) => {
+const createTestProps = (
+  userRole = "proxy_admin",
+  userId = "user-1",
+  isTeamAdmin = false,
+  provider: string = Providers.OpenAI,
+) => {
   const { result } = renderHook(() => {
-    const form = useForm<MountedFormValues>({ mode: "onChange" });
+    const form = useForm<MountedFormValues>({ mode: "onChange", defaultValues: { custom_llm_provider: provider } });
     const registry = useMountRegistry();
     return { form, registry };
   });
@@ -165,10 +170,8 @@ const createTestProps = (userRole = "proxy_admin", userId = "user-1", isTeamAdmi
     registry,
     mountedValues: () => projectMountedValues(registry, form.getValues),
     handleOk: vi.fn().mockResolvedValue(true),
-    setSelectedProvider: vi.fn(),
     getPlaceholder: vi.fn((provider: string) => `Enter ${provider} model name`),
     setShowAdvancedSettings: vi.fn(),
-    selectedProvider: Providers.OpenAI,
     providerModels: ["gpt-4", "gpt-3.5-turbo"],
     showAdvancedSettings: false,
     teams,
@@ -415,7 +418,7 @@ describe("AddModelForm", () => {
     const renderAsRole = async (userRole: string, selectedProvider: Providers) => {
       const mockUseAuthorized = vi.mocked(await import("@/app/(dashboard)/hooks/useAuthorized"));
       mockUseAuthorized.default.mockReturnValue(mockAuthorizedUser(userRole, "user-1", true));
-      const props = { ...createTestProps(userRole, "user-1", false), selectedProvider };
+      const props = createTestProps(userRole, "user-1", false, selectedProvider);
       renderWithProviders(<AddModelForm {...props} />);
       await screen.findByText("Existing Credentials");
       return props;

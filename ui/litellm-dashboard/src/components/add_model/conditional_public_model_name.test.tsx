@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 import { MountedFormHost } from "../../../tests/mounted-form-host";
 import type { MountedFormValues } from "../common_components/MountedFormField";
 import ConditionalPublicModelName from "./conditional_public_model_name";
+import LiteLLMModelNameField from "./litellm_model_name";
 
 const WRITE_BUDGET = 20;
 
@@ -89,5 +90,44 @@ describe("ConditionalPublicModelName", () => {
 
     expect(input).toHaveValue("gpt-4-prod");
     expect(input).toHaveFocus();
+  });
+});
+
+describe("ConditionalPublicModelName with the model name field", () => {
+  const renderForm = (defaultValues: MountedFormValues) =>
+    render(
+      <MountedFormHost defaultValues={defaultValues}>
+        <LiteLLMModelNameField selectedProvider="OpenAI" providerModels={["gpt-4o"]} getPlaceholder={() => ""} />
+        <ConditionalPublicModelName />
+        <LoopGuard />
+      </MountedFormHost>,
+    );
+
+  it("does not remount the public name input while the custom model name is typed", async () => {
+    const user = userEvent.setup();
+    renderForm({ custom_llm_provider: "OpenAI", model: ["custom"] });
+
+    const customInput = screen.getByPlaceholderText("Enter custom model name");
+    await user.type(customInput, "q");
+    const publicInput = screen.getAllByDisplayValue("q").find((element) => element !== customInput);
+    await user.type(customInput, "wen3");
+
+    expect(customInput).toHaveFocus();
+    expect(customInput).toHaveValue("qwen3");
+    expect(publicInput).toHaveValue("qwen3");
+    expect(publicInput).toBeInTheDocument();
+  });
+
+  it("keeps an edited public name on one row while the custom model name changes", async () => {
+    const user = userEvent.setup();
+    renderForm({ custom_llm_provider: "OpenAI", model: ["gpt-4o", "custom"] });
+
+    const gptPublicName = await screen.findByDisplayValue("gpt-4o");
+    await user.clear(gptPublicName);
+    await user.type(gptPublicName, "fast-chat");
+    await user.type(screen.getByPlaceholderText("Enter custom model name"), "qwen3");
+
+    expect(screen.getByDisplayValue("fast-chat")).toBeInTheDocument();
+    expect(screen.getByText("qwen3")).toBeInTheDocument();
   });
 });

@@ -52,8 +52,6 @@ interface AddModelFormProps {
   registry: MountRegistry;
   mountedValues: () => MountedFormValues;
   handleOk: () => Promise<boolean>;
-  selectedProvider: string | null;
-  setSelectedProvider: (provider: string | null) => void;
   providerModels: string[];
   getPlaceholder: (provider: string) => string;
   showAdvancedSettings: boolean;
@@ -76,8 +74,6 @@ const AddModelForm: React.FC<AddModelFormProps> = ({
   registry,
   mountedValues,
   handleOk,
-  selectedProvider,
-  setSelectedProvider,
   providerModels,
   getPlaceholder,
   showAdvancedSettings,
@@ -103,6 +99,7 @@ const AddModelForm: React.FC<AddModelFormProps> = ({
   const { data: tagsList } = useTags();
   const selectedCredentialName = useWatch({ control: form.control, name: "litellm_credential_name" });
   const pickedProvider = useWatch({ control: form.control, name: "custom_llm_provider" });
+  const selectedProvider = typeof pickedProvider === "string" ? pickedProvider : null;
   const queryClient = useQueryClient();
   const [isFederatedCredentialModalOpen, setIsFederatedCredentialModalOpen] = useState(false);
   const canCreateFederatedCredential =
@@ -164,10 +161,10 @@ const AddModelForm: React.FC<AddModelFormProps> = ({
 
   const credentialSelectOptions: SearchSelectOption[] = useMemo(() => credentialOptions(credentials), [credentials]);
 
-  const applyProviderSelection = (provider: string | null) => {
-    setSelectedProvider(provider);
+  const applyProviderSelection = () => {
     form.setValue("model", []);
     form.setValue("model_name", undefined);
+    form.setValue("custom_model_name", undefined);
   };
 
   const providerMetadataErrorText = providerMetadataError
@@ -253,7 +250,7 @@ const AddModelForm: React.FC<AddModelFormProps> = ({
                             value={typeof control.value === "string" ? control.value : null}
                             onValueChange={(value) => {
                               control.onChange(value);
-                              applyProviderSelection(value);
+                              applyProviderSelection();
                             }}
                           />
                         )}

@@ -27,12 +27,36 @@ describe("prepareModelAddRequest", () => {
     expect(deployments).toHaveLength(1);
     const [deployment] = deployments!;
     expect(deployment.modelName).toBe("Public Model");
-    expect(deployment.litellmParamsObj.model).toBe("custom-model-name");
+    expect(deployment.litellmParamsObj.model).toBe("litellm/public");
     expect(deployment.litellmParamsObj.input_cost_per_token).toBe(2);
     expect(deployment.litellmParamsObj.output_cost_per_token).toBe(1);
     expect(deployment.modelInfoObj.base_model).toBe("gpt-4");
     expect(deployment.modelInfoObj.access_groups).toEqual(["group-1"]);
     expect(deployment.modelInfoObj.team_id).toBe("team-123");
+  });
+
+  it("gives every selected model the same per-token prices and its own upstream model", async () => {
+    const formValues = {
+      model: ["gpt-4o", "custom"],
+      custom_model_name: "qwen3-max",
+      model_mappings: [
+        { public_name: "gpt-4o", litellm_model: "gpt-4o" },
+        { public_name: "qwen3-max", litellm_model: "qwen3-max" },
+      ],
+      input_cost_per_token: "2",
+      output_cost_per_token: "8",
+    };
+
+    const deployments = await prepareModelAddRequest({ ...formValues }, "token", null);
+
+    expect(deployments!.map((deployment) => deployment.litellmParamsObj.model)).toEqual(["gpt-4o", "qwen3-max"]);
+    for (const deployment of deployments!) {
+      expect(deployment.litellmParamsObj.input_cost_per_token).toBe(0.000002);
+      expect(deployment.litellmParamsObj.output_cost_per_token).toBe(0.000008);
+      expect(deployment.litellmParamsObj.cache_read_input_token_cost).toBe(0.000002);
+      expect(deployment.litellmParamsObj).not.toHaveProperty("cache_creation_input_token_cost");
+      expect(deployment.litellmParamsObj).not.toHaveProperty("custom_model_name");
+    }
   });
 
   it("uses a lowercase fallback for unrecognized custom providers", async () => {

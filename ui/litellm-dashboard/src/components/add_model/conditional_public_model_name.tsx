@@ -6,19 +6,14 @@ import { Input } from "@/components/ui/input";
 import { SimpleTooltip } from "@/components/ui/tooltip";
 import { validatorRules } from "../common_components/formRules";
 import { MountedFormField, type MountedFormValues } from "../common_components/MountedFormField";
-import { Providers } from "../provider_info_helpers";
-
-interface ModelMapping {
-  public_name: string;
-  litellm_model: string;
-}
-
-const sameMappings = (left: readonly ModelMapping[], right: readonly ModelMapping[]): boolean =>
-  left.length === right.length &&
-  left.every(
-    (mapping, index) =>
-      mapping.public_name === right[index].public_name && mapping.litellm_model === right[index].litellm_model,
-  );
+import { Providers, resolveProvider } from "../provider_info_helpers";
+import {
+  deriveModelMappings,
+  sameMappings,
+  selectedModelsOf,
+  WILDCARD_MODEL_OPTION,
+  type ModelMapping,
+} from "./model_mappings";
 
 const modelMappingsRule = {
   validator: async (_: unknown, value: unknown) => {
@@ -58,7 +53,8 @@ const publicNameTooltipContent = (
 
 const PublicNameInput: React.FC<{ readonly index: number; readonly value: string }> = ({ index, value }) => {
   const form = useFormContext<MountedFormValues>();
-  const selectedProvider = useWatch({ control: form.control, name: "custom_llm_provider" });
+  const providerKey = useWatch({ control: form.control, name: "custom_llm_provider" });
+  const selectedProvider = typeof providerKey === "string" ? resolveProvider(providerKey) : null;
 
   const handleChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const typed = event.target.value;
@@ -114,89 +110,23 @@ const columns: ColumnDef<ModelMapping>[] = [
 
 const ConditionalPublicModelName: React.FC = () => {
   const form = useFormContext<MountedFormValues>();
-
-  const modelValue = useWatch({ control: form.control, name: "model" }) || [];
-  const selectionKey = JSON.stringify(Array.isArray(modelValue) ? modelValue : [modelValue]);
+  const modelValue = useWatch({ control: form.control, name: "model" });
+  const customModelName = useWatch({ control: form.control, name: "custom_model_name" });
+  const providerKey = useWatch({ control: form.control, name: "custom_llm_provider" });
+  const provider = typeof providerKey === "string" ? resolveProvider(providerKey) : null;
+  const selectionKey = JSON.stringify(selectedModelsOf(modelValue));
   const selectedModels = useMemo(() => JSON.parse(selectionKey) as string[], [selectionKey]);
-  const customModelName = useWatch({ control: form.control, name: "custom_model_name" }) as string | undefined;
-  const showPublicModelName = !selectedModels.includes("all-wildcard");
-  const selectedProvider = useWatch({ control: form.control, name: "custom_llm_provider" });
+  const customName = typeof customModelName === "string" ? customModelName : "";
+  const showPublicModelName = !selectedModels.includes(WILDCARD_MODEL_OPTION);
 
   useEffect(() => {
-    if (customModelName && selectedModels.includes("custom")) {
-      const currentMappings = (form.getValues("model_mappings") as ModelMapping[]) || [];
-      const updatedMappings = currentMappings.map((mapping) => {
-        if (mapping.public_name === "custom" || mapping.litellm_model === "custom") {
-          if (selectedProvider === Providers.Azure) {
-            return {
-              public_name: customModelName,
-              litellm_model: `azure/${customModelName}`,
-            };
-          }
-          return {
-            public_name: customModelName,
-            litellm_model: customModelName,
-          };
-        }
-        return mapping;
-      });
-      if (!sameMappings(currentMappings, updatedMappings)) {
-        form.setValue("model_mappings", updatedMappings);
-      }
+    const mappingsValue = form.getValues("model_mappings");
+    const current = Array.isArray(mappingsValue) ? (mappingsValue as ModelMapping[]) : [];
+    const next = deriveModelMappings(selectedModels, customName, provider, current);
+    if (!sameMappings(current, next)) {
+      form.setValue("model_mappings", next);
     }
-  }, [customModelName, selectedModels, selectedProvider, form]);
-
-  // Initial setup of model mappings when models are selected
-  useEffect(() => {
-    if (selectedModels.length > 0 && !selectedModels.includes("all-wildcard")) {
-      // Check if we already have mappings that match the selected models
-      const currentMappings = (form.getValues("model_mappings") as ModelMapping[]) || [];
-
-      // Only update if the mappings don't exist or don't match the selected models
-      const shouldUpdateMappings =
-        currentMappings.length !== selectedModels.length ||
-        !selectedModels.every((model) =>
-          currentMappings.some((mapping) => {
-            if (model === "custom") {
-              return mapping.litellm_model === "custom" || mapping.litellm_model === customModelName;
-            }
-            if (selectedProvider === Providers.Azure) {
-              return mapping.litellm_model === `azure/${model}`;
-            }
-            return mapping.litellm_model === model;
-          }),
-        );
-
-      if (shouldUpdateMappings) {
-        const mappings = selectedModels.map((model: string) => {
-          if (model === "custom" && customModelName) {
-            if (selectedProvider === Providers.Azure) {
-              return {
-                public_name: customModelName,
-                litellm_model: `azure/${customModelName}`,
-              };
-            }
-            return {
-              public_name: customModelName,
-              litellm_model: customModelName,
-            };
-          }
-          if (selectedProvider === Providers.Azure) {
-            return {
-              public_name: model,
-              litellm_model: `azure/${model}`,
-            };
-          }
-          return {
-            public_name: model,
-            litellm_model: model,
-          };
-        });
-
-        form.setValue("model_mappings", mappings);
-      }
-    }
-  }, [selectedModels, customModelName, selectedProvider, form]);
+  }, [selectedModels, customName, provider, form]);
 
   if (!showPublicModelName) return null;
 
@@ -217,7 +147,7 @@ const ConditionalPublicModelName: React.FC = () => {
         <DataTable
           data={(control.value as ModelMapping[] | undefined) ?? []}
           columns={columns}
-          getRowId={(row) => row.litellm_model}
+          getRowId={(_row, index) => String(index)}
           size="compact"
         />
       )}

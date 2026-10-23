@@ -206,7 +206,7 @@ const ProviderSpecificFields: React.FC<ProviderSpecificFieldsProps> = ({
       return (
         <Select
           items={(field.options ?? []).map((option) => ({ value: option, label: option }))}
-          value={(control.value as string | undefined) ?? field.defaultValue ?? null}
+          value={(control.value as string | undefined) ?? null}
           onValueChange={control.onChange}
         >
           <SelectTrigger id={control.id} onBlur={control.onBlur} className="w-full">
@@ -247,11 +247,10 @@ const ProviderSpecificFields: React.FC<ProviderSpecificFieldsProps> = ({
       return (
         <Textarea
           id={control.id}
-          value={control.value as string | undefined}
+          value={(control.value as string | undefined) ?? ""}
           onChange={control.onChange}
           onBlur={control.onBlur}
           placeholder={field.placeholder}
-          defaultValue={field.defaultValue}
           rows={6}
           className="font-mono text-xs"
         />
@@ -262,11 +261,10 @@ const ProviderSpecificFields: React.FC<ProviderSpecificFieldsProps> = ({
       return (
         <PasswordInput
           id={control.id}
-          value={control.value as string | undefined}
+          value={(control.value as string | undefined) ?? ""}
           onChange={control.onChange}
           onBlur={control.onBlur}
           placeholder={field.placeholder}
-          defaultValue={field.defaultValue}
         />
       );
     }
@@ -274,11 +272,10 @@ const ProviderSpecificFields: React.FC<ProviderSpecificFieldsProps> = ({
     return (
       <Input
         id={control.id}
-        value={(control.value as string | undefined) ?? undefined}
+        value={(control.value as string | undefined) ?? ""}
         onBlur={control.onBlur}
         placeholder={field.placeholder}
         type="text"
-        defaultValue={field.defaultValue}
         onChange={(event) => {
           control.onChange(event);
           if (field.key === "api_base") {
@@ -302,6 +299,7 @@ const ProviderSpecificFields: React.FC<ProviderSpecificFieldsProps> = ({
           <MountedFormField
             label={field.tooltip ? labelWithHint(field.label, field.tooltip) : field.label}
             name={field.key}
+            defaultValue={field.defaultValue}
             required={field.required}
             rules={{
               validate: {

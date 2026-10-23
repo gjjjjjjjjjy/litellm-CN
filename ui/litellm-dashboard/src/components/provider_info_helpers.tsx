@@ -538,3 +538,8 @@ export const getProviderModels = (provider: string, modelMap: any): Array<string
 
   return providerModels;
 };
+
+export const resolveProvider = (provider: string): Providers | null => {
+  if (Object.hasOwn(Providers, provider)) return Providers[provider as keyof typeof Providers];
+  return Object.values(Providers).find((value) => value === provider) ?? null;
+};

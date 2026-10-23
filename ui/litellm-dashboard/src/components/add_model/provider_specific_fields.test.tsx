@@ -139,6 +139,11 @@ const createQueryClient = () =>
     },
   });
 
+const FieldValue = ({ name }: { name: string }) => {
+  const { watch } = useFormContext<MountedFormValues>();
+  return <output data-testid={`field-value-${name}`}>{String(watch(name))}</output>;
+};
+
 const VertexCredentialsProbe = () => {
   const { watch } = useFormContext<MountedFormValues>();
   return <output data-testid="vertex-credentials">{String(watch("vertex_credentials") ?? "")}</output>;
@@ -219,6 +224,22 @@ describe("ProviderSpecificFields", () => {
 
     const orgInput = screen.getByPlaceholderText("[OPTIONAL] my-unique-org");
     expect(orgInput).toBeInTheDocument();
+  });
+
+  it("puts a provider's default API base into the submitted values, not only into the input", async () => {
+    const queryClient = createQueryClient();
+    render(
+      <QueryClientProvider client={queryClient}>
+        <MountedFormHost>
+          <ProviderSpecificFields selectedProvider={Providers.OpenAI} />
+          <FieldValue name="api_base" />
+        </MountedFormHost>
+      </QueryClientProvider>,
+    );
+
+    const apiBaseInput = await screen.findByPlaceholderText("https://api.openai.com/v1");
+    expect(apiBaseInput).toHaveValue("https://api.openai.com/v1");
+    expect(screen.getByTestId("field-value-api_base")).toHaveTextContent("https://api.openai.com/v1");
   });
 
   it("should let the user reveal a secret field", async () => {

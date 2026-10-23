@@ -10,7 +10,7 @@ import {
   useMountRegistry,
   type MountedFormValues,
 } from "@/components/common_components/MountedFormField";
-import { Providers, getPlaceholder, getProviderModels } from "@/components/provider_info_helpers";
+import { getPlaceholder, getProviderModels } from "@/components/provider_info_helpers";
 import { useModelCostMap } from "@/app/(dashboard)/hooks/models/useModelCostMap";
 import { useCredentials } from "@/app/(dashboard)/hooks/credentials/useCredentials";
 import { useTeams } from "@/app/(dashboard)/hooks/teams/useTeams";
@@ -27,7 +27,6 @@ export default function AddModelPanel() {
   const { data: modelCostMapData } = useModelCostMap(true, true);
   const { data: credentialsResponse } = useCredentials();
   const { data: teams } = useTeams();
-  const [selectedProvider, setSelectedProvider] = useState<string | null>(Providers.Anthropic);
   const pickedProvider = useWatch({ control: form.control, name: "custom_llm_provider" });
   const providerModels = useMemo(
     () => (typeof pickedProvider === "string" ? getProviderModels(pickedProvider, modelCostMapData) : []),
@@ -45,13 +44,7 @@ export default function AddModelPanel() {
     if (!isValid) {
       return false;
     }
-    await handleAddModelSubmit(
-      mountedValues(),
-      accessToken,
-      { resetFields: () => form.reset(INITIAL_VALUES) },
-      refresh,
-    );
-    return true;
+    return handleAddModelSubmit(mountedValues(), accessToken, { resetFields: () => form.reset(INITIAL_VALUES) }, refresh);
   };
 
   return (
@@ -60,8 +53,6 @@ export default function AddModelPanel() {
       registry={registry}
       mountedValues={mountedValues}
       handleOk={handleOk}
-      selectedProvider={selectedProvider}
-      setSelectedProvider={setSelectedProvider}
       providerModels={providerModels}
       getPlaceholder={getPlaceholder}
       showAdvancedSettings={showAdvancedSettings}
