@@ -2,7 +2,7 @@
 
 中文词库、术语规则和构建脚本随 Fork 一起维护。构建时在临时源码副本中应用译文，并把 Fork 的后端代码（如新增的 Moark / Gitee AI 服务商）一起打包，生成镜像 `litellm-local:zh-cn`
 
-`litellm_zh_cn` 分支基于 `v1.106.2` 稳定版维护中文功能，`main` 分支用于同步官方上游。`origin` 指向自己的 Fork，`upstream` 指向 `BerriAI/litellm`
+`litellm_zh_cn` 分支基于 `v1.106.4` 稳定版维护中文功能，`main` 分支用于同步官方上游。`origin` 指向自己的 Fork，`upstream` 指向 `BerriAI/litellm`
 
 ## 构建和启动
 
@@ -13,7 +13,7 @@
 Fork 源码和后端基础镜像需使用同一版本，版本不一致时构建直接报错。当前分支的构建命令为
 
 ```bash
-./localization/zh-CN/build.sh "$PWD" ghcr.io/berriai/litellm:v1.106.2
+./localization/zh-CN/build.sh "$PWD" ghcr.io/berriai/litellm:v1.106.4
 ./local-dev/start.sh
 ```
 
@@ -24,7 +24,7 @@ Fork 源码和后端基础镜像需使用同一版本，版本不一致时构建
 ```bash
 HTTPS_PROXY=http://host.docker.internal:7897 \
 HTTP_PROXY=http://host.docker.internal:7897 \
-./localization/zh-CN/build.sh "$PWD" ghcr.io/berriai/litellm:v1.106.2
+./localization/zh-CN/build.sh "$PWD" ghcr.io/berriai/litellm:v1.106.4
 ```
 
 构建执行补丁测试、TypeScript 检查和 Next.js 静态页面生成。构建结束后自动删除临时源码与依赖
