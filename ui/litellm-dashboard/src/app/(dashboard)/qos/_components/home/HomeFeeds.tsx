@@ -22,6 +22,15 @@ import {
   useQosNews,
 } from "@/app/(dashboard)/hooks/qos/useQosHome";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import {
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -36,7 +45,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/cva.config";
 import { extractErrorMessage } from "@/utils/errorUtils";
 import { Logo } from "@/components/molecules/logo/Logo";
-import type { QosActivityEvent } from "@/app/(dashboard)/hooks/qos/useQosHome";
+import type { QosActivityEvent, QosAnnouncement } from "@/app/(dashboard)/hooks/qos/useQosHome";
 import { activityLine, newsLogoProvider, relativeTimeLabel, type ActivityTone } from "./homeData";
 
 const FeedPanel = ({
@@ -155,6 +164,44 @@ const PostAnnouncementDialog = ({
   );
 };
 
+const DeleteAnnouncementDialog = ({
+  accessToken,
+  announcement,
+  onClose,
+}: {
+  accessToken: string | null;
+  announcement: QosAnnouncement;
+  onClose: () => void;
+}) => {
+  const remove = useDeleteAnnouncement(accessToken);
+
+  return (
+    <AlertDialog open onOpenChange={(open) => !open && onClose()}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Delete this announcement?</AlertDialogTitle>
+          <AlertDialogDescription>{announcement.title}</AlertDialogDescription>
+        </AlertDialogHeader>
+        {remove.error !== null && (
+          <Alert variant="destructive">
+            <AlertDescription>{extractErrorMessage(remove.error)}</AlertDescription>
+          </Alert>
+        )}
+        <AlertDialogFooter>
+          <AlertDialogCancel>Cancel</AlertDialogCancel>
+          <Button
+            variant="destructive"
+            disabled={remove.isPending}
+            onClick={() => remove.mutate(announcement.id, { onSuccess: onClose })}
+          >
+            {remove.isPending ? "Deleting..." : "Delete"}
+          </Button>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
+};
+
 export const AnnouncementsPanel = ({
   accessToken,
   canManage,
@@ -165,8 +212,8 @@ export const AnnouncementsPanel = ({
   now: Date;
 }) => {
   const announcements = useQosAnnouncements(accessToken).data;
-  const remove = useDeleteAnnouncement(accessToken);
   const [posting, setPosting] = React.useState(false);
+  const [deleting, setDeleting] = React.useState<QosAnnouncement | null>(null);
   const empty = announcements === undefined || announcements.length === 0;
 
   return (
@@ -204,8 +251,7 @@ export const AnnouncementsPanel = ({
                       size="icon"
                       className="size-6 shrink-0 text-muted-foreground hover:text-destructive"
                       aria-label="Delete announcement"
-                      disabled={remove.isPending}
-                      onClick={() => remove.mutate(announcement.id)}
+                      onClick={() => setDeleting(announcement)}
                     >
                       <Trash2 className="size-3.5" />
                     </Button>
@@ -225,6 +271,9 @@ export const AnnouncementsPanel = ({
         )}
       </FeedPanel>
       <PostAnnouncementDialog accessToken={accessToken} open={posting} onOpenChange={setPosting} />
+      {deleting !== null && (
+        <DeleteAnnouncementDialog accessToken={accessToken} announcement={deleting} onClose={() => setDeleting(null)} />
+      )}
     </>
   );
 };

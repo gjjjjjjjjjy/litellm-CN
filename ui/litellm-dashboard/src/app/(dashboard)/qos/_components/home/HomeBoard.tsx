@@ -23,7 +23,7 @@ import { AreaChart, LineChart, type ChartColor } from "@/components/shared/chart
 import { cn } from "@/lib/cva.config";
 import { isProxyAdminRole } from "@/utils/roles";
 import { uiHref } from "@/utils/uiHref";
-import { headlines, type Change } from "../dashboardData";
+import { headlines, type Change, type Headline, type HeadlineKey } from "../dashboardData";
 import { formatMs, formatRatio, successRate } from "../qosData";
 import { formatCompact } from "@/app/(dashboard)/usage/_components/components/overview/overviewData";
 import { ActivityPanel, AnnouncementsPanel, NewsPanel } from "./HomeFeeds";
@@ -32,22 +32,20 @@ import { modelCards, overallStatus, requestVolume, statusLabel, type ModelCard, 
 
 const REFRESH_MS = 60_000;
 const BOARD_RANGE = "24h";
-const HEADLINE_KEYS = ["requests", "success", "ttft", "throughput"];
 const BOARD_TRENDS = { range: BOARD_RANGE, tag: "", groupBy: "model", refreshMs: REFRESH_MS } as const;
 
-const STATUS_STYLE: Readonly<Record<ServiceStatus, { readonly icon: typeof CircleCheck; readonly className: string }>> =
-  {
-    ok: { icon: CircleCheck, className: "text-success" },
-    degraded: { icon: CircleAlert, className: "text-warning" },
-    down: { icon: CircleX, className: "text-destructive" },
-    idle: { icon: CircleDashed, className: "text-muted-foreground" },
-  };
+interface StatusStyle {
+  readonly icon: typeof CircleCheck;
+  readonly text: string;
+  readonly dot: string;
+  readonly chart: ChartColor;
+}
 
-const STATUS_DOT: Readonly<Record<ServiceStatus, string>> = {
-  ok: "bg-success",
-  degraded: "bg-warning",
-  down: "bg-destructive",
-  idle: "bg-muted-foreground",
+const STATUS_STYLE: Readonly<Record<ServiceStatus, StatusStyle>> = {
+  ok: { icon: CircleCheck, text: "text-success", dot: "bg-success", chart: "emerald" },
+  degraded: { icon: CircleAlert, text: "text-warning", dot: "bg-warning", chart: "amber" },
+  down: { icon: CircleX, text: "text-destructive", dot: "bg-destructive", chart: "rose" },
+  idle: { icon: CircleDashed, text: "text-muted-foreground", dot: "bg-muted-foreground", chart: "slate" },
 };
 
 const LiveDot = ({ status }: { status: ServiceStatus }) => (
@@ -56,35 +54,55 @@ const LiveDot = ({ status }: { status: ServiceStatus }) => (
       <span
         className={cn(
           "absolute inline-flex size-full rounded-full opacity-60 motion-safe:animate-ping",
-          STATUS_DOT[status],
+          STATUS_STYLE[status].dot,
         )}
       />
     )}
-    <span className={cn("relative inline-flex size-2 rounded-full", STATUS_DOT[status])} />
+    <span className={cn("relative inline-flex size-2 rounded-full", STATUS_STYLE[status].dot)} />
   </span>
 );
 
-const STATUS_COLOR: Readonly<Record<ServiceStatus, ChartColor>> = {
-  ok: "emerald",
-  degraded: "amber",
-  down: "rose",
-  idle: "slate",
-};
+type BoardHeadlineKey = Exclude<HeadlineKey, "tpot">;
 
-const HEADLINE_STYLE: Readonly<Record<string, { readonly icon: typeof Activity; readonly className: string }>> = {
+const HEADLINE_STYLE: Readonly<
+  Record<BoardHeadlineKey, { readonly icon: typeof Activity; readonly className: string }>
+> = {
   requests: { icon: Activity, className: "bg-primary/10 text-primary" },
   success: { icon: CircleCheck, className: "bg-success/10 text-success" },
   ttft: { icon: Timer, className: "bg-warning/10 text-warning" },
   throughput: { icon: Zap, className: "bg-violet-500/10 text-violet-500" },
 };
 
-const useNow = (): Date => {
+const onBoard = (headline: Headline): headline is Headline & { readonly key: BoardHeadlineKey } =>
+  headline.key !== "tpot";
+
+const useNow = (intervalMs: number): Date => {
   const [now, setNow] = React.useState(() => new Date());
   React.useEffect(() => {
-    const timer = window.setInterval(() => setNow(new Date()), 1000);
+    const timer = window.setInterval(() => setNow(new Date()), intervalMs);
     return () => window.clearInterval(timer);
-  }, []);
+  }, [intervalMs]);
   return now;
+};
+
+const Clock = () => {
+  const now = useNow(1000);
+  return (
+    <div className="hidden border-l pl-4 text-right tabular-nums sm:block">
+      <p className="text-sm font-medium">{now.toLocaleTimeString()}</p>
+      <p className="text-[11px] text-muted-foreground">{now.toLocaleDateString()}</p>
+    </div>
+  );
+};
+
+const RefreshStatus = ({ fetching, updatedAt }: { fetching: boolean; updatedAt: number }) => {
+  if (!fetching && updatedAt === 0) return null;
+  return (
+    <div className="hidden items-center gap-1.5 text-[11px] text-muted-foreground md:flex">
+      <RefreshCw className={cn("size-3", fetching && "motion-safe:animate-spin")} aria-hidden="true" />
+      {fetching ? "Refreshing" : `Updated ${new Date(updatedAt).toLocaleTimeString()}`}
+    </div>
+  );
 };
 
 const ChangeBadge = ({ change }: { change: Change }) => {
@@ -106,7 +124,7 @@ const ModelStatusCard = ({ card }: { card: ModelCard }) => {
       <Icon
         className={cn(
           "size-4 shrink-0",
-          style.className,
+          style.text,
           (card.status === "down" || card.status === "degraded") && "motion-safe:animate-pulse",
         )}
         aria-label={statusLabel(card.status)}
@@ -140,7 +158,7 @@ const ModelStatusCard = ({ card }: { card: ModelCard }) => {
           data={card.ttftTrend}
           index="time"
           categories={["ttft"]}
-          colors={[STATUS_COLOR[card.status]]}
+          colors={[style.chart]}
           showXAxis={false}
           showLegend={false}
           showGridLines={false}
@@ -156,7 +174,7 @@ const ModelStatusCard = ({ card }: { card: ModelCard }) => {
 export default function HomeBoard({ accessToken }: { accessToken: string | null }) {
   const { userRole, isViewOnly } = useAuthorized();
   const canManage = isProxyAdminRole(userRole) && !isViewOnly;
-  const now = useNow();
+  const now = useNow(60_000);
   const summaryQuery = useQosSummary(accessToken, BOARD_RANGE, "", REFRESH_MS);
   const summary = summaryQuery.data;
   const trends = useQosTrends(accessToken, BOARD_TRENDS).data;
@@ -169,10 +187,7 @@ export default function HomeBoard({ accessToken }: { accessToken: string | null 
   );
   const status = overallStatus(cards.map((card) => card.status));
   const StatusIcon = STATUS_STYLE[status].icon;
-  const figures =
-    trends === undefined
-      ? []
-      : headlines(trends.current, trends.previous).filter((headline) => HEADLINE_KEYS.includes(headline.key));
+  const figures = trends === undefined ? [] : headlines(trends.current, trends.previous).filter(onBoard);
 
   return (
     <div className="flex min-h-full min-w-0 flex-col gap-4 bg-muted/30 p-4 text-foreground lg:h-full lg:min-h-[600px] xl:p-5">
@@ -195,7 +210,7 @@ export default function HomeBoard({ accessToken }: { accessToken: string | null 
           <div
             className={cn(
               "flex items-center gap-1.5 rounded-full border bg-card px-3 py-1.5 text-xs font-medium",
-              STATUS_STYLE[status].className,
+              STATUS_STYLE[status].text,
             )}
             role="status"
           >
@@ -203,19 +218,8 @@ export default function HomeBoard({ accessToken }: { accessToken: string | null 
             <StatusIcon className="size-3.5" />
             {statusLabel(status)}
           </div>
-          <div className="hidden items-center gap-1.5 text-[11px] text-muted-foreground md:flex">
-            <RefreshCw
-              className={cn("size-3", summaryQuery.isFetching && "motion-safe:animate-spin")}
-              aria-hidden="true"
-            />
-            {summaryQuery.isFetching
-              ? "Refreshing"
-              : `Updated ${new Date(summaryQuery.dataUpdatedAt).toLocaleTimeString()}`}
-          </div>
-          <div className="hidden border-l pl-4 text-right tabular-nums sm:block">
-            <p className="text-sm font-medium">{now.toLocaleTimeString()}</p>
-            <p className="text-[11px] text-muted-foreground">{now.toLocaleDateString()}</p>
-          </div>
+          <RefreshStatus fetching={summaryQuery.isFetching} updatedAt={summaryQuery.dataUpdatedAt} />
+          <Clock />
         </div>
       </header>
 

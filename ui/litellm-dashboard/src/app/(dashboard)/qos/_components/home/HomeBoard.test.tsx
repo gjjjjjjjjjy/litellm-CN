@@ -1,4 +1,4 @@
-import { screen, within } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -130,6 +130,7 @@ describe("HomeBoard", () => {
     authorized.isViewOnly = false;
     vi.mocked(apiClient.get).mockReset();
     vi.mocked(apiClient.post).mockReset();
+    vi.mocked(apiClient.delete).mockReset();
     vi.mocked(apiClient.get).mockImplementation(async (path: string) => responses[path]);
   });
 
@@ -170,6 +171,43 @@ describe("HomeBoard", () => {
       accessToken: "token",
       body: { title: "Benchmarks paused", body: "" },
     });
+  });
+
+  it("deletes an announcement only after the admin confirms", async () => {
+    const user = userEvent.setup();
+    vi.mocked(apiClient.delete).mockResolvedValue({ announcements: [] });
+    renderWithProviders(<HomeBoard accessToken="token" />);
+
+    await user.click(await screen.findByRole("button", { name: "Delete announcement" }));
+    expect(apiClient.delete).not.toHaveBeenCalled();
+    await user.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: "Delete" }));
+
+    expect(apiClient.delete).toHaveBeenCalledWith("/qos/announcements/a1", { accessToken: "token" });
+    await waitFor(() => expect(screen.queryByText("Maintenance on Saturday")).not.toBeInTheDocument());
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+  });
+
+  it("keeps the confirmation open with the reason when deleting fails", async () => {
+    const user = userEvent.setup();
+    vi.mocked(apiClient.delete).mockRejectedValue(new Error("Announcement a1 not found"));
+    renderWithProviders(<HomeBoard accessToken="token" />);
+
+    await user.click(await screen.findByRole("button", { name: "Delete announcement" }));
+    await user.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: "Delete" }));
+
+    expect(await within(screen.getByRole("alertdialog")).findByText("Announcement a1 not found")).toBeInTheDocument();
+  });
+
+  it("shows no update time before the summary has ever loaded", async () => {
+    vi.mocked(apiClient.get).mockImplementation(async (path: string) => {
+      if (path === "/qos/summary") throw new Error("down");
+      return responses[path];
+    });
+    renderWithProviders(<HomeBoard accessToken="token" />);
+
+    await screen.findByText("Maintenance on Saturday");
+    await waitFor(() => expect(screen.queryByText("Refreshing")).not.toBeInTheDocument());
+    expect(screen.queryByText(/^Updated /)).not.toBeInTheDocument();
   });
 
   it("offers no posting or deleting to other users", async () => {
