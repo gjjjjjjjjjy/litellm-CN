@@ -5,7 +5,7 @@ services:
     container_name: litellm-local
     ports:
       - "127.0.0.1:4000:4000"
-      - "${LITELLM_LAN_IP:?set LITELLM_LAN_IP in .env}:4000:4000"
+      - "${LITELLM_LAN_IP:?start the stack with local-dev/start.sh, which finds the LAN address}:4000:4000"
     environment:
       LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:?set LITELLM_MASTER_KEY in .env}
       LITELLM_SALT_KEY: ${LITELLM_SALT_KEY:?set LITELLM_SALT_KEY in .env}

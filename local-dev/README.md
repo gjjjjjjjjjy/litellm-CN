@@ -6,7 +6,7 @@
 
 管理界面为 http://127.0.0.1:4000/ui/login/，用户名和密码分别保存在根目录 `.env` 的 `UI_USERNAME` 和 `UI_PASSWORD`
 
-同一内网的设备可使用 `http://<LITELLM_LAN_IP>:4000/ui/login/` 访问，`LITELLM_LAN_IP` 保存在 `.env` 中，Mac 的内网地址改变后需更新该值并重新运行启动脚本
+同一内网的设备可使用 `http://<Mac 的内网地址>:4000/ui/login/` 访问。启动脚本每次读取当前默认网卡的地址，换网络后重新运行 `./local-dev/start.sh` 即可
 
 修改 `.env` 中的 `UI_PASSWORD` 并保存后，重新运行启动脚本使新密码生效
 
