@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import Image from "next/image";
 import {
   Activity,
   ArrowDownRight,
@@ -9,7 +10,6 @@ import {
   CircleCheck,
   CircleDashed,
   CircleX,
-  Gauge,
   Timer,
   Zap,
 } from "lucide-react";
@@ -21,6 +21,7 @@ import useAuthorized from "@/app/(dashboard)/hooks/useAuthorized";
 import { AreaChart, LineChart, type ChartColor } from "@/components/shared/charts";
 import { cn } from "@/lib/cva.config";
 import { isProxyAdminRole } from "@/utils/roles";
+import { uiHref } from "@/utils/uiHref";
 import { headlines, type Change } from "../dashboardData";
 import { formatMs, formatRatio, successRate } from "../qosData";
 import { ActivityPanel, AnnouncementsPanel, NewsPanel } from "./HomeFeeds";
@@ -139,9 +140,14 @@ export default function HomeBoard({ accessToken }: { accessToken: string | null 
     <div className="flex min-h-full min-w-0 flex-col gap-4 bg-muted/30 p-4 text-foreground lg:h-full lg:min-h-[600px] xl:p-5">
       <header className="flex shrink-0 flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
-          <div className="flex size-10 items-center justify-center rounded-xl border border-primary/15 bg-primary/10 text-primary">
-            <Gauge className="size-5" aria-hidden="true" />
-          </div>
+          <Image
+            src={uiHref("assets/logos/qosllm.svg")}
+            alt=""
+            aria-hidden="true"
+            width={40}
+            height={40}
+            className="size-10 shrink-0"
+          />
           <div>
             <h1 className="text-xl font-semibold tracking-tight">QosLLM</h1>
             <p className="mt-0.5 text-xs text-muted-foreground">Service quality board · last 24 hours</p>

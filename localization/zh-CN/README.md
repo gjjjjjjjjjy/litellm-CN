@@ -35,7 +35,7 @@ HTTP_PROXY=http://host.docker.internal:7897 \
 
 ## 界面名称
 
-界面显示名称为 QosLLM，标志为纯文字。侧边栏标志（展开时为 QosLLM，收起时为 Q）在 `branding/` 中，构建镜像时替换后端自带的 `logo*.png`；浏览器标题和登录页文字在 `zh-CN.json` 中修改。代码、包名和 API 保持 litellm 不变，并保留上游的 MIT 许可证与版权声明
+界面显示名称为 QosLLM，图标由 Q 字母与监测波形组成。侧边栏展开时显示图标与名称，收起时只显示图标，深浅主题使用对应的 `branding/logo*.png`。矢量字标源文件在 `branding/`，独立图标位于 `ui/litellm-dashboard/public/assets/logos/qosllm.svg`，浏览器图标位于 `ui/litellm-dashboard/src/app/favicon.ico`，构建时同时更新前后端的默认图标。浏览器标题和登录页文字在 `zh-CN.json` 中修改。代码、包名和 API 保持 litellm 不变，并保留上游的 MIT 许可证与版权声明
 
 ## 精简菜单
 
