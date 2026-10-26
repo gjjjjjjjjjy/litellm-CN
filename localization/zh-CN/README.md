@@ -31,6 +31,8 @@ HTTP_PROXY=http://host.docker.internal:7897 \
 
 `build.sh` 依次调用 `build-ui.sh`（编译中文前端）和 `stage-backend.sh`（整理后端代码并换上 QosLLM 标志），再打包镜像。本机启动和公网发布都使用这些构建步骤
 
+每次构建都以同版本官方镜像为基础，Docker 复用相同的基础层和构建缓存，应用层包含本次的 Fork 后端和中文前端。更新时继续使用上面的构建命令，镜像按层增量传输
+
 部署到 x86 云服务器时，在本机运行 `./deploy/qosllm/publish.sh <仓库域名>/<命名空间>/qosllm`，将当前 Git 提交构建为 `linux/amd64` 镜像并推送到仓库。服务器拉取指定版本后由 Compose 启动，镜像包含前后端代码。完整步骤见 [公网部署说明](../../deploy/qosllm/README.md)
 
 ## 界面名称
