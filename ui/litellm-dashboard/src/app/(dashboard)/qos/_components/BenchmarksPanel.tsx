@@ -2,7 +2,7 @@
 
 import React from "react";
 import type { ColumnDef, RowSelectionState } from "@tanstack/react-table";
-import { Download, Play, Trash2 } from "lucide-react";
+import { Download, Loader2, Play, Trash2 } from "lucide-react";
 
 import {
   useDeleteQosBenchmark,
@@ -106,6 +106,7 @@ const downloadBenchmarks = (exports: readonly BenchmarkExport[]) =>
 
 const ExportRunsButton = ({ accessToken, runs }: { accessToken: string | null; runs: readonly QosBenchmarkRun[] }) => {
   const exportRuns = useExportQosBenchmarks(accessToken);
+  const exportLabel = runs.length === 0 ? "Export CSV" : `Export ${runs.length} to CSV`;
   return (
     <div className="flex flex-col items-end gap-1">
       <Button
@@ -114,10 +115,14 @@ const ExportRunsButton = ({ accessToken, runs }: { accessToken: string | null; r
         disabled={runs.length === 0 || exportRuns.isPending}
         onClick={() => exportRuns.mutate(runs, { onSuccess: downloadBenchmarks })}
       >
-        <Download className="size-4" />
-        {runs.length === 0 ? "Export CSV" : `Export ${runs.length} to CSV`}
+        {exportRuns.isPending ? <Loader2 className="size-4 animate-spin" /> : <Download className="size-4" />}
+        {exportRuns.isPending ? "Exporting..." : exportLabel}
       </Button>
-      {exportRuns.error !== null && <p className="text-xs text-destructive">{extractErrorMessage(exportRuns.error)}</p>}
+      {exportRuns.error !== null && (
+        <p role="alert" className="text-xs text-destructive">
+          {extractErrorMessage(exportRuns.error)}
+        </p>
+      )}
     </div>
   );
 };
@@ -184,7 +189,7 @@ export default function BenchmarksPanel({
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex items-center justify-between gap-4">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <p className="text-sm text-muted-foreground">
           Each test is tagged so its requests can be told apart from other traffic. Results come from the gateway
           request logs and appear a few seconds after the requests finish.

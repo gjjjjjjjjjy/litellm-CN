@@ -1,7 +1,7 @@
 import Papa from "papaparse";
 import { describe, expect, it } from "vitest";
 
-import { benchmarkCsv, benchmarkCsvFileName, localDateTime, type BenchmarkExport } from "./benchmarkCsv";
+import { benchmarkCsv, benchmarkCsvFileName, type BenchmarkExport } from "./benchmarkCsv";
 
 const percentiles = (p50: number | null) => ({ p50, p95: p50 === null ? null : p50 * 2, p99: null });
 
@@ -58,7 +58,7 @@ describe("benchmark CSV", () => {
       ["run-new", "node-a", "1"],
     ]);
     expect(rows[0].Model).toBe("glm-5");
-    expect(rows[0].Started).toBe(localDateTime(new Date("2026-10-22T02:00:00Z")));
+    expect(rows[0]["Started (UTC)"]).toBe("2026-10-22T02:00:00.000Z");
   });
 
   it("keeps the measured numbers and leaves missing percentiles empty", () => {
@@ -67,10 +67,10 @@ describe("benchmark CSV", () => {
     const expected = {
       "Failed Requests": "2",
       "Success rate (%)": "75",
-      "Requests per second": "1.23",
-      "Output tokens/s": "98.77",
-      "TTFT P50 (ms)": "312.3",
-      "TTFT P95 (ms)": "624.7",
+      "Requests per second": "1.23456",
+      "Output tokens/s": "98.765",
+      "TTFT P50 (ms)": "312.345",
+      "TTFT P95 (ms)": "624.69",
       "TTFT P99 (ms)": "",
       "TPOT P50 (ms)": "",
       "Latency P50 (ms)": "1500",
@@ -86,16 +86,38 @@ describe("benchmark CSV", () => {
     expect(row).toMatchObject(expected);
   });
 
+  it("preserves small nonzero throughput and fractional success rates", () => {
+    const measured = { ...level("n", 1, 3, 1), requests_per_second: 0.004, output_tokens_per_second: 0.002 };
+    const [row] = parse(benchmarkCsv([exported("run", "2026-10-23T02:00:00+08:00", "m", [measured])]));
+
+    expect(Number(row["Requests per second"])).toBe(measured.requests_per_second);
+    expect(Number(row["Output tokens/s"])).toBe(measured.output_tokens_per_second);
+    expect(Number(row["Success rate (%)"])).toBe((2 / 3) * 100);
+    expect(row["Started (UTC)"]).toBe("2026-10-22T18:00:00.000Z");
+  });
+
   it("leaves the success rate empty for a level without requests", () => {
     const [row] = parse(benchmarkCsv([exported("run", "2026-10-23T02:00:00Z", "m", [level("node-a", 1, 0, 0)])]));
 
     expect(row["Success rate (%)"]).toBe("");
   });
 
-  it("stops spreadsheet formulas in model names from running", () => {
-    const [row] = parse(benchmarkCsv([exported("run", "2026-10-23T02:00:00Z", "=HYPERLINK()", [level("n", 1, 1, 0)])]));
+  it.each(["=HYPERLINK()", "+1+1", "-1+1", "@SUM(1)", "\t=1+1", "\r=1+1"])(
+    "escapes spreadsheet formula prefixes in model names: %j",
+    (model) => {
+      const [row] = parse(benchmarkCsv([exported("run", "2026-10-23T02:00:00Z", model, [level("n", 1, 1, 0)])]));
 
-    expect(row.Model).toBe("'=HYPERLINK()");
+      expect(row.Model).toBe(`'${model}`);
+    },
+  );
+
+  it("preserves commas, quotes and line breaks inside a model name", () => {
+    const model = 'model,"quoted"\nnext line';
+    const rows = parse(benchmarkCsv([exported("run", "2026-10-23T02:00:00Z", model, [level("n", 1, 1, 0)])]));
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0].Model).toBe(model);
+    expect(rows[0]["Node ID"]).toBe("n");
   });
 
   it("names the file after the local export time", () => {

@@ -23,16 +23,14 @@ export const localDateTime = (at: Date): string =>
   `${at.getFullYear()}-${twoDigits(at.getMonth() + 1)}-${twoDigits(at.getDate())} ` +
   `${twoDigits(at.getHours())}:${twoDigits(at.getMinutes())}:${twoDigits(at.getSeconds())}`;
 
-const ms = (value: number | null): string | number => (value === null ? "" : Math.round(value * 10) / 10);
-
-const rate = (value: number): number => Math.round(value * 100) / 100;
+const ms = (value: number | null): string | number => (value === null ? "" : value);
 
 const successPercent = (level: QosBenchmarkDeploymentLevel): string | number =>
-  level.requests === 0 ? "" : rate(((level.requests - level.failed_requests) / level.requests) * 100);
+  level.requests === 0 ? "" : ((level.requests - level.failed_requests) / level.requests) * 100;
 
 const BENCHMARK_CSV_COLUMNS: readonly CsvColumn[] = [
   { label: "Run ID", value: ({ run }) => run.run_id },
-  { label: "Started", value: ({ run }) => localDateTime(new Date(run.started_at)) },
+  { label: "Started (UTC)", value: ({ run }) => new Date(run.started_at).toISOString() },
   { label: "Model", value: ({ run }) => run.model_group },
   { label: "Provider", value: ({ level }) => vendorName(level.vendor) },
   { label: "Upstream model", value: ({ level }) => level.model },
@@ -43,9 +41,9 @@ const BENCHMARK_CSV_COLUMNS: readonly CsvColumn[] = [
   { label: "Failed Requests", value: ({ level }) => level.failed_requests },
   { label: "Success rate (%)", value: ({ level }) => successPercent(level) },
   { label: "Peak concurrency", value: ({ level }) => level.peak_concurrency },
-  { label: "Requests per second", value: ({ level }) => rate(level.requests_per_second) },
+  { label: "Requests per second", value: ({ level }) => level.requests_per_second },
   { label: "Output tokens", value: ({ level }) => level.output_tokens },
-  { label: "Output tokens/s", value: ({ level }) => rate(level.output_tokens_per_second) },
+  { label: "Output tokens/s", value: ({ level }) => level.output_tokens_per_second },
   { label: "TTFT P50 (ms)", value: ({ level }) => ms(level.ttft_ms.p50) },
   { label: "TTFT P95 (ms)", value: ({ level }) => ms(level.ttft_ms.p95) },
   { label: "TTFT P99 (ms)", value: ({ level }) => ms(level.ttft_ms.p99) },
@@ -65,7 +63,6 @@ const BENCHMARK_CSV_COLUMNS: readonly CsvColumn[] = [
 const csvRows = ({ run, detail }: BenchmarkExport): readonly BenchmarkCsvRow[] =>
   detail.deployment_levels.map((level) => ({ run, level }));
 
-/** One row per run, concurrency level and node, oldest run first. */
 export const benchmarkCsv = (exports: readonly BenchmarkExport[]): string => {
   const rows = [...exports]
     .sort((left, right) => Date.parse(left.run.started_at) - Date.parse(right.run.started_at))

@@ -85,5 +85,12 @@ export const useDeleteQosBenchmark = (accessToken: string | null) => {
 export const useExportQosBenchmarks = (accessToken: string | null) =>
   useMutation({
     mutationFn: (runs: readonly QosBenchmarkRun[]): Promise<BenchmarkExport[]> =>
-      Promise.all(runs.map(async (run) => ({ run, detail: await fetchBenchmarkDetail(accessToken, run.run_id) }))),
+      runs.reduce<Promise<BenchmarkExport[]>>(async (pending, run) => {
+        const exported = await pending;
+        const detail = await fetchBenchmarkDetail(accessToken, run.run_id);
+        if (detail.deployment_levels.length === 0) {
+          throw new Error(`Test ${run.run_id} has no recorded results. Refresh the list before exporting.`);
+        }
+        return [...exported, { run, detail }];
+      }, Promise.resolve([])),
   });

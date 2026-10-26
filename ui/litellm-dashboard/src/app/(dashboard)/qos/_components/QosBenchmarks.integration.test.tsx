@@ -309,6 +309,51 @@ describe("QoS benchmarks", () => {
     expect(downloadBlob).not.toHaveBeenCalled();
   });
 
+  it("reports a selected run with no recorded results instead of silently omitting it", async () => {
+    const user = userEvent.setup();
+    const emptyDetail = { run_id: pastRun.run_id, levels: [], deployments: [], deployment_levels: [] };
+    vi.mocked(apiClient.get).mockImplementation(respondWith(emptyDetail));
+    renderWithProviders(<QosView accessToken="token" />, { searchParams: { tab: "benchmarks" } });
+
+    await user.click(await screen.findByRole("checkbox", { name: `Select ${pastRun.run_id}` }));
+    await user.click(screen.getByRole("button", { name: "Export 1 to CSV" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      `Test ${pastRun.run_id} has no recorded results. Refresh the list before exporting.`,
+    );
+    expect(downloadBlob).not.toHaveBeenCalled();
+  });
+
+  it("fetches selected runs in sequence and downloads only after all details arrive", async () => {
+    const user = userEvent.setup();
+    const otherRun = { ...pastRun, run_id: "qos-other" };
+    const first = Promise.withResolvers<typeof singleProviderDetail>();
+    const second = Promise.withResolvers<typeof singleProviderDetail>();
+    vi.mocked(apiClient.get).mockImplementation(async (path: string) => {
+      if (path === "/qos/benchmarks") return { runs: [pastRun, otherRun] };
+      if (path === `/qos/benchmarks/${pastRun.run_id}`) return first.promise;
+      if (path === `/qos/benchmarks/${otherRun.run_id}`) return second.promise;
+      return respondWith(singleProviderDetail)(path);
+    });
+    renderWithProviders(<QosView accessToken="token" />, { searchParams: { tab: "benchmarks" } });
+
+    await screen.findByText(pastRun.run_id);
+    await user.click(screen.getByRole("checkbox", { name: "Select all rows" }));
+    await user.click(screen.getByRole("button", { name: "Export 2 to CSV" }));
+
+    expect(await screen.findByRole("button", { name: "Exporting..." })).toBeDisabled();
+    expect(apiClient.get).toHaveBeenCalledWith(`/qos/benchmarks/${pastRun.run_id}`, { accessToken: "token" });
+    expect(apiClient.get).not.toHaveBeenCalledWith(`/qos/benchmarks/${otherRun.run_id}`, { accessToken: "token" });
+    first.resolve(singleProviderDetail);
+    await vi.waitFor(() =>
+      expect(apiClient.get).toHaveBeenCalledWith(`/qos/benchmarks/${otherRun.run_id}`, { accessToken: "token" }),
+    );
+    expect(downloadBlob).not.toHaveBeenCalled();
+    second.resolve(singleProviderDetail);
+    await vi.waitFor(() => expect(downloadBlob).toHaveBeenCalledOnce());
+    expect(screen.getByRole("button", { name: "Export 2 to CSV" })).toBeEnabled();
+  });
+
   it("flags past runs whose responses crossed with other requests", async () => {
     renderWithProviders(<QosView accessToken="token" />, { searchParams: { tab: "benchmarks" } });
 
