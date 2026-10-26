@@ -1,6 +1,6 @@
 "use client";
 
-import QosView from "@/app/(dashboard)/qos/_components/QosView";
+import HomeBoard from "@/app/(dashboard)/qos/_components/home/HomeBoard";
 import LoadingScreen from "@/components/common_components/LoadingScreen";
 import { proxyBaseUrl } from "@/components/networking";
 import { useAuth } from "@/contexts/AuthContext";
@@ -89,7 +89,7 @@ function CreateKeyPageContent() {
     return <LoadingScreen />;
   }
 
-  return <QosView accessToken={accessToken} />;
+  return <HomeBoard accessToken={accessToken} />;
 }
 
 export default function CreateKeyPage() {

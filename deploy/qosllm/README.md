@@ -82,6 +82,21 @@ docker compose cp caddy:/data/caddy/pki/authorities/local/root.crt ./qosllm-root
 ./unlock-user.sh admin@example.com
 ```
 
+## 首页资讯
+
+首页看板的 AI 资讯来自几个 RSS 源，默认是量子位、InfoQ、Hugging Face、OpenAI 和 Google AI，网关每 30 分钟抓取一次。国内服务器可能访问不到海外源，看板会在资讯栏底部列出抓取失败的源。要换成别的源，在 `config.yaml` 的 `general_settings` 中写出完整列表，然后运行 `docker compose restart litellm`
+
+```yaml
+general_settings:
+  qos_news_feeds:
+    - name: 量子位
+      url: https://www.qbitai.com/feed
+    - name: InfoQ
+      url: https://www.infoq.cn/feed
+```
+
+公告由管理员在首页看板右侧发布和删除，所有用户可见
+
 ## 日常更新
 
 在本机测试并发布镜像后，服务器拉取部署文件，修改 `.env` 中的 `LITELLM_IMAGE` 为该次发布的完整地址，再运行

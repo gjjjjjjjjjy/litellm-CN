@@ -14173,6 +14173,44 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/qos/announcements": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Qos Announcements */
+        get: operations["list_qos_announcements_qos_announcements_get"];
+        put?: never;
+        /**
+         * Post Qos Announcement
+         * @description Publish an announcement on the home dashboard; proxy admins only.
+         */
+        post: operations["post_qos_announcement_qos_announcements_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/qos/announcements/{announcement_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Qos Announcement */
+        delete: operations["delete_qos_announcement_qos_announcements__announcement_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/qos/benchmarks": {
         parameters: {
             query?: never;
@@ -14218,6 +14256,46 @@ export interface paths {
         };
         /** Get Qos Health */
         get: operations["get_qos_health_qos_health_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/qos/home/activity": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Qos Activity
+         * @description Nodes that went down or recovered, benchmark runs and newly added models, newest first.
+         */
+        get: operations["get_qos_activity_qos_home_activity_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/qos/home/news": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Qos News
+         * @description Latest items of the configured AI news feeds, with the outcome of fetching each feed.
+         */
+        get: operations["get_qos_news_qos_home_news_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -42914,6 +42992,42 @@ export interface components {
                 };
             } | null;
         };
+        /** QosActivityResponse */
+        QosActivityResponse: {
+            /** Events */
+            events: (components["schemas"]["QosNodeEvent"] | components["schemas"]["QosBenchmarkEvent"] | components["schemas"]["QosModelAddedEvent"])[];
+        };
+        /** QosAnnouncement */
+        QosAnnouncement: {
+            /** Author */
+            author: string;
+            /** Body */
+            body: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Id */
+            id: string;
+            /** Title */
+            title: string;
+        };
+        /** QosAnnouncementCreate */
+        QosAnnouncementCreate: {
+            /**
+             * Body
+             * @default
+             */
+            body: string;
+            /** Title */
+            title: string;
+        };
+        /** QosAnnouncementsResponse */
+        QosAnnouncementsResponse: {
+            /** Announcements */
+            announcements: components["schemas"]["QosAnnouncement"][];
+        };
         /** QosBenchmarkDeleted */
         QosBenchmarkDeleted: {
             /** Deleted Requests */
@@ -42976,6 +43090,29 @@ export interface components {
             deployments: components["schemas"]["QosDeploymentMetrics"][];
             /** Levels */
             levels: components["schemas"]["QosBenchmarkLevel"][];
+            /** Run Id */
+            run_id: string;
+        };
+        /** QosBenchmarkEvent */
+        QosBenchmarkEvent: {
+            /**
+             * At
+             * Format: date-time
+             */
+            at: string;
+            /** Crosstalk Responses */
+            crosstalk_responses: number;
+            /** Failed Requests */
+            failed_requests: number;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "benchmark";
+            /** Model */
+            model: string;
+            /** Requests */
+            requests: number;
             /** Run Id */
             run_id: string;
         };
@@ -43198,6 +43335,23 @@ export interface components {
             /** Same Endpoint */
             same_endpoint: number;
         };
+        /** QosModelAddedEvent */
+        QosModelAddedEvent: {
+            /**
+             * At
+             * Format: date-time
+             */
+            at: string;
+            /** Created By */
+            created_by: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "model_added";
+            /** Model */
+            model: string;
+        };
         /** QosModelGroupMetrics */
         QosModelGroupMetrics: {
             e2e_latency_ms: components["schemas"]["QosPercentiles"];
@@ -43230,6 +43384,69 @@ export interface components {
             streamed_requests: number;
             tpot_ms: components["schemas"]["QosPercentiles"];
             ttft_ms: components["schemas"]["QosPercentiles"];
+        };
+        /** QosNewsItem */
+        QosNewsItem: {
+            /** Link */
+            link: string;
+            /** Published At */
+            published_at: string | null;
+            /** Source */
+            source: string;
+            /** Summary */
+            summary: string;
+            /** Title */
+            title: string;
+        };
+        /** QosNewsResponse */
+        QosNewsResponse: {
+            /** Items */
+            items: components["schemas"]["QosNewsItem"][];
+            /** Sources */
+            sources: components["schemas"]["QosNewsSource"][];
+        };
+        /**
+         * QosNewsSource
+         * @description One configured feed and how its last fetch went.
+         */
+        QosNewsSource: {
+            /** Error */
+            error: string | null;
+            /**
+             * Fetched At
+             * Format: date-time
+             */
+            fetched_at: string;
+            /** Items */
+            items: number;
+            /** Name */
+            name: string;
+            /** Url */
+            url: string;
+        };
+        /**
+         * QosNodeEvent
+         * @description A node whose health check changed between healthy and unhealthy.
+         */
+        QosNodeEvent: {
+            /**
+             * At
+             * Format: date-time
+             */
+            at: string;
+            /** Error */
+            error: string | null;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "node_down" | "node_recovered";
+            /** Model */
+            model: string;
+            /** Model Id */
+            model_id: string;
+            /** Vendor */
+            vendor: string;
         };
         /**
          * QosOverall
@@ -72159,6 +72376,90 @@ export interface operations {
             };
         };
     };
+    list_qos_announcements_qos_announcements_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QosAnnouncementsResponse"];
+                };
+            };
+        };
+    };
+    post_qos_announcement_qos_announcements_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["QosAnnouncementCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QosAnnouncementsResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_qos_announcement_qos_announcements__announcement_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                announcement_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QosAnnouncementsResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_qos_benchmarks_qos_benchmarks_get: {
         parameters: {
             query?: {
@@ -72318,6 +72619,58 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_qos_activity_qos_home_activity_get: {
+        parameters: {
+            query?: {
+                /** @description How far back to look */
+                days?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QosActivityResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_qos_news_qos_home_news_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QosNewsResponse"];
                 };
             };
         };

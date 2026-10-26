@@ -105,7 +105,7 @@ vi.mock("@/utils/returnUrlUtils", async (importOriginal) => {
 
 // Super-light stubs for all heavy components so rendering doesn't explode
 vi.mock("@/components/navbar", () => ({ default: stub("navbar") }));
-vi.mock("@/app/(dashboard)/qos/_components/QosView", () => ({ default: stub("qos-dashboard") }));
+vi.mock("@/app/(dashboard)/qos/_components/home/HomeBoard", () => ({ default: stub("qos-dashboard") }));
 vi.mock("@/components/templates/model_dashboard", () => ({ default: stub("model-dashboard") }));
 vi.mock("@/components/teams", () => ({ default: stub("teams") }));
 vi.mock("@/app/(dashboard)/organizations/_components/organizations", () => ({

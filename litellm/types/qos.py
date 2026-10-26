@@ -275,3 +275,98 @@ class QosTrendsResponse(LiteLLMBaseModel):
     current: QosOverall
     previous: QosOverall
     series: tuple[QosTrendSeries, ...]
+
+
+class QosNewsItem(LiteLLMBaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    source: str
+    title: str
+    link: str
+    summary: str
+    published_at: UtcDatetime | None
+
+
+class QosNewsSource(LiteLLMBaseModel):
+    """One configured feed and how its last fetch went."""
+
+    model_config = ConfigDict(frozen=True)
+
+    name: str
+    url: str
+    items: int
+    error: str | None
+    fetched_at: UtcDatetime
+
+
+class QosNewsResponse(LiteLLMBaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    items: tuple[QosNewsItem, ...]
+    sources: tuple[QosNewsSource, ...]
+
+
+class QosAnnouncementCreate(LiteLLMBaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    title: str = Field(min_length=1, max_length=120)
+    body: str = Field(default="", max_length=2000)
+
+
+class QosAnnouncement(LiteLLMBaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    id: str
+    title: str
+    body: str
+    author: str
+    created_at: UtcDatetime
+
+
+class QosAnnouncementsResponse(LiteLLMBaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    announcements: tuple[QosAnnouncement, ...]
+
+
+class QosNodeEvent(LiteLLMBaseModel):
+    """A node whose health check changed between healthy and unhealthy."""
+
+    model_config = ConfigDict(frozen=True)
+
+    kind: Literal["node_down", "node_recovered"]
+    at: UtcDatetime
+    model: str
+    model_id: str
+    vendor: str
+    error: str | None
+
+
+class QosBenchmarkEvent(LiteLLMBaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    kind: Literal["benchmark"]
+    at: UtcDatetime
+    model: str
+    run_id: str
+    requests: int
+    failed_requests: int
+    crosstalk_responses: int
+
+
+class QosModelAddedEvent(LiteLLMBaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    kind: Literal["model_added"]
+    at: UtcDatetime
+    model: str
+    created_by: str
+
+
+QosActivityEvent = Annotated[QosNodeEvent | QosBenchmarkEvent | QosModelAddedEvent, Field(discriminator="kind")]
+
+
+class QosActivityResponse(LiteLLMBaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    events: tuple[QosActivityEvent, ...]

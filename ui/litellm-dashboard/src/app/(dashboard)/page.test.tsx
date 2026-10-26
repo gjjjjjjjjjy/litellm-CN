@@ -38,7 +38,7 @@ vi.mock("@/contexts/AuthContext", () => ({
   }),
 }));
 vi.mock("@/app/(dashboard)/hooks/keys/useKeys", () => ({ useKeys: mockUseKeys }));
-vi.mock("@/app/(dashboard)/qos/_components/QosView", () => ({
+vi.mock("@/app/(dashboard)/qos/_components/home/HomeBoard", () => ({
   default: ({ accessToken }: { accessToken: string | null }) => <div data-testid="qos-dashboard">{accessToken}</div>,
 }));
 vi.mock("@/components/common_components/LoadingScreen", () => ({
