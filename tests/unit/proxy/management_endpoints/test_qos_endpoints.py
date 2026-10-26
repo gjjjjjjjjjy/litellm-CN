@@ -8,7 +8,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 
 from litellm.llms.openai_like.json_loader import JSONProviderRegistry
-from litellm.proxy._types import LitellmUserRoles, UserAPIKeyAuth
+from litellm.proxy._types import CommonProxyErrors, LitellmUserRoles, UserAPIKeyAuth
 from litellm.proxy.auth.user_api_key_auth import user_api_key_auth
 from litellm.proxy.management_endpoints.qos_endpoints import (
     BENCHMARK_DELETE_SQL,
@@ -93,7 +93,7 @@ def _interference(model_id: str, level_tag: str, same_deployment: int, same_endp
     }
 
 
-def _client(role: LitellmUserRoles) -> TestClient:
+def _client(role: LitellmUserRoles | None) -> TestClient:
     app = FastAPI()
     app.include_router(router)
     app.dependency_overrides[user_api_key_auth] = lambda: UserAPIKeyAuth(api_key="sk-test", user_role=role)
@@ -124,12 +124,31 @@ class TestResolveWindow:
         assert resolve_window(NOW - QOS_MAX_WINDOW, NOW, NOW)[0] == NOW - QOS_MAX_WINDOW
 
 
-class TestQosSummaryEndpoint:
-    def test_non_admin_keys_cannot_read_qos_metrics(self) -> None:
-        with patch("litellm.proxy.proxy_server.prisma_client", MagicMock()):
-            response = _client(LitellmUserRoles.INTERNAL_USER).get("/qos/summary")
+_READ_PATHS: Final = ("/qos/summary", "/qos/trends", "/qos/health", "/qos/benchmarks", "/qos/benchmarks/qos-run-1")
+
+
+class TestReadAccess:
+    @pytest.mark.parametrize("path", _READ_PATHS)
+    @pytest.mark.parametrize(
+        "role",
+        [LitellmUserRoles.INTERNAL_USER, LitellmUserRoles.INTERNAL_USER_VIEW_ONLY, LitellmUserRoles.ORG_ADMIN],
+    )
+    def test_every_user_of_the_gateway_can_read_service_quality(self, path: str, role: LitellmUserRoles) -> None:
+        with patch("litellm.proxy.proxy_server.prisma_client", None):
+            response = _client(role).get(path)
+        assert (response.status_code, response.json()["detail"]) == (
+            500,
+            CommonProxyErrors.db_not_connected_error.value,
+        ), "the role check let the user through to the data"
+
+    @pytest.mark.parametrize("path", _READ_PATHS)
+    def test_a_key_without_a_user_role_cannot_read_service_quality(self, path: str) -> None:
+        with patch("litellm.proxy.proxy_server.prisma_client", None):
+            response = _client(None).get(path)
         assert response.status_code == 403
 
+
+class TestQosSummaryEndpoint:
     def test_rates_are_derived_from_the_active_span_and_filters_reach_both_queries(self) -> None:
         prisma = MagicMock()
         prisma.db.query_raw = AsyncMock(side_effect=[[_row(model_id="", api_base="")], [_row()]])
@@ -401,18 +420,8 @@ class TestTrendsEndpoint:
         assert (trend_call[0], trend_call[3]) == (TREND_SQL["deployment"], 120)
         assert json.loads(trend_call[5]) == {"node-moark": "qwen3-max", "node-gitee": "qwen3-max"}
 
-    def test_internal_users_cannot_read_trends(self) -> None:
-        with patch("litellm.proxy.proxy_server.prisma_client", MagicMock()):
-            response = _client(LitellmUserRoles.INTERNAL_USER).get("/qos/trends")
-        assert response.status_code == 403
-
 
 class TestHealthEndpoint:
-    def test_internal_users_cannot_read_node_health(self) -> None:
-        with patch("litellm.proxy.proxy_server.prisma_client", MagicMock()):
-            response = _client(LitellmUserRoles.INTERNAL_USER).get("/qos/health")
-        assert response.status_code == 403
-
     def test_current_nodes_show_availability_and_latency_and_removed_models_are_left_out(self) -> None:
         history = [
             {

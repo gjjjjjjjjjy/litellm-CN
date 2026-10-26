@@ -194,7 +194,7 @@ describe("AllModelsTab", () => {
   });
 
   describe("service quality", () => {
-    it("asks for the 24h summary as an admin and shows each deployment's metrics on its own row", () => {
+    it("asks for the 24h summary and shows each deployment's metrics on its own row", () => {
       mockUseQosSummary.mockReturnValue({
         data: { deployments: [qosDeployment("model-1"), { ...qosDeployment("other"), failed_requests: 100 }] },
       });
@@ -208,12 +208,12 @@ describe("AllModelsTab", () => {
       expect(screen.getByTestId("model-qos-ttft-model-2")).toHaveTextContent("-");
     });
 
-    it("skips the admin-only summary for other roles and hides the metric columns", () => {
+    it("shows internal users the same service quality columns", () => {
       vi.spyOn(useAuthorizedModule, "default").mockReturnValue({ ...MOCK_AUTHORIZED, userRole: "Internal User" });
       renderWithProviders(<AllModelsTab {...defaultProps} />);
 
-      expect(mockUseQosSummary).toHaveBeenLastCalledWith(null, "24h", "", false);
-      expect(screen.queryByRole("columnheader", { name: "Success rate (24h)" })).not.toBeInTheDocument();
+      expect(mockUseQosSummary).toHaveBeenLastCalledWith("mock-access-token", "24h", "", false);
+      expect(screen.getByRole("columnheader", { name: "Success rate (24h)" })).toBeInTheDocument();
     });
   });
 

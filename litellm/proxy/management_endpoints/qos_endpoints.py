@@ -73,6 +73,13 @@ router: Final = APIRouter()
 QOS_DEFAULT_WINDOW: Final = timedelta(hours=24)
 QOS_MAX_WINDOW: Final = timedelta(days=31)
 QOS_RUNS_DEFAULT_WINDOW: Final = timedelta(days=7)
+QOS_READ_ROLES: Final = (
+    LitellmUserRoles.PROXY_ADMIN,
+    LitellmUserRoles.PROXY_ADMIN_VIEW_ONLY,
+    LitellmUserRoles.ORG_ADMIN,
+    LitellmUserRoles.INTERNAL_USER,
+    LitellmUserRoles.INTERNAL_USER_VIEW_ONLY,
+)
 RESPONSE_CHECK_RECORD_ATTEMPTS: Final = 30
 RESPONSE_CHECK_RETRY_SECONDS: Final = 5.0
 _RUN_ID: Final = re.compile(rf"{QOS_RUN_PREFIX}[A-Za-z0-9.-]+")
@@ -402,8 +409,7 @@ async def get_qos_summary(
 ) -> QosSummaryResponse:
     from litellm.proxy.proxy_server import llm_router, prisma_client
 
-    if user_api_key_dict.user_role not in (LitellmUserRoles.PROXY_ADMIN, LitellmUserRoles.PROXY_ADMIN_VIEW_ONLY):
-        raise HTTPException(status_code=403, detail="Only proxy admins can view service quality metrics")
+    _require_reader(user_api_key_dict)
     if prisma_client is None:
         raise HTTPException(status_code=500, detail=CommonProxyErrors.db_not_connected_error.value)
 
@@ -428,9 +434,14 @@ def _utc_now() -> datetime:
     return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
-def _require_role(user_api_key_dict: UserAPIKeyAuth, roles: tuple[LitellmUserRoles, ...]) -> None:
-    if user_api_key_dict.user_role not in roles:
-        raise HTTPException(status_code=403, detail="Only proxy admins can run or view QoS benchmarks")
+def _require_reader(user_api_key_dict: UserAPIKeyAuth) -> None:
+    if user_api_key_dict.user_role not in QOS_READ_ROLES:
+        raise HTTPException(status_code=403, detail="Only users of this gateway can view service quality metrics")
+
+
+def _require_admin(user_api_key_dict: UserAPIKeyAuth) -> None:
+    if user_api_key_dict.user_role != LitellmUserRoles.PROXY_ADMIN:
+        raise HTTPException(status_code=403, detail="Only proxy admins can run or delete QoS benchmarks")
 
 
 def _loopback_base_url(request: Request) -> str:
@@ -451,7 +462,7 @@ async def start_qos_benchmark(
 ) -> QosBenchmarkStarted:
     from litellm.proxy.proxy_server import llm_router, master_key, prisma_client
 
-    _require_role(user_api_key_dict, (LitellmUserRoles.PROXY_ADMIN,))
+    _require_admin(user_api_key_dict)
     if prisma_client is None:
         raise HTTPException(status_code=500, detail=CommonProxyErrors.db_not_connected_error.value)
     if llm_router is None or plan.model_group not in llm_router.get_model_names():
@@ -497,7 +508,7 @@ async def list_qos_benchmarks(
 ) -> QosBenchmarkListResponse:
     from litellm.proxy.proxy_server import llm_router, prisma_client
 
-    _require_role(user_api_key_dict, (LitellmUserRoles.PROXY_ADMIN, LitellmUserRoles.PROXY_ADMIN_VIEW_ONLY))
+    _require_reader(user_api_key_dict)
     if prisma_client is None:
         raise HTTPException(status_code=500, detail=CommonProxyErrors.db_not_connected_error.value)
     start, end = resolve_window(start_time, end_time, _utc_now(), QOS_RUNS_DEFAULT_WINDOW)
@@ -517,7 +528,7 @@ async def get_qos_benchmark(
 ) -> QosBenchmarkDetail:
     from litellm.proxy.proxy_server import llm_router, prisma_client
 
-    _require_role(user_api_key_dict, (LitellmUserRoles.PROXY_ADMIN, LitellmUserRoles.PROXY_ADMIN_VIEW_ONLY))
+    _require_reader(user_api_key_dict)
     if _RUN_ID.fullmatch(run_id) is None:
         raise HTTPException(status_code=400, detail="Not a QoS benchmark run id")
     if prisma_client is None:
@@ -610,7 +621,7 @@ async def get_qos_trends(
     """Headline figures for a window and the window before it, and per-model or per-deployment time series."""
     from litellm.proxy.proxy_server import llm_router, prisma_client
 
-    _require_role(user_api_key_dict, (LitellmUserRoles.PROXY_ADMIN, LitellmUserRoles.PROXY_ADMIN_VIEW_ONLY))
+    _require_reader(user_api_key_dict)
     if prisma_client is None:
         raise HTTPException(status_code=500, detail=CommonProxyErrors.db_not_connected_error.value)
     start, end = resolve_window(start_time, end_time, _utc_now())
@@ -648,7 +659,7 @@ async def get_qos_targets(
     """Every model name with the provider deployments behind it, so a benchmark can target one or compare them."""
     from litellm.proxy.proxy_server import llm_router
 
-    _require_role(user_api_key_dict, (LitellmUserRoles.PROXY_ADMIN, LitellmUserRoles.PROXY_ADMIN_VIEW_ONLY))
+    _require_reader(user_api_key_dict)
     if llm_router is None:
         return QosTargetsResponse(models=())
     target_of: Final = deployment_target_lookup(llm_router)
@@ -680,7 +691,7 @@ async def get_qos_health(
 ) -> QosHealthResponse:
     from litellm.proxy.proxy_server import llm_router, prisma_client
 
-    _require_role(user_api_key_dict, (LitellmUserRoles.PROXY_ADMIN, LitellmUserRoles.PROXY_ADMIN_VIEW_ONLY))
+    _require_reader(user_api_key_dict)
     if prisma_client is None:
         raise HTTPException(status_code=500, detail=CommonProxyErrors.db_not_connected_error.value)
     start, end = resolve_window(start_time, end_time, _utc_now())
@@ -722,7 +733,7 @@ async def delete_qos_benchmark(
 ) -> QosBenchmarkDeleted:
     from litellm.proxy.proxy_server import prisma_client
 
-    _require_role(user_api_key_dict, (LitellmUserRoles.PROXY_ADMIN,))
+    _require_admin(user_api_key_dict)
     if _RUN_ID.fullmatch(run_id) is None:
         raise HTTPException(status_code=400, detail="Not a QoS benchmark run id")
     if prisma_client is None:

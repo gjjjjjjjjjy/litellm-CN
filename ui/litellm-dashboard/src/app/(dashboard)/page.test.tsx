@@ -38,9 +38,6 @@ vi.mock("@/contexts/AuthContext", () => ({
   }),
 }));
 vi.mock("@/app/(dashboard)/hooks/keys/useKeys", () => ({ useKeys: mockUseKeys }));
-vi.mock("@/app/(dashboard)/home/_components/HomePage", () => ({
-  default: () => <div data-testid="home-page" />,
-}));
 vi.mock("@/app/(dashboard)/qos/_components/QosView", () => ({
   default: ({ accessToken }: { accessToken: string | null }) => <div data-testid="qos-dashboard">{accessToken}</div>,
 }));
@@ -85,43 +82,29 @@ describe("dashboard landing", () => {
     mockLocationReplace.mockClear();
   });
 
-  it.each(["Admin", "Admin Viewer"])("lands a %s on the service quality dashboard", (role) => {
-    state.userRole = role;
-    render(<CreateKeyPage />);
-    expect(screen.getByTestId("qos-dashboard")).toHaveTextContent("session-key");
-    expect(screen.queryByTestId("home-page")).not.toBeInTheDocument();
-  });
-
-  it.each(["Internal User", "Internal Viewer", "Org Admin", ""])(
-    "lands a keyless %s on the keys dashboard, never on the MCP connect page",
+  it.each(["Admin", "Admin Viewer", "Internal User", "Internal Viewer", "Org Admin", ""])(
+    "lands a %s on the service quality dashboard, never on the MCP connect page",
     (role) => {
       state.userRole = role;
       render(<CreateKeyPage />);
-      expect(screen.getByTestId("home-page")).toBeInTheDocument();
+      expect(screen.getByTestId("qos-dashboard")).toHaveTextContent("session-key");
       expect(screen.queryByTestId("loading-screen")).not.toBeInTheDocument();
       expect(mockReplace).not.toHaveBeenCalled();
       expect(mockUiHref).not.toHaveBeenCalledWith("connect");
     },
   );
 
-  it("lands a user who already owns a key on the keys dashboard", () => {
-    state.keys = [{ token: "sk-abc" }];
-    render(<CreateKeyPage />);
-    expect(screen.getByTestId("home-page")).toBeInTheDocument();
-    expect(mockReplace).not.toHaveBeenCalled();
-  });
-
   it("never looks a user's keys up to decide where the landing goes", () => {
     render(<CreateKeyPage />);
     expect(mockUseKeys).not.toHaveBeenCalled();
   });
 
-  it("redirects an old ?page= bookmark to its path route without rendering the keys dashboard", () => {
+  it("redirects an old ?page= bookmark to its path route without rendering the dashboard", () => {
     state.search = "page=logs";
     render(<CreateKeyPage />);
     expect(mockReplace).toHaveBeenCalledWith("/mocked-ui/logs");
     expect(screen.getByTestId("loading-screen")).toBeInTheDocument();
-    expect(screen.queryByTestId("home-page")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("qos-dashboard")).not.toBeInTheDocument();
   });
 
   it("carries the MCP env-var deep link's other params through the legacy redirect", () => {

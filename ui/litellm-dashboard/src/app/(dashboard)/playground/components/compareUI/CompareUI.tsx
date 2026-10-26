@@ -51,7 +51,6 @@ export interface ComparisonInstance {
 interface CompareUIProps {
   accessToken: string | null;
   disabledPersonalKeyCreation: boolean;
-  showProviders: boolean;
 }
 const GENERIC_FOLLOW_UPS = [
   "Can you summarize the key points?",
@@ -60,7 +59,7 @@ const GENERIC_FOLLOW_UPS = [
 ];
 const SUGGESTED_PROMPTS = ["Write me a poem", "Explain quantum computing", "Draft a polite email requesting a meeting"];
 const DEFAULT_ENDPOINT = EndpointId.CHAT_COMPLETIONS;
-export default function CompareUI({ accessToken, disabledPersonalKeyCreation, showProviders }: CompareUIProps) {
+export default function CompareUI({ accessToken, disabledPersonalKeyCreation }: CompareUIProps) {
   const [comparisons, setComparisons] = useState<ComparisonInstance[]>([
     {
       id: "1",
@@ -170,7 +169,7 @@ export default function CompareUI({ accessToken, disabledPersonalKeyCreation, sh
   }, [effectiveApiKey]);
 
   useEffect(() => {
-    if (!showProviders || !accessToken) return;
+    if (!accessToken) return;
     let active = true;
     apiClient
       .get<{ models: QosTargetModel[] }>("/qos/targets", { accessToken })
@@ -181,7 +180,7 @@ export default function CompareUI({ accessToken, disabledPersonalKeyCreation, sh
     return () => {
       active = false;
     };
-  }, [showProviders, accessToken]);
+  }, [accessToken]);
 
   // Fetch agents when A2A mode is selected
   useEffect(() => {

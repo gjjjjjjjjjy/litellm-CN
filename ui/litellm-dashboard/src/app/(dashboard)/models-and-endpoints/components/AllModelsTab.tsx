@@ -11,7 +11,7 @@ import DeleteResourceModal from "@/components/common_components/DeleteResourceMo
 import ModelSettingsModal from "@/components/model_dashboard/ModelSettingsModal/ModelSettingsModal";
 import { ModelData } from "@/components/model_dashboard/types";
 import { toast } from "@/lib/toast";
-import { isProxyAdminRole, isProxyAdminTierRole } from "@/utils/roles";
+import { isProxyAdminRole } from "@/utils/roles";
 import { uiHref } from "@/utils/uiHref";
 import { modelDeleteCall, modelPatchUpdateCall } from "@/components/networking";
 import { useQueryClient } from "@tanstack/react-query";
@@ -69,16 +69,12 @@ const TABLE_STATE = {
 const teamScopeForQuery = (viewMode: ModelViewMode, teamValue: string): string | undefined =>
   viewMode === "current_team" && teamValue !== PERSONAL_TEAM_VALUE ? teamValue : undefined;
 
-const useDeploymentQosMetrics = (
-  accessToken: string | null,
-  userRole: string,
-): ReadonlyMap<string, QosDeploymentMetrics> | undefined => {
-  const canViewQos = isProxyAdminTierRole(userRole);
-  const { data: qosSummary } = useQosSummary(canViewQos ? accessToken : null, "24h", "", false);
-  return useMemo(() => {
-    if (!canViewQos) return undefined;
-    return new Map((qosSummary?.deployments ?? []).map((deployment) => [deployment.model_id, deployment]));
-  }, [canViewQos, qosSummary]);
+const useDeploymentQosMetrics = (accessToken: string | null): ReadonlyMap<string, QosDeploymentMetrics> => {
+  const { data: qosSummary } = useQosSummary(accessToken, "24h", "", false);
+  return useMemo(
+    () => new Map((qosSummary?.deployments ?? []).map((deployment) => [deployment.model_id, deployment])),
+    [qosSummary],
+  );
 };
 
 interface AllModelsTabProps {
@@ -106,7 +102,7 @@ const AllModelsTab = ({
     () => credentialLabelsByName(credentialsResponse?.credentials ?? []),
     [credentialsResponse],
   );
-  const qosMetrics = useDeploymentQosMetrics(accessToken, userRole);
+  const qosMetrics = useDeploymentQosMetrics(accessToken);
   const queryClient = useQueryClient();
 
   const [tableState, setTableState] = useQueryStates(TABLE_STATE);

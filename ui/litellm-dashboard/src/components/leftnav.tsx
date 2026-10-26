@@ -314,7 +314,6 @@ const menuGroups: MenuGroup[] = [
         key: "qos",
         page: "qos",
         icon: <Gauge {...ICON} />,
-        roles: all_admin_roles,
         label: "Service Quality",
       },
       {

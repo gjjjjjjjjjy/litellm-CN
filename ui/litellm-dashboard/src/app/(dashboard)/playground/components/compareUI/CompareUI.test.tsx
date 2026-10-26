@@ -131,7 +131,7 @@ describe("CompareUI", () => {
         },
       ],
     });
-    render(<CompareUI accessToken="test-token" disabledPersonalKeyCreation={false} showProviders />);
+    render(<CompareUI accessToken="test-token" disabledPersonalKeyCreation={false} />);
 
     const options = within(screen.getByRole("list", { name: "options-1" }));
     expect(await options.findByText("gpt-4 · Moark (Gitee AI)")).toHaveAttribute("data-value", "node-moark");
@@ -141,15 +141,8 @@ describe("CompareUI", () => {
     expect(apiClient.get).toHaveBeenCalledWith("/qos/targets", { accessToken: "test-token" });
   });
 
-  it("does not ask for providers on behalf of users who cannot see them", async () => {
-    render(<CompareUI accessToken="test-token" disabledPersonalKeyCreation={false} showProviders={false} />);
-
-    expect(await within(screen.getByRole("list", { name: "options-1" })).findByText("gpt-4")).toBeInTheDocument();
-    expect(apiClient.get).not.toHaveBeenCalled();
-  });
-
   it("should render", () => {
-    render(<CompareUI accessToken="test-token" disabledPersonalKeyCreation={false} showProviders={false} />);
+    render(<CompareUI accessToken="test-token" disabledPersonalKeyCreation={false} />);
     expect(screen.getByTestId("comparison-panel-1")).toBeInTheDocument();
     expect(screen.getByTestId("comparison-panel-2")).toBeInTheDocument();
     expect(screen.getByTestId("message-input")).toBeInTheDocument();
@@ -157,9 +150,7 @@ describe("CompareUI", () => {
 
   it("adds a comparison when Add Comparison button is clicked", async () => {
     const user = userEvent.setup();
-    const { container } = render(
-      <CompareUI accessToken="test-token" disabledPersonalKeyCreation={false} showProviders={false} />,
-    );
+    const { container } = render(<CompareUI accessToken="test-token" disabledPersonalKeyCreation={false} />);
 
     // Verify initial state: 2 comparison panels
     expect(screen.getByTestId("comparison-panel-1")).toBeInTheDocument();
@@ -182,7 +173,7 @@ describe("CompareUI", () => {
 
   it("should handle image upload and send message with attachment", async () => {
     const user = userEvent.setup();
-    render(<CompareUI accessToken="test-token" disabledPersonalKeyCreation={false} showProviders={false} />);
+    render(<CompareUI accessToken="test-token" disabledPersonalKeyCreation={false} />);
 
     const file = new File(["test content"], "test-image.png", { type: "image/png" });
 
