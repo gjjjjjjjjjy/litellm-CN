@@ -9,10 +9,14 @@ import {
   type QosBenchmarkStarted,
   type QosTargetModel,
 } from "@/app/(dashboard)/qos/_components/qosData";
+import type { BenchmarkExport } from "@/app/(dashboard)/qos/_components/benchmarkCsv";
 import { createQueryKeys } from "../common/queryKeysFactory";
 
 const benchmarkKeys = createQueryKeys("qosBenchmarks");
 const POLL_MS = 3000;
+
+const fetchBenchmarkDetail = (accessToken: string | null, runId: string): Promise<QosBenchmarkDetail> =>
+  apiClient.get<QosBenchmarkDetail>(`/qos/benchmarks/${encodeURIComponent(runId)}`, { accessToken });
 
 export const useQosBenchmarkRuns = (
   accessToken: string | null,
@@ -37,7 +41,7 @@ export const useQosBenchmarkDetail = (
     queryKey: [...benchmarkKeys.details(), runId],
     queryFn: () => {
       if (runId === null) throw new Error("No benchmark run selected");
-      return apiClient.get<QosBenchmarkDetail>(`/qos/benchmarks/${encodeURIComponent(runId)}`, { accessToken });
+      return fetchBenchmarkDetail(accessToken, runId);
     },
     enabled: Boolean(accessToken) && runId !== null,
     refetchInterval: (query: Query<QosBenchmarkDetail>) => {
@@ -77,3 +81,9 @@ export const useDeleteQosBenchmark = (accessToken: string | null) => {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: benchmarkKeys.all }),
   });
 };
+
+export const useExportQosBenchmarks = (accessToken: string | null) =>
+  useMutation({
+    mutationFn: (runs: readonly QosBenchmarkRun[]): Promise<BenchmarkExport[]> =>
+      Promise.all(runs.map(async (run) => ({ run, detail: await fetchBenchmarkDetail(accessToken, run.run_id) }))),
+  });

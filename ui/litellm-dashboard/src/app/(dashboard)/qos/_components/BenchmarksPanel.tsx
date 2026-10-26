@@ -1,16 +1,18 @@
 "use client";
 
 import React from "react";
-import type { ColumnDef } from "@tanstack/react-table";
-import { Play, Trash2 } from "lucide-react";
+import type { ColumnDef, RowSelectionState } from "@tanstack/react-table";
+import { Download, Play, Trash2 } from "lucide-react";
 
 import {
   useDeleteQosBenchmark,
+  useExportQosBenchmarks,
   useQosBenchmarkDetail,
   useQosBenchmarkRuns,
 } from "@/app/(dashboard)/hooks/qos/useQosBenchmarks";
 import useAuthorized from "@/app/(dashboard)/hooks/useAuthorized";
-import { DataTable } from "@/components/shared/DataTable";
+import { createSelectionColumn, DataTable } from "@/components/shared/DataTable";
+import { downloadBlob } from "@/components/EntityUsageExport/utils";
 import { StatusBadge } from "@/components/shared/table_cells";
 import { Meter, MeterIndicator, MeterTrack } from "@/components/shared/Meter";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -28,6 +30,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { extractErrorMessage } from "@/utils/errorUtils";
 import { isProxyAdminRole } from "@/utils/roles";
+import { benchmarkCsv, benchmarkCsvFileName, type BenchmarkExport } from "./benchmarkCsv";
 import { deploymentColumns, deploymentLevelColumns, levelColumns } from "./QosColumns";
 import {
   comparesProviders,
@@ -41,7 +44,12 @@ import {
 const runSuccessRate = (run: QosBenchmarkRun): number | null =>
   run.requests === 0 ? null : (run.requests - run.failed_requests) / run.requests;
 
+const selectColumn = createSelectionColumn<QosBenchmarkRun>({
+  rowAriaLabel: (row) => `Select ${row.original.run_id}`,
+});
+
 const runColumns: ColumnDef<QosBenchmarkRun>[] = [
+  selectColumn,
   { id: "started_at", header: "Started", cell: ({ row }) => new Date(row.original.started_at).toLocaleString() },
   {
     id: "model_group",
@@ -90,6 +98,30 @@ const deleteColumn = (
   ),
 });
 
+const downloadBenchmarks = (exports: readonly BenchmarkExport[]) =>
+  downloadBlob(
+    new Blob(["\uFEFF", benchmarkCsv(exports)], { type: "text/csv;charset=utf-8" }),
+    benchmarkCsvFileName(new Date()),
+  );
+
+const ExportRunsButton = ({ accessToken, runs }: { accessToken: string | null; runs: readonly QosBenchmarkRun[] }) => {
+  const exportRuns = useExportQosBenchmarks(accessToken);
+  return (
+    <div className="flex flex-col items-end gap-1">
+      <Button
+        variant="outline"
+        title="Tick the test records to export"
+        disabled={runs.length === 0 || exportRuns.isPending}
+        onClick={() => exportRuns.mutate(runs, { onSuccess: downloadBenchmarks })}
+      >
+        <Download className="size-4" />
+        {runs.length === 0 ? "Export CSV" : `Export ${runs.length} to CSV`}
+      </Button>
+      {exportRuns.error !== null && <p className="text-xs text-destructive">{extractErrorMessage(exportRuns.error)}</p>}
+    </div>
+  );
+};
+
 const RunProgress = ({ detail, total }: { detail: QosBenchmarkDetail | undefined; total: number }) => {
   const recorded = detail === undefined ? 0 : Math.min(recordedRequests(detail), total);
   const done = recorded >= total;
@@ -132,6 +164,8 @@ export default function BenchmarksPanel({
   const runsQuery = useQosBenchmarkRuns(accessToken, running);
   const deleteRun = useDeleteQosBenchmark(accessToken);
   const [pendingDelete, setPendingDelete] = React.useState<QosBenchmarkRun | null>(null);
+  const [selection, setSelection] = React.useState<RowSelectionState>({});
+  const runs = runsQuery.data === undefined ? [] : runsQuery.data;
   const error = runsQuery.error ?? detailQuery.error ?? deleteRun.error;
   const runningRunId = running && activeRun !== null ? activeRun.run_id : null;
   const columns = React.useMemo(
@@ -155,12 +189,15 @@ export default function BenchmarksPanel({
           Each test is tagged so its requests can be told apart from other traffic. Results come from the gateway
           request logs and appear a few seconds after the requests finish.
         </p>
-        {canManage && (
-          <Button onClick={onStartClick}>
-            <Play className="size-4" />
-            Start test
-          </Button>
-        )}
+        <div className="flex shrink-0 items-start gap-2">
+          <ExportRunsButton accessToken={accessToken} runs={runs.filter((run) => selection[run.run_id] === true)} />
+          {canManage && (
+            <Button onClick={onStartClick}>
+              <Play className="size-4" />
+              Start test
+            </Button>
+          )}
+        </div>
       </div>
 
       {error !== null && (
@@ -171,9 +208,11 @@ export default function BenchmarksPanel({
       )}
 
       <DataTable
-        data={runsQuery.data === undefined ? [] : runsQuery.data}
+        data={runs}
         columns={columns}
         getRowId={(run) => run.run_id}
+        rowSelection={selection}
+        onRowSelectionChange={setSelection}
         isLoading={runsQuery.isLoading}
         noDataMessage="No benchmark runs in the last 7 days"
         onRowClick={(run) => onSelectRun(run.run_id)}

@@ -4,9 +4,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import QosView from "./QosView";
 import { apiClient } from "@/components/networking";
+import { downloadBlob } from "@/components/EntityUsageExport/utils";
 import { renderWithProviders, testQueryClient } from "../../../../../tests/test-utils";
 
 vi.mock("@/components/networking", () => ({ apiClient: { get: vi.fn(), post: vi.fn(), delete: vi.fn() } }));
+vi.mock("@/components/EntityUsageExport/utils", () => ({ downloadBlob: vi.fn() }));
 const authorized = vi.hoisted(() => ({ userRole: "Admin", isViewOnly: false }));
 vi.mock("@/app/(dashboard)/hooks/useAuthorized", () => ({ default: () => authorized }));
 vi.mock("@/app/(dashboard)/hooks/models/useModels", () => ({
@@ -140,6 +142,13 @@ const rowContaining = (text: string): HTMLElement => {
   return row;
 };
 
+const blobText = (blob: Blob): Promise<string> =>
+  new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.readAsText(blob);
+  });
+
 const respondWith =
   (detail: unknown) =>
   async (path: string): Promise<unknown> => {
@@ -156,6 +165,7 @@ describe("QoS benchmarks", () => {
     testQueryClient.clear();
     vi.mocked(apiClient.get).mockReset();
     vi.mocked(apiClient.post).mockReset();
+    vi.mocked(downloadBlob).mockReset();
     vi.mocked(apiClient.get).mockImplementation(respondWith(singleProviderDetail));
     vi.mocked(apiClient.post).mockResolvedValue(started);
   });
@@ -259,6 +269,46 @@ describe("QoS benchmarks", () => {
     expect(apiClient.delete).toHaveBeenCalledWith(`/qos/benchmarks/${pastRun.run_id}`, { accessToken: "token" });
   });
 
+  it("exports only the ticked test records to CSV", async () => {
+    const user = userEvent.setup();
+    const otherRun = { ...pastRun, run_id: "qos-20261021-120000-glm-5-ef56" };
+    vi.mocked(apiClient.get).mockImplementation(async (path: string) =>
+      path === "/qos/benchmarks" ? { runs: [pastRun, otherRun] } : respondWith(singleProviderDetail)(path),
+    );
+    renderWithProviders(<QosView accessToken="token" />, { searchParams: { tab: "benchmarks" } });
+
+    expect(await screen.findByRole("button", { name: "Export CSV" })).toBeDisabled();
+    await user.click(await screen.findByRole("checkbox", { name: `Select ${pastRun.run_id}` }));
+    await user.click(screen.getByRole("button", { name: "Export 1 to CSV" }));
+
+    await vi.waitFor(() => expect(downloadBlob).toHaveBeenCalledOnce());
+    const detailPaths = vi
+      .mocked(apiClient.get)
+      .mock.calls.map(([path]) => path)
+      .filter((path) => path.startsWith("/qos/benchmarks/"));
+    expect(detailPaths).toEqual([`/qos/benchmarks/${pastRun.run_id}`]);
+    const [blob, fileName] = vi.mocked(downloadBlob).mock.calls[0];
+    expect(fileName).toMatch(/^qos_benchmarks_.+\.csv$/);
+    const csv = await blobText(blob);
+    expect(csv).toContain(pastRun.run_id);
+    expect(csv).not.toContain(otherRun.run_id);
+  });
+
+  it("says why an export failed and downloads nothing", async () => {
+    const user = userEvent.setup();
+    vi.mocked(apiClient.get).mockImplementation(async (path: string) => {
+      if (path === `/qos/benchmarks/${pastRun.run_id}`) throw new Error("Benchmark run not found");
+      return respondWith(singleProviderDetail)(path);
+    });
+    renderWithProviders(<QosView accessToken="token" />, { searchParams: { tab: "benchmarks" } });
+
+    await user.click(await screen.findByRole("checkbox", { name: `Select ${pastRun.run_id}` }));
+    await user.click(screen.getByRole("button", { name: "Export 1 to CSV" }));
+
+    expect(await screen.findByText("Benchmark run not found")).toBeInTheDocument();
+    expect(downloadBlob).not.toHaveBeenCalled();
+  });
+
   it("flags past runs whose responses crossed with other requests", async () => {
     renderWithProviders(<QosView accessToken="token" />, { searchParams: { tab: "benchmarks" } });
 
@@ -273,5 +323,6 @@ describe("QoS benchmarks", () => {
     expect(await screen.findByText(pastRun.run_id)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Delete test record" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Start test" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Export CSV" })).toBeInTheDocument();
   });
 });
