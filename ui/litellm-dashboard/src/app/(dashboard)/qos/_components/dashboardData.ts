@@ -47,12 +47,18 @@ const pointValue = (point: QosTrendPoint, metric: TrendMetric): number | null =>
   }
 };
 
+const twoDigits = (value: number): string => String(value).padStart(2, "0");
+
+/** HH:MM in the viewer's time zone. */
+export const clockTime = (at: Date): string => `${twoDigits(at.getHours())}:${twoDigits(at.getMinutes())}`;
+
+/** MM-DD in the viewer's time zone. */
+export const monthDay = (at: Date): string => `${twoDigits(at.getMonth() + 1)}-${twoDigits(at.getDate())}`;
+
 const bucketLabel = (bucketStart: string, bucketSeconds: number, multiDay: boolean): string => {
   const at = new Date(bucketStart);
-  const date = `${String(at.getMonth() + 1).padStart(2, "0")}-${String(at.getDate()).padStart(2, "0")}`;
-  const time = `${String(at.getHours()).padStart(2, "0")}:${String(at.getMinutes()).padStart(2, "0")}`;
-  if (bucketSeconds >= 86_400) return date;
-  return multiDay ? `${date} ${time}` : time;
+  if (bucketSeconds >= 86_400) return monthDay(at);
+  return multiDay ? `${monthDay(at)} ${clockTime(at)}` : clockTime(at);
 };
 
 export interface TrendChart {
@@ -104,8 +110,10 @@ const relativeChange = (current: number | null, previous: number | null, higherI
   return { percent, better: higherIsBetter ? percent >= 0 : percent <= 0 };
 };
 
+export type HeadlineKey = "requests" | "success" | "ttft" | "tpot" | "throughput";
+
 export interface Headline {
-  readonly key: string;
+  readonly key: HeadlineKey;
   readonly label: string;
   readonly value: string;
   readonly change: Change;

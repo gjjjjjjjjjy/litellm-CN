@@ -1,15 +1,10 @@
 import type { QosActivityEvent } from "@/app/(dashboard)/hooks/qos/useQosHome";
-import type { QosTrends } from "../dashboardData";
-import { vendorName, type QosHealthNode, type QosModelGroupMetrics } from "../qosData";
+import { clockTime, type QosTrends } from "../dashboardData";
+import { successRate, vendorName, type QosHealthNode, type QosModelGroupMetrics } from "../qosData";
 
 export type ServiceStatus = "ok" | "degraded" | "down" | "idle";
 
 const DEGRADED_SUCCESS_RATE = 0.95;
-
-const successRateOf = (metrics: QosModelGroupMetrics | undefined): number | null =>
-  metrics === undefined || metrics.requests === 0
-    ? null
-    : (metrics.requests - metrics.failed_requests) / metrics.requests;
 
 /** A model is down when every node failed its latest health check, degraded when some did or it fails requests. */
 export const modelStatus = (
@@ -18,7 +13,7 @@ export const modelStatus = (
 ): ServiceStatus => {
   const unhealthy = nodes.filter((node) => node.latest_status === "unhealthy").length;
   if (nodes.length > 0 && unhealthy === nodes.length) return "down";
-  const success = successRateOf(metrics);
+  const success = metrics === undefined ? null : successRate(metrics);
   if (unhealthy > 0 || (success !== null && success < DEGRADED_SUCCESS_RATE)) return "degraded";
   if (nodes.length === 0 && success === null) return "idle";
   return "ok";
@@ -73,16 +68,11 @@ export const modelCards = (
 };
 
 /** Requests of every model added up per time bucket. */
-const clockLabel = (value: string): string => {
-  const at = new Date(value);
-  return `${String(at.getHours()).padStart(2, "0")}:${String(at.getMinutes()).padStart(2, "0")}`;
-};
-
 export const requestVolume = (trends: QosTrends): readonly { readonly time: string; readonly requests: number }[] => {
   const points = trends.series.flatMap((series) => series.points);
   const buckets = [...new Set(points.map((point) => point.bucket_start))].sort();
   return buckets.map((bucket) => ({
-    time: clockLabel(bucket),
+    time: clockTime(new Date(bucket)),
     requests: points
       .filter((point) => point.bucket_start === bucket)
       .reduce((total, point) => total + point.requests, 0),
@@ -96,6 +86,18 @@ export const relativeTimeLabel = (value: string, now: Date): string => {
   const hours = Math.round(minutes / 60);
   if (hours < 24) return `${hours} h ago`;
   return `${Math.round(hours / 24)} d ago`;
+};
+
+const NEWS_PROVIDERS: readonly (readonly [RegExp, string])[] = [
+  [/openai/i, "openai"],
+  [/hugging\s*face/i, "huggingface"],
+  [/google|gemini/i, "gemini"],
+];
+
+/** The provider whose logo marks a news source; other sources show their initial. */
+export const newsLogoProvider = (source: string): string => {
+  const match = NEWS_PROVIDERS.find(([pattern]) => pattern.test(source));
+  return match === undefined ? source : match[1];
 };
 
 export type ActivityTone = "success" | "warning" | "error" | "info";

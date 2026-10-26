@@ -1,7 +1,18 @@
 "use client";
 
 import React from "react";
-import { Activity, ExternalLink, Megaphone, Newspaper, Plus, Trash2 } from "lucide-react";
+import {
+  Activity,
+  CircleCheck,
+  ExternalLink,
+  FlaskConical,
+  Megaphone,
+  Newspaper,
+  PackagePlus,
+  Plus,
+  ServerCrash,
+  Trash2,
+} from "lucide-react";
 
 import {
   useDeleteAnnouncement,
@@ -24,7 +35,9 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/cva.config";
 import { extractErrorMessage } from "@/utils/errorUtils";
-import { activityLine, relativeTimeLabel, type ActivityTone } from "./homeData";
+import { Logo } from "@/components/molecules/logo/Logo";
+import type { QosActivityEvent } from "@/app/(dashboard)/hooks/qos/useQosHome";
+import { activityLine, newsLogoProvider, relativeTimeLabel, type ActivityTone } from "./homeData";
 
 const FeedPanel = ({
   icon: Icon,
@@ -227,21 +240,31 @@ export const NewsPanel = ({ accessToken, now }: { accessToken: string | null; no
       ) : (
         <ul className="flex flex-col divide-y divide-border/60">
           {news.items.map((item) => (
-            <li key={item.link} className="py-2.5 first:pt-0 last:pb-0">
-              <a
-                href={item.link}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="group flex items-start gap-1.5 text-xs leading-relaxed font-medium transition-colors hover:text-primary"
-              >
-                <span className="line-clamp-2 break-words">{item.title}</span>
-                <ExternalLink className="mt-0.5 size-3 shrink-0 text-muted-foreground group-hover:text-primary" />
-              </a>
-              <p className="mt-1 text-[11px] text-muted-foreground">
-                {item.published_at === null
-                  ? item.source
-                  : `${item.source} · ${relativeTimeLabel(item.published_at, now)}`}
-              </p>
+            <li
+              key={item.link}
+              className="flex gap-2.5 py-2.5 first:pt-0 last:pb-0 motion-safe:animate-in motion-safe:fade-in motion-safe:duration-500"
+            >
+              <Logo
+                provider={newsLogoProvider(item.source)}
+                label={item.source}
+                className="mt-0.5 size-4 shrink-0 rounded-sm"
+              />
+              <div className="min-w-0 flex-1">
+                <a
+                  href={item.link}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="group flex items-start gap-1.5 text-xs leading-relaxed font-medium transition-colors hover:text-primary"
+                >
+                  <span className="line-clamp-2 break-words">{item.title}</span>
+                  <ExternalLink className="mt-0.5 size-3 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 group-hover:text-primary" />
+                </a>
+                <p className="mt-1 text-[11px] text-muted-foreground">
+                  {item.published_at === null
+                    ? item.source
+                    : `${item.source} · ${relativeTimeLabel(item.published_at, now)}`}
+                </p>
+              </div>
             </li>
           ))}
         </ul>
@@ -258,11 +281,18 @@ export const NewsPanel = ({ accessToken, now }: { accessToken: string | null; no
   );
 };
 
-const TONE_DOT: Readonly<Record<ActivityTone, string>> = {
-  success: "bg-success",
-  warning: "bg-warning",
-  error: "bg-destructive",
-  info: "bg-primary",
+const TONE_BADGE: Readonly<Record<ActivityTone, string>> = {
+  success: "bg-success/10 text-success",
+  warning: "bg-warning/10 text-warning",
+  error: "bg-destructive/10 text-destructive",
+  info: "bg-primary/10 text-primary",
+};
+
+const ACTIVITY_ICON: Readonly<Record<QosActivityEvent["kind"], typeof Activity>> = {
+  node_down: ServerCrash,
+  node_recovered: CircleCheck,
+  benchmark: FlaskConical,
+  model_added: PackagePlus,
 };
 
 export const ActivityPanel = ({
@@ -281,21 +311,26 @@ export const ActivityPanel = ({
       {activity === undefined || activity.events.length === 0 ? (
         <EmptyLine text="Nothing happened in the last 7 days" />
       ) : (
-        <ol className="relative ml-1 flex flex-col gap-4 border-l border-border/60 pl-4">
+        <ol className="flex flex-col gap-3">
           {activity.events.map((event, index) => {
             const line = activityLine(event);
+            const Icon = ACTIVITY_ICON[event.kind];
             return (
-              <li key={`${event.kind}-${event.at}-${index}`} className="relative">
+              <li
+                key={`${event.kind}-${event.at}-${index}`}
+                className="flex gap-2.5 motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-right-2 motion-safe:duration-500"
+              >
                 <span
-                  className={cn(
-                    "absolute top-1 -left-[20px] size-2 rounded-full ring-4 ring-card",
-                    TONE_DOT[line.tone],
-                  )}
-                />
-                <p className="break-words text-xs leading-relaxed font-medium">{line.title}</p>
-                <p className="mt-1 truncate text-[11px] text-muted-foreground" title={line.description}>
-                  {`${relativeTimeLabel(event.at, now)} · ${line.description}`}
-                </p>
+                  className={cn("flex size-6 shrink-0 items-center justify-center rounded-lg", TONE_BADGE[line.tone])}
+                >
+                  <Icon className="size-3.5" aria-hidden="true" />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="break-words text-xs leading-relaxed font-medium">{line.title}</p>
+                  <p className="mt-0.5 truncate text-[11px] text-muted-foreground" title={line.description}>
+                    {`${relativeTimeLabel(event.at, now)} · ${line.description}`}
+                  </p>
+                </div>
               </li>
             );
           })}

@@ -10,6 +10,7 @@ import {
   CircleCheck,
   CircleDashed,
   CircleX,
+  RefreshCw,
   Timer,
   Zap,
 } from "lucide-react";
@@ -24,7 +25,9 @@ import { isProxyAdminRole } from "@/utils/roles";
 import { uiHref } from "@/utils/uiHref";
 import { headlines, type Change } from "../dashboardData";
 import { formatMs, formatRatio, successRate } from "../qosData";
+import { formatCompact } from "@/app/(dashboard)/usage/_components/components/overview/overviewData";
 import { ActivityPanel, AnnouncementsPanel, NewsPanel } from "./HomeFeeds";
+import UsageLeaderboard from "./UsageLeaderboard";
 import { modelCards, overallStatus, requestVolume, statusLabel, type ModelCard, type ServiceStatus } from "./homeData";
 
 const REFRESH_MS = 60_000;
@@ -39,6 +42,27 @@ const STATUS_STYLE: Readonly<Record<ServiceStatus, { readonly icon: typeof Circl
     down: { icon: CircleX, className: "text-destructive" },
     idle: { icon: CircleDashed, className: "text-muted-foreground" },
   };
+
+const STATUS_DOT: Readonly<Record<ServiceStatus, string>> = {
+  ok: "bg-success",
+  degraded: "bg-warning",
+  down: "bg-destructive",
+  idle: "bg-muted-foreground",
+};
+
+const LiveDot = ({ status }: { status: ServiceStatus }) => (
+  <span className="relative flex size-2">
+    {status !== "idle" && (
+      <span
+        className={cn(
+          "absolute inline-flex size-full rounded-full opacity-60 motion-safe:animate-ping",
+          STATUS_DOT[status],
+        )}
+      />
+    )}
+    <span className={cn("relative inline-flex size-2 rounded-full", STATUS_DOT[status])} />
+  </span>
+);
 
 const STATUS_COLOR: Readonly<Record<ServiceStatus, ChartColor>> = {
   ok: "emerald",
@@ -78,8 +102,15 @@ const ModelStatusCard = ({ card }: { card: ModelCard }) => {
   const style = STATUS_STYLE[card.status];
   const Icon = style.icon;
   return (
-    <article className="flex items-center gap-3 px-4 py-3 transition-colors hover:bg-muted/40">
-      <Icon className={cn("size-4 shrink-0", style.className)} aria-label={statusLabel(card.status)} />
+    <article className="flex items-center gap-3 px-4 py-3 transition-colors hover:bg-muted/40 motion-safe:animate-in motion-safe:fade-in motion-safe:duration-500">
+      <Icon
+        className={cn(
+          "size-4 shrink-0",
+          style.className,
+          (card.status === "down" || card.status === "degraded") && "motion-safe:animate-pulse",
+        )}
+        aria-label={statusLabel(card.status)}
+      />
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm font-medium" title={card.model}>
           {card.model}
@@ -91,6 +122,12 @@ const ModelStatusCard = ({ card }: { card: ModelCard }) => {
       <div className="w-20 shrink-0 text-right text-sm tabular-nums">
         <p className="text-[11px] text-muted-foreground">TTFT P95</p>
         <p className="mt-0.5 font-medium">{card.metrics === undefined ? "-" : formatMs(card.metrics.ttft_ms.p95)}</p>
+      </div>
+      <div className="w-20 shrink-0 text-right text-sm tabular-nums">
+        <p className="text-[11px] text-muted-foreground">Output tokens</p>
+        <p className="mt-0.5 font-medium">
+          {card.metrics === undefined ? "-" : formatCompact(card.metrics.output_tokens)}
+        </p>
       </div>
       <div className="w-16 shrink-0 text-right text-sm tabular-nums">
         <p className="text-[11px] text-muted-foreground">Success</p>
@@ -120,7 +157,8 @@ export default function HomeBoard({ accessToken }: { accessToken: string | null 
   const { userRole, isViewOnly } = useAuthorized();
   const canManage = isProxyAdminRole(userRole) && !isViewOnly;
   const now = useNow();
-  const summary = useQosSummary(accessToken, BOARD_RANGE, "", REFRESH_MS).data;
+  const summaryQuery = useQosSummary(accessToken, BOARD_RANGE, "", REFRESH_MS);
+  const summary = summaryQuery.data;
   const trends = useQosTrends(accessToken, BOARD_TRENDS).data;
   const health = useQosHealth(accessToken, BOARD_RANGE, REFRESH_MS).data;
 
@@ -161,8 +199,18 @@ export default function HomeBoard({ accessToken }: { accessToken: string | null 
             )}
             role="status"
           >
+            <LiveDot status={status} />
             <StatusIcon className="size-3.5" />
             {statusLabel(status)}
+          </div>
+          <div className="hidden items-center gap-1.5 text-[11px] text-muted-foreground md:flex">
+            <RefreshCw
+              className={cn("size-3", summaryQuery.isFetching && "motion-safe:animate-spin")}
+              aria-hidden="true"
+            />
+            {summaryQuery.isFetching
+              ? "Refreshing"
+              : `Updated ${new Date(summaryQuery.dataUpdatedAt).toLocaleTimeString()}`}
           </div>
           <div className="hidden border-l pl-4 text-right tabular-nums sm:block">
             <p className="text-sm font-medium">{now.toLocaleTimeString()}</p>
@@ -176,14 +224,22 @@ export default function HomeBoard({ accessToken }: { accessToken: string | null 
           const style = HEADLINE_STYLE[figure.key];
           const Icon = style.icon;
           return (
-            <div key={figure.key} className="rounded-xl border bg-card p-3.5 shadow-xs">
+            <div
+              key={figure.key}
+              className="rounded-xl border bg-card p-3.5 shadow-xs transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-2 motion-safe:duration-500"
+            >
               <div className="flex items-center justify-between gap-2">
                 <p className="text-xs font-medium text-muted-foreground">{figure.label}</p>
                 <span className={cn("flex size-6 items-center justify-center rounded-lg", style.className)}>
                   <Icon className="size-3.5" aria-hidden="true" />
                 </span>
               </div>
-              <p className="mt-1 text-3xl font-semibold tracking-tight tabular-nums">{figure.value}</p>
+              <p
+                key={figure.value}
+                className="mt-1 text-3xl font-semibold tracking-tight tabular-nums motion-safe:animate-in motion-safe:fade-in motion-safe:duration-700"
+              >
+                {figure.value}
+              </p>
               <div className="mt-1.5">
                 <ChangeBadge change={figure.change} />
               </div>
@@ -194,24 +250,27 @@ export default function HomeBoard({ accessToken }: { accessToken: string | null 
 
       <div className="grid min-h-0 flex-1 gap-4 lg:grid-cols-[minmax(0,1.8fr)_minmax(300px,1fr)]">
         <div className="flex min-h-0 min-w-0 flex-col gap-4">
-          <section className="shrink-0 rounded-xl border bg-card p-4 shadow-xs">
-            <div className="flex items-center justify-between gap-2">
-              <h2 className="text-sm font-semibold">Requests over the last 24 hours</h2>
-              <span className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-                <span className="size-1.5 rounded-full bg-primary" />
-                Requests
-              </span>
-            </div>
-            <AreaChart
-              data={trends === undefined ? [] : requestVolume(trends)}
-              index="time"
-              categories={["requests"]}
-              colors={["blue"]}
-              showLegend={false}
-              yAxisWidth={40}
-              className="mt-3 h-36"
-            />
-          </section>
+          <div className="grid shrink-0 gap-4 2xl:grid-cols-2">
+            <section className="rounded-xl border bg-card p-4 shadow-xs">
+              <div className="flex items-center justify-between gap-2">
+                <h2 className="text-sm font-semibold">Requests over the last 24 hours</h2>
+                <span className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                  <span className="size-1.5 rounded-full bg-primary" />
+                  Requests
+                </span>
+              </div>
+              <AreaChart
+                data={trends === undefined ? [] : requestVolume(trends)}
+                index="time"
+                categories={["requests"]}
+                colors={["blue"]}
+                showLegend={false}
+                yAxisWidth={40}
+                className="mt-3 h-36"
+              />
+            </section>
+            <UsageLeaderboard />
+          </div>
           <section className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border bg-card shadow-xs">
             <header className="flex shrink-0 items-center justify-between border-b px-4 py-3">
               <h2 className="text-sm font-semibold">Models</h2>

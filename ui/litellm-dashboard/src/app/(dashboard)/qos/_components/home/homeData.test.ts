@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { activityLine, modelCards, modelStatus, overallStatus, relativeTimeLabel, requestVolume } from "./homeData";
+import {
+  activityLine,
+  modelCards,
+  modelStatus,
+  newsLogoProvider,
+  overallStatus,
+  relativeTimeLabel,
+  requestVolume,
+} from "./homeData";
 
 const percentiles = (p95: number | null) => ({ p50: p95, p95, p99: p95 });
 
@@ -135,5 +143,17 @@ describe("feed text", () => {
       error: null,
     };
     expect(activityLine(recovered).tone).toBe("success");
+  });
+});
+
+describe("news logo", () => {
+  it("maps known sources to their provider logo", () => {
+    expect(newsLogoProvider("OpenAI")).toBe("openai");
+    expect(newsLogoProvider("Hugging Face")).toBe("huggingface");
+    expect(newsLogoProvider("Google AI")).toBe("gemini");
+  });
+
+  it("keeps other sources so the logo falls back to their initial", () => {
+    expect(newsLogoProvider("量子位")).toBe("量子位");
   });
 });
