@@ -112,9 +112,16 @@ describe("provider options", () => {
     upstream_model: "GLM-5.3",
   });
 
-  it("keeps a model with a single provider as one option", () => {
-    const providers = new Map([["GLM-5.3", [deployment("a", "moark", "https://api.moark.com/v1")]]]);
-    expect(modelOptionsToSelectorOptions(["GLM-5.3"], providers)).toEqual([{ value: "GLM-5.3", label: "GLM-5.3" }]);
+  it("names the vendor of a model with a single provider, so similar names from different vendors differ", () => {
+    const providers = new Map([
+      ["intern-s2", [deployment("a", "moark", "https://api.moark.com/v1")]],
+      ["Intern-S2", [deployment("b", "api.siliconflow.cn", "https://api.siliconflow.cn/v1")]],
+    ]);
+    expect(modelOptionsToSelectorOptions(["intern-s2", "Intern-S2", "local-only"], providers)).toEqual([
+      { value: "intern-s2", label: "intern-s2 · Moark (Gitee AI)" },
+      { value: "Intern-S2", label: "Intern-S2 · api.siliconflow.cn" },
+      { value: "local-only", label: "local-only" },
+    ]);
   });
 
   it("names the endpoint too when two deployments share a vendor", () => {

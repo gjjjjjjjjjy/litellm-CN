@@ -91,7 +91,8 @@ const deploymentLabel = (
 };
 
 const modelSelectorOptions = (model: string, deployments: readonly QosTargetDeployment[]): SelectorOption[] => {
-  if (deployments.length < 2) return [{ value: model, label: model }];
+  if (deployments.length === 0) return [{ value: model, label: model }];
+  if (deployments.length === 1) return [{ value: model, label: `${model} · ${vendorName(deployments[0].vendor)}` }];
   return [
     { value: model, label: allProvidersLabel(model) },
     ...deployments.map((deployment) => ({
@@ -102,8 +103,8 @@ const modelSelectorOptions = (model: string, deployments: readonly QosTargetDepl
 };
 
 /**
- * A model served by several providers is offered once per provider as well: the deployment id routes the
- * request to that provider alone, while the model name keeps load-balancing across all of them.
+ * Every model names who serves it. A model served by several providers is offered once per provider as well:
+ * the deployment id routes the request to that provider alone, while the model name keeps load-balancing.
  */
 export const modelOptionsToSelectorOptions = (
   models: string[],
