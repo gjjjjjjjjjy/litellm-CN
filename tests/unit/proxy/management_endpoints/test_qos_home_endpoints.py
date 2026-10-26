@@ -8,8 +8,8 @@ from fastapi.testclient import TestClient
 from litellm.proxy._types import LitellmUserRoles, UserAPIKeyAuth
 from litellm.proxy.auth.user_api_key_auth import user_api_key_auth
 from litellm.proxy.management_endpoints.qos_activity import MODELS_ADDED_SQL, NODE_TRANSITIONS_SQL
-from litellm.proxy.management_endpoints.qos_endpoints import BENCHMARK_RUNS_SQL
 from litellm.proxy.management_endpoints.qos_home_endpoints import router
+from litellm.proxy.management_endpoints.qos_summary import BENCHMARK_RUNS_SQL
 
 
 def _client(role: LitellmUserRoles | None) -> TestClient:

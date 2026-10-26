@@ -1,28 +1,26 @@
 import json
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from typing import Final
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from litellm.llms.openai_like.json_loader import JSONProviderRegistry
 from litellm.proxy._types import CommonProxyErrors, LitellmUserRoles, UserAPIKeyAuth
 from litellm.proxy.auth.user_api_key_auth import user_api_key_auth
-from litellm.proxy.management_endpoints.qos_endpoints import (
+from litellm.proxy.management_endpoints.qos_endpoints import router
+from litellm.proxy.management_endpoints.qos_response_check import record_response_checks
+from litellm.proxy.management_endpoints.qos_summary import (
     BENCHMARK_DELETE_SQL,
     BENCHMARK_DEPLOYMENT_LEVEL_SUMMARY_SQL,
     BENCHMARK_INTERFERENCE_SQL,
     BENCHMARK_LEVEL_SUMMARY_SQL,
     DEPLOYMENT_SUMMARY_SQL,
     MODEL_GROUP_SUMMARY_SQL,
-    QOS_DEFAULT_WINDOW,
     QOS_MAX_WINDOW,
-    resolve_window,
-    router,
 )
-from litellm.proxy.management_endpoints.qos_response_check import record_response_checks
 from litellm.proxy.management_endpoints.qos_trends import TREND_SQL
 
 NOW: Final = datetime(2026, 10, 22, 12, 0, 0)
@@ -98,30 +96,6 @@ def _client(role: LitellmUserRoles | None) -> TestClient:
     app.include_router(router)
     app.dependency_overrides[user_api_key_auth] = lambda: UserAPIKeyAuth(api_key="sk-test", user_role=role)
     return TestClient(app)
-
-
-class TestResolveWindow:
-    def test_defaults_to_the_window_ending_now(self) -> None:
-        assert resolve_window(None, None, NOW) == (NOW - QOS_DEFAULT_WINDOW, NOW)
-
-    def test_timezone_aware_bounds_are_compared_in_utc(self) -> None:
-        start, end = resolve_window(
-            datetime(2026, 10, 22, 19, 0, tzinfo=timezone(timedelta(hours=8))),
-            datetime(2026, 10, 22, 12, 0, tzinfo=timezone.utc),
-            NOW,
-        )
-        assert (start, end) == (datetime(2026, 10, 22, 11, 0), datetime(2026, 10, 22, 12, 0))
-
-    def test_rejects_an_empty_or_inverted_window(self) -> None:
-        with pytest.raises(HTTPException) as error:
-            resolve_window(NOW, NOW, NOW)
-        assert error.value.status_code == 400
-
-    def test_rejects_windows_longer_than_the_maximum(self) -> None:
-        with pytest.raises(HTTPException) as error:
-            resolve_window(NOW - QOS_MAX_WINDOW - timedelta(seconds=1), NOW, NOW)
-        assert error.value.status_code == 400
-        assert resolve_window(NOW - QOS_MAX_WINDOW, NOW, NOW)[0] == NOW - QOS_MAX_WINDOW
 
 
 _READ_PATHS: Final = ("/qos/summary", "/qos/trends", "/qos/health", "/qos/benchmarks", "/qos/benchmarks/qos-run-1")

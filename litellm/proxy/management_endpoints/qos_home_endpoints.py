@@ -25,14 +25,9 @@ from litellm.proxy.management_endpoints.qos_announcements import (
     with_announcement,
     without_announcement,
 )
-from litellm.proxy.management_endpoints.qos_endpoints import (
-    BENCHMARK_RUNS,
-    BENCHMARK_RUNS_SQL,
-    deployment_model_groups,
-    deployment_target_lookup,
-    utc_now,
-)
+from litellm.proxy.management_endpoints.qos_deployments import deployment_model_groups, deployment_target_lookup
 from litellm.proxy.management_endpoints.qos_news import FEED_TIMEOUT_SECONDS, NewsCache, configured_feeds
+from litellm.proxy.management_endpoints.qos_summary import BENCHMARK_RUNS, BENCHMARK_RUNS_SQL, utc_now
 from litellm.repositories.config_repository import ConfigRepository
 from litellm.types.qos import QosActivityResponse, QosAnnouncementCreate, QosAnnouncementsResponse, QosNewsResponse
 
