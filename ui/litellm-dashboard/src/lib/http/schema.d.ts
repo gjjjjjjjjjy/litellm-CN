@@ -14263,6 +14263,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/qos/trends": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Qos Trends
+         * @description Headline figures for a window and the window before it, and per-model or per-deployment time series.
+         */
+        get: operations["get_qos_trends_qos_trends_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/queue/chat/completions": {
         parameters: {
             query?: never;
@@ -43211,6 +43231,23 @@ export interface components {
             tpot_ms: components["schemas"]["QosPercentiles"];
             ttft_ms: components["schemas"]["QosPercentiles"];
         };
+        /**
+         * QosOverall
+         * @description All model traffic in a window, for the dashboard's headline figures.
+         */
+        QosOverall: {
+            /** Failed Requests */
+            failed_requests: number;
+            /** Output Tokens */
+            output_tokens: number;
+            /** Output Tokens Per Second */
+            output_tokens_per_second: number;
+            /** Requests */
+            requests: number;
+            response_checks: components["schemas"]["QosResponseChecks"];
+            tpot_ms: components["schemas"]["QosPercentiles"];
+            ttft_ms: components["schemas"]["QosPercentiles"];
+        };
         /** QosPercentiles */
         QosPercentiles: {
             /** P50 */
@@ -43275,6 +43312,62 @@ export interface components {
         QosTargetsResponse: {
             /** Models */
             models: components["schemas"]["QosTargetModel"][];
+        };
+        /** QosTrendPoint */
+        QosTrendPoint: {
+            /**
+             * Bucket Start
+             * Format: date-time
+             */
+            bucket_start: string;
+            /** Failed Requests */
+            failed_requests: number;
+            /** Output Tokens */
+            output_tokens: number;
+            /** Requests */
+            requests: number;
+            tpot_ms: components["schemas"]["QosPercentiles"];
+            ttft_ms: components["schemas"]["QosPercentiles"];
+        };
+        /**
+         * QosTrendSeries
+         * @description One model, or one deployment of a model when grouped by deployment, over time.
+         */
+        QosTrendSeries: {
+            /** Api Base */
+            api_base: string;
+            /** Model Group */
+            model_group: string;
+            /** Model Id */
+            model_id: string;
+            /** Points */
+            points: components["schemas"]["QosTrendPoint"][];
+            /** Vendor */
+            vendor: string;
+        };
+        /** QosTrendsResponse */
+        QosTrendsResponse: {
+            /** Bucket Seconds */
+            bucket_seconds: number;
+            current: components["schemas"]["QosOverall"];
+            /**
+             * End Time
+             * Format: date-time
+             */
+            end_time: string;
+            /**
+             * Group By
+             * @enum {string}
+             */
+            group_by: "model" | "deployment";
+            previous: components["schemas"]["QosOverall"];
+            /** Series */
+            series: components["schemas"]["QosTrendSeries"][];
+            /**
+             * Start Time
+             * Format: date-time
+             */
+            start_time: string;
         };
         /**
          * RankingOptions
@@ -72283,6 +72376,44 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["QosTargetsResponse"];
+                };
+            };
+        };
+    };
+    get_qos_trends_qos_trends_get: {
+        parameters: {
+            query?: {
+                /** @description ISO 8601, defaults to 24 hours before end_time */
+                start_time?: string | null;
+                /** @description ISO 8601, defaults to now */
+                end_time?: string | null;
+                /** @description Only include requests carrying this request tag */
+                tag?: string | null;
+                /** @description One series per model, or per deployment of a model */
+                group_by?: "model" | "deployment";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QosTrendsResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

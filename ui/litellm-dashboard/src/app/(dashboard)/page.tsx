@@ -1,6 +1,7 @@
 "use client";
 
 import HomePage from "@/app/(dashboard)/home/_components/HomePage";
+import QosView from "@/app/(dashboard)/qos/_components/QosView";
 import LoadingScreen from "@/components/common_components/LoadingScreen";
 import { proxyBaseUrl } from "@/components/networking";
 import { useAuth } from "@/contexts/AuthContext";
@@ -13,11 +14,12 @@ import {
   storeReturnUrl,
 } from "@/utils/returnUrlUtils";
 import { legacyPageRedirectHref } from "@/app/(dashboard)/legacyPageRoutes";
+import { proxyAdminTierRoles } from "@/utils/roles";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useRef } from "react";
 
 function CreateKeyPageContent() {
-  const { authLoading, token } = useAuth();
+  const { authLoading, token, userRole, accessToken } = useAuth();
 
   const router = useRouter();
   const searchParams = useSearchParams()!;
@@ -89,7 +91,7 @@ function CreateKeyPageContent() {
     return <LoadingScreen />;
   }
 
-  return <HomePage />;
+  return proxyAdminTierRoles.includes(userRole) ? <QosView accessToken={accessToken} /> : <HomePage />;
 }
 
 export default function CreateKeyPage() {

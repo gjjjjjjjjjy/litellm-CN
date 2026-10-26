@@ -87,7 +87,7 @@ const probeColumns: ColumnDef<QosHealthProbe>[] = [
 
 export default function QosHealthPanel({ accessToken }: { accessToken: string | null }) {
   const [range, setRange] = React.useState<QosRange>("24h");
-  const healthQuery = useQosHealth(accessToken, range);
+  const healthQuery = useQosHealth(accessToken, range, false);
   const health = healthQuery.data;
 
   return (

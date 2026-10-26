@@ -52767,6 +52767,47 @@
           "title": "QosModelGroupMetrics",
           "type": "object"
         },
+        "QosOverall": {
+          "description": "All model traffic in a window, for the dashboard's headline figures.",
+          "properties": {
+            "failed_requests": {
+              "title": "Failed Requests",
+              "type": "integer"
+            },
+            "output_tokens": {
+              "title": "Output Tokens",
+              "type": "integer"
+            },
+            "output_tokens_per_second": {
+              "title": "Output Tokens Per Second",
+              "type": "number"
+            },
+            "requests": {
+              "title": "Requests",
+              "type": "integer"
+            },
+            "response_checks": {
+              "$ref": "#/components/schemas/QosResponseChecks"
+            },
+            "tpot_ms": {
+              "$ref": "#/components/schemas/QosPercentiles"
+            },
+            "ttft_ms": {
+              "$ref": "#/components/schemas/QosPercentiles"
+            }
+          },
+          "required": [
+            "requests",
+            "failed_requests",
+            "output_tokens",
+            "output_tokens_per_second",
+            "ttft_ms",
+            "tpot_ms",
+            "response_checks"
+          ],
+          "title": "QosOverall",
+          "type": "object"
+        },
         "QosPercentiles": {
           "properties": {
             "p50": {
@@ -52951,6 +52992,130 @@
             "models"
           ],
           "title": "QosTargetsResponse",
+          "type": "object"
+        },
+        "QosTrendPoint": {
+          "properties": {
+            "bucket_start": {
+              "format": "date-time",
+              "title": "Bucket Start",
+              "type": "string"
+            },
+            "failed_requests": {
+              "title": "Failed Requests",
+              "type": "integer"
+            },
+            "output_tokens": {
+              "title": "Output Tokens",
+              "type": "integer"
+            },
+            "requests": {
+              "title": "Requests",
+              "type": "integer"
+            },
+            "tpot_ms": {
+              "$ref": "#/components/schemas/QosPercentiles"
+            },
+            "ttft_ms": {
+              "$ref": "#/components/schemas/QosPercentiles"
+            }
+          },
+          "required": [
+            "bucket_start",
+            "requests",
+            "failed_requests",
+            "output_tokens",
+            "ttft_ms",
+            "tpot_ms"
+          ],
+          "title": "QosTrendPoint",
+          "type": "object"
+        },
+        "QosTrendSeries": {
+          "description": "One model, or one deployment of a model when grouped by deployment, over time.",
+          "properties": {
+            "api_base": {
+              "title": "Api Base",
+              "type": "string"
+            },
+            "model_group": {
+              "title": "Model Group",
+              "type": "string"
+            },
+            "model_id": {
+              "title": "Model Id",
+              "type": "string"
+            },
+            "points": {
+              "items": {
+                "$ref": "#/components/schemas/QosTrendPoint"
+              },
+              "title": "Points",
+              "type": "array"
+            },
+            "vendor": {
+              "title": "Vendor",
+              "type": "string"
+            }
+          },
+          "required": [
+            "model_group",
+            "model_id",
+            "vendor",
+            "api_base",
+            "points"
+          ],
+          "title": "QosTrendSeries",
+          "type": "object"
+        },
+        "QosTrendsResponse": {
+          "properties": {
+            "bucket_seconds": {
+              "title": "Bucket Seconds",
+              "type": "integer"
+            },
+            "current": {
+              "$ref": "#/components/schemas/QosOverall"
+            },
+            "end_time": {
+              "format": "date-time",
+              "title": "End Time",
+              "type": "string"
+            },
+            "group_by": {
+              "enum": [
+                "model",
+                "deployment"
+              ],
+              "title": "Group By",
+              "type": "string"
+            },
+            "previous": {
+              "$ref": "#/components/schemas/QosOverall"
+            },
+            "series": {
+              "items": {
+                "$ref": "#/components/schemas/QosTrendSeries"
+              },
+              "title": "Series",
+              "type": "array"
+            },
+            "start_time": {
+              "format": "date-time",
+              "title": "Start Time",
+              "type": "string"
+            }
+          },
+          "required": [
+            "start_time",
+            "end_time",
+            "bucket_seconds",
+            "group_by",
+            "current",
+            "previous",
+            "series"
+          ],
+          "title": "QosTrendsResponse",
           "type": "object"
         },
         "ValidationError": {
@@ -53418,6 +53583,117 @@
             }
           ],
           "summary": "Get Qos Targets",
+          "tags": [
+            "qos"
+          ]
+        }
+      },
+      "/qos/trends": {
+        "get": {
+          "description": "Headline figures for a window and the window before it, and per-model or per-deployment time series.",
+          "operationId": "get_qos_trends_qos_trends_get",
+          "parameters": [
+            {
+              "description": "ISO 8601, defaults to 24 hours before end_time",
+              "in": "query",
+              "name": "start_time",
+              "required": false,
+              "schema": {
+                "anyOf": [
+                  {
+                    "format": "date-time",
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "ISO 8601, defaults to 24 hours before end_time",
+                "title": "Start Time"
+              }
+            },
+            {
+              "description": "ISO 8601, defaults to now",
+              "in": "query",
+              "name": "end_time",
+              "required": false,
+              "schema": {
+                "anyOf": [
+                  {
+                    "format": "date-time",
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "ISO 8601, defaults to now",
+                "title": "End Time"
+              }
+            },
+            {
+              "description": "Only include requests carrying this request tag",
+              "in": "query",
+              "name": "tag",
+              "required": false,
+              "schema": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "Only include requests carrying this request tag",
+                "title": "Tag"
+              }
+            },
+            {
+              "description": "One series per model, or per deployment of a model",
+              "in": "query",
+              "name": "group_by",
+              "required": false,
+              "schema": {
+                "default": "model",
+                "description": "One series per model, or per deployment of a model",
+                "enum": [
+                  "model",
+                  "deployment"
+                ],
+                "title": "Group By",
+                "type": "string"
+              }
+            }
+          ],
+          "responses": {
+            "200": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/QosTrendsResponse"
+                  }
+                }
+              },
+              "description": "Successful Response"
+            },
+            "422": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/HTTPValidationError"
+                  }
+                }
+              },
+              "description": "Validation Error"
+            }
+          },
+          "security": [
+            {
+              "APIKeyHeader": []
+            }
+          ],
+          "summary": "Get Qos Trends",
           "tags": [
             "qos"
           ]

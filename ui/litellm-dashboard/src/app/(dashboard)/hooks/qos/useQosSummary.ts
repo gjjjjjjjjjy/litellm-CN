@@ -9,6 +9,7 @@ export const useQosSummary = (
   accessToken: string | null,
   range: QosRange,
   tag: string,
+  refreshMs: number | false,
 ): UseQueryResult<QosSummary> => {
   const options = {
     queryKey: qosKeys.list({ filters: { range, tag } }),
@@ -18,6 +19,7 @@ export const useQosSummary = (
         query: { ...qosWindow(range, new Date()), tag: tag === "" ? undefined : tag },
       }),
     enabled: Boolean(accessToken),
+    refetchInterval: refreshMs,
     retry: false,
   };
   return useQuery<QosSummary>(options);

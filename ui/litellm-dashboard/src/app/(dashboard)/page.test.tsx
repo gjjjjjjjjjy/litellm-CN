@@ -33,12 +33,16 @@ vi.mock("@/contexts/AuthContext", () => ({
     authLoading: false,
     token: "tok",
     userRole: state.userRole,
+    accessToken: "session-key",
     userID: "user-1",
   }),
 }));
 vi.mock("@/app/(dashboard)/hooks/keys/useKeys", () => ({ useKeys: mockUseKeys }));
 vi.mock("@/app/(dashboard)/home/_components/HomePage", () => ({
   default: () => <div data-testid="home-page" />,
+}));
+vi.mock("@/app/(dashboard)/qos/_components/QosView", () => ({
+  default: ({ accessToken }: { accessToken: string | null }) => <div data-testid="qos-dashboard">{accessToken}</div>,
 }));
 vi.mock("@/components/common_components/LoadingScreen", () => ({
   default: () => <div data-testid="loading-screen" />,
@@ -81,7 +85,14 @@ describe("dashboard landing", () => {
     mockLocationReplace.mockClear();
   });
 
-  it.each(["Internal User", "Internal Viewer", "Admin", "Admin Viewer", "Org Admin", ""])(
+  it.each(["Admin", "Admin Viewer"])("lands a %s on the service quality dashboard", (role) => {
+    state.userRole = role;
+    render(<CreateKeyPage />);
+    expect(screen.getByTestId("qos-dashboard")).toHaveTextContent("session-key");
+    expect(screen.queryByTestId("home-page")).not.toBeInTheDocument();
+  });
+
+  it.each(["Internal User", "Internal Viewer", "Org Admin", ""])(
     "lands a keyless %s on the keys dashboard, never on the MCP connect page",
     (role) => {
       state.userRole = role;

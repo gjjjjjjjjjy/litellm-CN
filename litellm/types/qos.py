@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from typing import Annotated, Final
+from typing import Annotated, Final, Literal
 
 from pydantic import AfterValidator, ConfigDict, Field, model_validator
 from typing_extensions import Self
@@ -226,3 +226,52 @@ class QosBenchmarkDeleted(LiteLLMBaseModel):
 
     run_id: str
     deleted_requests: int
+
+
+class QosOverall(LiteLLMBaseModel):
+    """All model traffic in a window, for the dashboard's headline figures."""
+
+    model_config = ConfigDict(frozen=True)
+
+    requests: int
+    failed_requests: int
+    output_tokens: int
+    output_tokens_per_second: float
+    ttft_ms: QosPercentiles
+    tpot_ms: QosPercentiles
+    response_checks: QosResponseChecks
+
+
+class QosTrendPoint(LiteLLMBaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    bucket_start: UtcDatetime
+    requests: int
+    failed_requests: int
+    output_tokens: int
+    ttft_ms: QosPercentiles
+    tpot_ms: QosPercentiles
+
+
+class QosTrendSeries(LiteLLMBaseModel):
+    """One model, or one deployment of a model when grouped by deployment, over time."""
+
+    model_config = ConfigDict(frozen=True)
+
+    model_group: str
+    model_id: str
+    vendor: str
+    api_base: str
+    points: tuple[QosTrendPoint, ...]
+
+
+class QosTrendsResponse(LiteLLMBaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    start_time: UtcDatetime
+    end_time: UtcDatetime
+    bucket_seconds: int
+    group_by: Literal["model", "deployment"]
+    current: QosOverall
+    previous: QosOverall
+    series: tuple[QosTrendSeries, ...]

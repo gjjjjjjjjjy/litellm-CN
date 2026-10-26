@@ -201,7 +201,7 @@ describe("AllModelsTab", () => {
       setModelsInfo([makeRow(), makeRow({ model_info: { id: "model-2" } })], 2);
       renderWithProviders(<AllModelsTab {...defaultProps} />);
 
-      expect(mockUseQosSummary).toHaveBeenLastCalledWith("mock-access-token", "24h", "");
+      expect(mockUseQosSummary).toHaveBeenLastCalledWith("mock-access-token", "24h", "", false);
       expect(screen.getByTestId("model-qos-success-model-1")).toHaveTextContent("99.5%");
       expect(screen.getByTestId("model-qos-ttft-model-1")).toHaveTextContent("640 ms");
       expect(screen.getByTestId("model-qos-success-model-2")).toHaveTextContent("-");
@@ -212,7 +212,7 @@ describe("AllModelsTab", () => {
       vi.spyOn(useAuthorizedModule, "default").mockReturnValue({ ...MOCK_AUTHORIZED, userRole: "Internal User" });
       renderWithProviders(<AllModelsTab {...defaultProps} />);
 
-      expect(mockUseQosSummary).toHaveBeenLastCalledWith(null, "24h", "");
+      expect(mockUseQosSummary).toHaveBeenLastCalledWith(null, "24h", "", false);
       expect(screen.queryByRole("columnheader", { name: "Success rate (24h)" })).not.toBeInTheDocument();
     });
   });

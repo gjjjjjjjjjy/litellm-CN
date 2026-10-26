@@ -3,12 +3,12 @@ import re
 from collections.abc import Callable
 from datetime import datetime, timedelta, timezone
 from functools import partial
+from types import MappingProxyType
 from typing import TYPE_CHECKING, Annotated, Final
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import ConfigDict, TypeAdapter
 
-from litellm.constants import LITTELM_INTERNAL_HEALTH_SERVICE_ACCOUNT_NAME
 from litellm.litellm_core_utils.get_llm_provider_logic import get_llm_provider
 from litellm.proxy._types import CommonProxyErrors, LitellmUserRoles, UserAPIKeyAuth
 from litellm.proxy.auth.user_api_key_auth import user_api_key_auth
@@ -24,7 +24,24 @@ from litellm.proxy.management_endpoints.qos_health import (
     probe_key,
     vendor_of,
 )
-from litellm.proxy.management_endpoints.qos_response_check import RESPONSE_CHECK_KEY, record_response_checks
+from litellm.proxy.management_endpoints.qos_response_check import record_response_checks
+from litellm.proxy.management_endpoints.qos_sql import (
+    MODEL_TRAFFIC,
+    RESPONSE_CHECK,
+    TPOT_MS,
+    TTFT_MS,
+    logged_model_group,
+)
+from litellm.proxy.management_endpoints.qos_trends import (
+    OVERALL_ROWS,
+    OVERALL_SQL,
+    TREND_ROWS,
+    TREND_SQL,
+    TrendGrouping,
+    bucket_seconds,
+    overall,
+    trend_series,
+)
 from litellm.types.llms.base import LiteLLMBaseModel
 from litellm.types.qos import (
     QosBenchmarkDeleted,
@@ -45,6 +62,7 @@ from litellm.types.qos import (
     QosTargetDeployment,
     QosTargetModel,
     QosTargetsResponse,
+    QosTrendsResponse,
 )
 
 if TYPE_CHECKING:
@@ -75,21 +93,13 @@ SELECT COUNT(*)::int AS deleted_requests FROM deleted
 """
 
 
-def _logged_model_group(deployment_groups_param: str) -> str:
-    """A request that addressed a deployment by id is logged with the id as its model group; report its model name."""
-    return (
-        f"CASE WHEN {deployment_groups_param}::jsonb ? model_group "
-        f"THEN {deployment_groups_param}::jsonb ->> model_group ELSE COALESCE(model_group, '') END"
-    )
-
-
 BENCHMARK_RUNS_SQL: Final = f"""
 SELECT
     run_tag AS run_id,
-    MAX({_logged_model_group("$3")}) AS model_group,
+    MAX({logged_model_group("$3")}) AS model_group,
     COUNT(*)::int AS requests,
     (COUNT(*) FILTER (WHERE status = 'failure'))::int AS failed_requests,
-    (COUNT(*) FILTER (WHERE metadata->>'{RESPONSE_CHECK_KEY}' = 'crosstalk'))::int AS crosstalk_responses,
+    (COUNT(*) FILTER (WHERE {RESPONSE_CHECK} = 'crosstalk'))::int AS crosstalk_responses,
     MIN("startTime") AS started_at,
     MAX("endTime") AS last_response_at
 FROM "LiteLLM_SpendLogs"
@@ -117,29 +127,16 @@ WITH base AS (
         "startTime" AS started,
         "endTime" AS ended,
         completion_tokens,
-        metadata->>'{response_check_key}' AS response_check,
+        {response_check} AS response_check,
         EXTRACT(epoch FROM ("endTime" - "startTime")) * 1000 AS e2e_ms,
-        CASE
-            WHEN status IS DISTINCT FROM 'failure'
-                AND "completionStartTime" IS NOT NULL
-                AND "completionStartTime" <> "endTime"
-            THEN EXTRACT(epoch FROM ("completionStartTime" - "startTime")) * 1000
-        END AS ttft_ms,
-        CASE
-            WHEN status IS DISTINCT FROM 'failure'
-                AND "completionStartTime" IS NOT NULL
-                AND "completionStartTime" <> "endTime"
-                AND completion_tokens > 1
-            THEN EXTRACT(epoch FROM ("endTime" - "completionStartTime")) * 1000 / (completion_tokens - 1)
-        END AS tpot_ms{level_column}
+        {ttft_ms} AS ttft_ms,
+        {tpot_ms} AS tpot_ms{level_column}
     FROM {source}
     WHERE "startTime" >= $1::timestamp
         AND "startTime" < $2::timestamp
-        AND COALESCE(cache_hit, '') <> 'True'
-        AND COALESCE(model, '') <> ''
+        AND {model_traffic}
         AND ($3::text IS NULL OR {model_group} = $3::text)
         AND {tag_filter}
-        AND {health_check_filter}
 ),
 events AS (
     SELECT {keys}, started AS at, 1 AS delta FROM base
@@ -184,9 +181,16 @@ ORDER BY {selected_keys}
 """
 
 _SPEND_LOGS: Final = '"LiteLLM_SpendLogs"'
-_EXCLUDE_HEALTH_CHECKS: Final = f"NOT COALESCE(request_tags ? '{LITTELM_INTERNAL_HEALTH_SERVICE_ACCOUNT_NAME}', false)"
 _REQUEST_TAG_FILTER: Final = "($4::text IS NULL OR request_tags ? $4::text)"
-_SUMMARY_MODEL_GROUP: Final = _logged_model_group("$5")
+_SUMMARY_FRAGMENTS: Final = MappingProxyType(
+    {
+        "model_group": logged_model_group("$5"),
+        "response_check": RESPONSE_CHECK,
+        "ttft_ms": TTFT_MS,
+        "tpot_ms": TPOT_MS,
+        "model_traffic": MODEL_TRAFFIC,
+    }
+)
 _LEVEL_SOURCE: Final = (
     _SPEND_LOGS
     + " CROSS JOIN LATERAL jsonb_array_elements_text("
@@ -198,41 +202,33 @@ DEPLOYMENT_SUMMARY_SQL: Final = _SUMMARY_SQL.format(
     keys="model_group, model_id",
     selected_keys="base.model_group, base.model_id",
     level_column="",
-    model_group=_SUMMARY_MODEL_GROUP,
-    response_check_key=RESPONSE_CHECK_KEY,
+    **_SUMMARY_FRAGMENTS,
     source=_SPEND_LOGS,
     tag_filter=_REQUEST_TAG_FILTER,
-    health_check_filter=_EXCLUDE_HEALTH_CHECKS,
 )
 MODEL_GROUP_SUMMARY_SQL: Final = _SUMMARY_SQL.format(
     keys="model_group",
     selected_keys="base.model_group",
     level_column="",
-    model_group=_SUMMARY_MODEL_GROUP,
-    response_check_key=RESPONSE_CHECK_KEY,
+    **_SUMMARY_FRAGMENTS,
     source=_SPEND_LOGS,
     tag_filter=_REQUEST_TAG_FILTER,
-    health_check_filter=_EXCLUDE_HEALTH_CHECKS,
 )
 BENCHMARK_LEVEL_SUMMARY_SQL: Final = _SUMMARY_SQL.format(
     keys="model_group, level_tag",
     selected_keys="base.model_group, base.level_tag",
     level_column=",\n        level_tag",
-    model_group=_SUMMARY_MODEL_GROUP,
-    response_check_key=RESPONSE_CHECK_KEY,
+    **_SUMMARY_FRAGMENTS,
     source=_LEVEL_SOURCE,
     tag_filter=_LEVEL_TAG_FILTER,
-    health_check_filter=_EXCLUDE_HEALTH_CHECKS,
 )
 BENCHMARK_DEPLOYMENT_LEVEL_SUMMARY_SQL: Final = _SUMMARY_SQL.format(
     keys="model_group, model_id, level_tag",
     selected_keys="base.model_group, base.model_id, base.level_tag",
     level_column=",\n        level_tag",
-    model_group=_SUMMARY_MODEL_GROUP,
-    response_check_key=RESPONSE_CHECK_KEY,
+    **_SUMMARY_FRAGMENTS,
     source=_LEVEL_SOURCE,
     tag_filter=_LEVEL_TAG_FILTER,
-    health_check_filter=_EXCLUDE_HEALTH_CHECKS,
 )
 
 _LONGEST_OVERLAPPING_REQUEST: Final = "1 hour"
@@ -593,6 +589,50 @@ def target_deployment(model_id: str, target: DeploymentTarget) -> QosTargetDeplo
         vendor=vendor_of(target.provider, target.api_base),
         api_base=target.api_base,
         upstream_model=target.upstream_model,
+    )
+
+
+@router.get(
+    "/qos/trends",
+    tags=["qos"],
+    dependencies=[Depends(user_api_key_auth)],
+    response_model=QosTrendsResponse,
+)
+async def get_qos_trends(
+    user_api_key_dict: Annotated[UserAPIKeyAuth, Depends(user_api_key_auth)],
+    start_time: Annotated[datetime | None, Query(description="ISO 8601, defaults to 24 hours before end_time")] = None,
+    end_time: Annotated[datetime | None, Query(description="ISO 8601, defaults to now")] = None,
+    tag: Annotated[str | None, Query(description="Only include requests carrying this request tag")] = None,
+    group_by: Annotated[
+        TrendGrouping, Query(description="One series per model, or per deployment of a model")
+    ] = "model",
+) -> QosTrendsResponse:
+    """Headline figures for a window and the window before it, and per-model or per-deployment time series."""
+    from litellm.proxy.proxy_server import llm_router, prisma_client
+
+    _require_role(user_api_key_dict, (LitellmUserRoles.PROXY_ADMIN, LitellmUserRoles.PROXY_ADMIN_VIEW_ONLY))
+    if prisma_client is None:
+        raise HTTPException(status_code=500, detail=CommonProxyErrors.db_not_connected_error.value)
+    start, end = resolve_window(start_time, end_time, _utc_now())
+    window: Final = end - start
+    bucket: Final = bucket_seconds(window)
+    (current,) = OVERALL_ROWS.validate_python(await prisma_client.db.query_raw(OVERALL_SQL, start, end, tag))
+    (previous,) = OVERALL_ROWS.validate_python(
+        await prisma_client.db.query_raw(OVERALL_SQL, start - window, start, tag)
+    )
+    rows: Final = TREND_ROWS.validate_python(
+        await prisma_client.db.query_raw(
+            TREND_SQL[group_by], start, end, bucket, tag, deployment_model_groups(llm_router)
+        )
+    )
+    return QosTrendsResponse(
+        start_time=start,
+        end_time=end,
+        bucket_seconds=bucket,
+        group_by=group_by,
+        current=overall(current, window),
+        previous=overall(previous, window),
+        series=trend_series(rows),
     )
 
 

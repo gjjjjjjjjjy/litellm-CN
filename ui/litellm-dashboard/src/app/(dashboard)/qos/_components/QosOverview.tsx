@@ -9,15 +9,21 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import { extractErrorMessage } from "@/utils/errorUtils";
 import { deploymentColumns, groupColumns } from "./QosColumns";
 import { deploymentsFor, isQosRange, QOS_RANGES, type QosRange } from "./qosData";
+import QosDashboard from "./QosDashboard";
+
+const AUTO_REFRESH_MS = 60_000;
 
 export default function QosOverview({ accessToken }: { accessToken: string | null }) {
   const [range, setRange] = React.useState<QosRange>("1h");
   const [tagInput, setTagInput] = React.useState("");
   const [tag, setTag] = React.useState("");
-  const summaryQuery = useQosSummary(accessToken, range, tag);
+  const [autoRefresh, setAutoRefresh] = React.useState(true);
+  const refreshMs = autoRefresh ? AUTO_REFRESH_MS : false;
+  const summaryQuery = useQosSummary(accessToken, range, tag, refreshMs);
   const summary = summaryQuery.data;
   const loading = summaryQuery.isFetching;
   const error = summaryQuery.error === null ? null : extractErrorMessage(summaryQuery.error);
@@ -74,6 +80,10 @@ export default function QosOverview({ accessToken }: { accessToken: string | nul
           <RefreshCw className={`size-4 ${loading ? "animate-spin" : ""}`} />
           Refresh
         </Button>
+        <label htmlFor="qos-auto-refresh" className="flex h-9 items-center gap-2 text-sm text-muted-foreground">
+          <Switch id="qos-auto-refresh" checked={autoRefresh} onCheckedChange={setAutoRefresh} />
+          Auto refresh every minute
+        </label>
       </form>
 
       {error !== null && (
@@ -83,6 +93,9 @@ export default function QosOverview({ accessToken }: { accessToken: string | nul
         </Alert>
       )}
 
+      <QosDashboard accessToken={accessToken} range={range} tag={tag} summary={summary} refreshMs={refreshMs} />
+
+      <h2 className="text-base font-semibold">Details</h2>
       <DataTable
         data={summary === undefined ? [] : [...summary.model_groups]}
         columns={groupColumns}

@@ -23,6 +23,7 @@ from litellm.proxy.management_endpoints.qos_endpoints import (
     router,
 )
 from litellm.proxy.management_endpoints.qos_response_check import record_response_checks
+from litellm.proxy.management_endpoints.qos_trends import TREND_SQL
 
 NOW: Final = datetime(2026, 10, 22, 12, 0, 0)
 
@@ -344,6 +345,66 @@ class TestBenchmarkEndpoints:
                 },
             ],
         }
+
+
+_OVERALL: Final = {
+    "requests": 40,
+    "failed_requests": 2,
+    "output_tokens": 7200,
+    "checked_responses": 0,
+    "crosstalk_responses": 0,
+    "marker_missing_responses": 0,
+    "ttft_p50": 210.0,
+    "ttft_p95": 480.0,
+    "ttft_p99": 600.0,
+    "tpot_p50": 22.0,
+    "tpot_p95": 35.0,
+    "tpot_p99": 41.0,
+}
+
+
+class TestTrendsEndpoint:
+    def test_compares_the_window_with_the_one_before_it_and_maps_deployment_ids_to_models(self) -> None:
+        trend_row: Final = {
+            "model_group": "qwen3-max",
+            "model_id": "node-moark",
+            "bucket_start": "2026-10-22T11:00:00",
+            "api_base": "https://api.moark.com/v1",
+            "custom_llm_provider": "moark",
+            **{key: value for key, value in _OVERALL.items() if not key.endswith("_responses")},
+        }
+        prisma = MagicMock()
+        prisma.db.query_raw = AsyncMock(side_effect=[[_OVERALL], [{**_OVERALL, "requests": 20}], [trend_row]])
+
+        with (
+            patch("litellm.proxy.proxy_server.prisma_client", prisma),
+            patch("litellm.proxy.proxy_server.llm_router", _router(_QWEN_ON_TWO_PROVIDERS)),
+        ):
+            response = _client(LitellmUserRoles.PROXY_ADMIN_VIEW_ONLY).get(
+                "/qos/trends",
+                params={
+                    "start_time": "2026-10-22T10:00:00",
+                    "end_time": "2026-10-22T12:00:00",
+                    "group_by": "deployment",
+                },
+            )
+
+        assert response.status_code == 200, response.text
+        body: Final = response.json()
+        assert (body["current"]["requests"], body["previous"]["requests"], body["bucket_seconds"]) == (40, 20, 120)
+        assert body["current"]["output_tokens_per_second"] == pytest.approx(7200 / 7200)
+        (series,) = body["series"]
+        assert (series["model_id"], series["vendor"], len(series["points"])) == ("node-moark", "moark", 1)
+        current_call, previous_call, trend_call = (call.args for call in prisma.db.query_raw.await_args_list)
+        assert current_call[1:] == (datetime(2026, 10, 22, 10), datetime(2026, 10, 22, 12), None)
+        assert previous_call[1:] == (datetime(2026, 10, 22, 8), datetime(2026, 10, 22, 10), None)
+        assert (trend_call[0], trend_call[3]) == (TREND_SQL["deployment"], 120)
+        assert json.loads(trend_call[5]) == {"node-moark": "qwen3-max", "node-gitee": "qwen3-max"}
+
+    def test_internal_users_cannot_read_trends(self) -> None:
+        with patch("litellm.proxy.proxy_server.prisma_client", MagicMock()):
+            response = _client(LitellmUserRoles.INTERNAL_USER).get("/qos/trends")
+        assert response.status_code == 403
 
 
 class TestHealthEndpoint:

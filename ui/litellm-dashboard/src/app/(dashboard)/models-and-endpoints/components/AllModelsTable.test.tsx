@@ -73,6 +73,7 @@ const qosDeployment = (modelId: string): QosDeploymentMetrics => ({
   model_id: modelId,
   model: "openai/gpt-4",
   api_base: "",
+  vendor: "openai",
   requests: 40,
   failed_requests: 2,
   streamed_requests: 38,
@@ -85,6 +86,7 @@ const qosDeployment = (modelId: string): QosDeploymentMetrics => ({
   ttft_ms: { p50: 210, p95: 1480.5, p99: null },
   tpot_ms: { p50: 22, p95: 35, p99: 41 },
   e2e_latency_ms: { p50: 4600, p95: 7900, p99: 9100 },
+  response_checks: { checked: 0, crosstalk: 0, marker_missing: 0 },
 });
 
 const row = (modelId: string): HTMLElement => {

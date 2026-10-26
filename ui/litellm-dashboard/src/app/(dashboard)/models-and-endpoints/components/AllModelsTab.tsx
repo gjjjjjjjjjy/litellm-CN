@@ -74,7 +74,7 @@ const useDeploymentQosMetrics = (
   userRole: string,
 ): ReadonlyMap<string, QosDeploymentMetrics> | undefined => {
   const canViewQos = isProxyAdminTierRole(userRole);
-  const { data: qosSummary } = useQosSummary(canViewQos ? accessToken : null, "24h", "");
+  const { data: qosSummary } = useQosSummary(canViewQos ? accessToken : null, "24h", "", false);
   return useMemo(() => {
     if (!canViewQos) return undefined;
     return new Map((qosSummary?.deployments ?? []).map((deployment) => [deployment.model_id, deployment]));
