@@ -74,9 +74,9 @@ def test_a_deployment_series_names_its_vendor() -> None:
         _trend_row("GLM-5.3", "node-moark", 1, api_base="https://api.moark.com/v1", custom_llm_provider="moark"),
     ]
 
-    assert [(item.model_id, item.vendor) for item in trend_series(rows)] == [
-        ("node-gitee", "ai.gitee.com"),
-        ("node-moark", "moark"),
+    assert [(item.model_id, item.vendor, item.api_base) for item in trend_series(rows)] == [
+        ("node-gitee", "moark", "https://ai.gitee.com/v1"),
+        ("node-moark", "moark", "https://api.moark.com/v1"),
     ]
 
 

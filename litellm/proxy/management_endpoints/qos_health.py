@@ -90,10 +90,11 @@ _OPENAI_COMPATIBLE_PROVIDERS: Final = frozenset(
 
 
 def vendor_of(provider: str, api_base: str) -> str:
-    """An OpenAI-compatible provider says nothing about who serves the model, so name its endpoint host instead."""
     if provider not in _OPENAI_COMPATIBLE_PROVIDERS:
         return provider
     host: Final = urlparse(api_base).hostname
+    if host in {"ai.gitee.com", "api.moark.com"}:
+        return "moark"
     return provider if host is None else host
 
 

@@ -35,17 +35,51 @@ def test_moark_prefix_resolves_to_json_registry_base_url() -> None:
     assert api_base == provider_config.base_url
 
 
-def test_moark_api_base_override_wins_over_registry_default() -> None:
+@pytest.mark.parametrize("endpoint", ["https://ai.gitee.com/v1", "https://api.moark.com/v1"])
+def test_moark_api_base_override_wins_over_registry_default(endpoint: str) -> None:
     _, provider, api_key, api_base = get_llm_provider(
         model="moark/deepseek-v4.1-flash",
         custom_llm_provider=None,
-        api_base="https://ai.gitee.com/v1",
+        api_base=endpoint,
         api_key="test-key",
     )
 
     assert provider == "moark"
-    assert api_base == "https://ai.gitee.com/v1"
+    assert api_base == endpoint
     assert api_key == "test-key"
+
+
+@pytest.mark.parametrize("endpoint", ["https://ai.gitee.com/v1", "https://api.moark.com/v1"])
+@respx.mock
+def test_moark_chat_uses_the_configured_endpoint(endpoint: str) -> None:
+    route: Final = respx.post(f"{endpoint}/chat/completions").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "id": "chat-1",
+                "object": "chat.completion",
+                "created": 1,
+                "model": "deepseek-v4.1-flash",
+                "choices": [
+                    {"index": 0, "message": {"role": "assistant", "content": "OK"}, "finish_reason": "stop"}
+                ],
+                "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+            },
+        )
+    )
+
+    response: Final = litellm.completion(
+        model="moark/deepseek-v4.1-flash",
+        messages=[{"role": "user", "content": "hi"}],
+        api_base=endpoint,
+        api_key="test-key",
+    )
+
+    assert route.call_count == 1
+    request: Final = route.calls[0].request
+    assert request.headers["authorization"] == "Bearer test-key"
+    assert json.loads(request.content)["model"] == "deepseek-v4.1-flash"
+    assert response.choices[0].message.content == "OK"
 
 
 def test_moark_is_detected_from_its_registry_base_url() -> None:

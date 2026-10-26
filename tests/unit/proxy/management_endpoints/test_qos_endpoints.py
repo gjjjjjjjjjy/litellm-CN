@@ -332,7 +332,7 @@ class TestBenchmarkEndpoints:
                 {
                     "model_id": "node-gitee",
                     "provider": "openai",
-                    "vendor": "ai.gitee.com",
+                    "vendor": "moark",
                     "api_base": "https://ai.gitee.com/v1",
                     "upstream_model": "Qwen3-Max",
                 },
@@ -474,7 +474,7 @@ class TestHealthEndpoint:
         node, default_base = response.json()["nodes"]
         assert node["availability"] == pytest.approx(8 / 9)
         assert (node["vendor"], node["api_base"], node["upstream_model"]) == (
-            "ai.gitee.com",
+            "moark",
             "https://ai.gitee.com/v1",
             "GLM-5.3",
         )

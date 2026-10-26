@@ -70,6 +70,12 @@ docker compose cp caddy:/data/caddy/pki/authorities/local/root.crt ./qosllm-root
 
 密码至少 12 位，必须同时包含大写字母、小写字母、数字和特殊字符，并且不能出现在已泄露密码库中
 
+## Moark 双端点
+
+在模型管理中选择 `Moark (Gitee AI)`，`API Base` 可以填写 `https://api.moark.com/v1` 或 `https://ai.gitee.com/v1`，API Key 填写对应端点可用的密钥。留空使用 `https://api.moark.com/v1`
+
+需要同时接入时，用同一个对外模型名分别添加两个部署，各自填写 API Base 和上游模型名称。QoS 会将两个端点都显示为 Moark，并保留各自的部署 ID 和接口地址；压测时可以单独选择一个部署，也可以比较两个部署的结果
+
 ## 账号锁定
 
 同一账号每连续输错 3 次密码锁定 15 分钟，锁定期间输入正确密码也无法登录，到时间后自动解锁。累计输错 10 次后永久锁定，只能由管理员解锁。登录成功或管理员解锁都会清零失败次数

@@ -3124,7 +3124,7 @@
         "key": "api_base",
         "label": "API Base",
         "placeholder": "https://api.moark.com/v1",
-        "tooltip": null,
+        "tooltip": "https://api.moark.com/v1 · https://ai.gitee.com/v1",
         "required": false,
         "field_type": "text",
         "options": null,

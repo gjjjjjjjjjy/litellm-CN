@@ -32,7 +32,7 @@ def test_a_node_going_down_keeps_only_the_first_line_of_its_error() -> None:
 
     assert (event.kind, event.vendor, event.error) == (
         "node_down",
-        "ai.gitee.com",
+        "moark",
         "InternalServerError: Connection error.",
     )
 
