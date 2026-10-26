@@ -401,6 +401,7 @@
   "<0/>Remove Skill": "<0/>移除技能",
   "<0/>Remove the saved OAuth app on save (the server goes back to dynamic client registration)": "<0/>保存时移除已保存的 OAuth 应用（服务将改回使用动态客户端注册）",
   "<0/>Requested Access": "<0/>请求的访问权限",
+  "<0/>Requests": "<0/>请求数",
   "<0/>Reset": "<0/>重置",
   "<0/>Reset Password": "<0/>重置密码",
   "<0/>Reset Spend": "<0/>重置费用",
