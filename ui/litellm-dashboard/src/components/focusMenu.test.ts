@@ -36,14 +36,16 @@ describe("hidden menu keys", () => {
     expect(focused).toEqual(expect.arrayContaining(["models", "qos", "logs"]));
   });
 
-  it("only shows the service quality page to admins", () => {
+  it("shows the service quality page to every role, since it is everyone's landing page", () => {
     const internalContext: MenuVisibilityContext = {
       userRole: "Internal User",
       isViewOnly: false,
       isOrgAdmin: false,
       isTeamAdmin: false,
     };
-    const internal = visibleMenuGroups(menuGroups, internalContext).flatMap((group) => group.items.map((item) => item.key));
-    expect(internal).not.toContain("qos");
+    const internal = visibleMenuGroups(menuGroups, internalContext).flatMap((group) =>
+      group.items.map((item) => item.key),
+    );
+    expect(internal).toContain("qos");
   });
 });
