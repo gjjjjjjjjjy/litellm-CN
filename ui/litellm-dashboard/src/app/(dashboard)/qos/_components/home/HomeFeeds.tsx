@@ -37,7 +37,7 @@ const FeedPanel = ({
   action?: React.ReactNode;
   children: React.ReactNode;
 }) => (
-  <section className="flex min-h-0 flex-col rounded-xl border border-border/60 bg-card/60">
+  <section className="flex min-h-0 flex-col rounded-xl border bg-card shadow-xs">
     <header className="flex items-center justify-between gap-2 px-4 pt-4 pb-2">
       <h3 className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
         <Icon className="size-4" />

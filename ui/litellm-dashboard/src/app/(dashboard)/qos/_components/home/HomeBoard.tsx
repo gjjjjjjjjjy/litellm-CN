@@ -57,7 +57,7 @@ const ModelStatusCard = ({ card }: { card: ModelCard }) => {
   const style = STATUS_STYLE[card.status];
   const Icon = style.icon;
   return (
-    <article className="flex flex-col gap-2 rounded-xl border border-border/60 bg-card/60 p-4">
+    <article className="flex flex-col gap-2 rounded-xl border bg-card shadow-xs p-4">
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <p className="truncate font-medium">{card.model}</p>
@@ -112,76 +112,74 @@ export default function HomeBoard({ accessToken }: { accessToken: string | null 
       : headlines(trends.current, trends.previous).filter((headline) => HEADLINE_KEYS.includes(headline.key));
 
   return (
-    <div className="dark">
-      <div className="flex min-h-[calc(100vh-8rem)] flex-col gap-6 rounded-2xl bg-background p-6 text-foreground">
-        <header className="flex flex-wrap items-center justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-semibold tracking-tight">QosLLM</h1>
-            <p className="text-sm text-muted-foreground">Service quality board · last 24 hours</p>
-          </div>
-          <div
-            className={cn(
-              "flex items-center gap-2 rounded-full border border-border/60 bg-card/60 px-4 py-2 text-sm font-medium",
-              STATUS_STYLE[status].className,
-            )}
-            role="status"
-          >
-            <StatusIcon className="size-4" />
-            {statusLabel(status)}
-          </div>
-          <div className="text-right tabular-nums">
-            <p className="text-2xl font-semibold">{now.toLocaleTimeString()}</p>
-            <p className="text-xs text-muted-foreground">{now.toLocaleDateString()}</p>
-          </div>
-        </header>
+    <div className="flex min-h-[calc(100vh-8rem)] flex-col gap-6 rounded-2xl bg-muted/40 p-6 text-foreground">
+      <header className="flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">QosLLM</h1>
+          <p className="text-sm text-muted-foreground">Service quality board · last 24 hours</p>
+        </div>
+        <div
+          className={cn(
+            "flex items-center gap-2 rounded-full border bg-card shadow-xs px-4 py-2 text-sm font-medium",
+            STATUS_STYLE[status].className,
+          )}
+          role="status"
+        >
+          <StatusIcon className="size-4" />
+          {statusLabel(status)}
+        </div>
+        <div className="text-right tabular-nums">
+          <p className="text-2xl font-semibold">{now.toLocaleTimeString()}</p>
+          <p className="text-xs text-muted-foreground">{now.toLocaleDateString()}</p>
+        </div>
+      </header>
 
-        <section className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-          {figures.map((figure) => (
-            <div key={figure.key} className="rounded-xl border border-border/60 bg-card/60 p-5">
-              <p className="text-sm text-muted-foreground">{figure.label}</p>
-              <p className="mt-2 text-4xl font-semibold tracking-tight tabular-nums">{figure.value}</p>
-              <div className="mt-2">
-                <ChangeBadge change={figure.change} />
-              </div>
+      <section className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+        {figures.map((figure) => (
+          <div key={figure.key} className="rounded-xl border bg-card shadow-xs p-5">
+            <p className="text-sm text-muted-foreground">{figure.label}</p>
+            <p className="mt-2 text-4xl font-semibold tracking-tight tabular-nums">{figure.value}</p>
+            <div className="mt-2">
+              <ChangeBadge change={figure.change} />
             </div>
-          ))}
-        </section>
-
-        <div className="grid min-h-0 flex-1 gap-6 xl:grid-cols-3">
-          <div className="flex min-w-0 flex-col gap-6 xl:col-span-2">
-            <section className="rounded-xl border border-border/60 bg-card/60 p-5">
-              <h2 className="text-sm font-medium text-muted-foreground">Requests over the last 24 hours</h2>
-              <AreaChart
-                data={trends === undefined ? [] : requestVolume(trends)}
-                index="time"
-                categories={["requests"]}
-                colors={["cyan"]}
-                showLegend={false}
-                yAxisWidth={40}
-                className="mt-3 h-56"
-              />
-            </section>
-            <section>
-              <h2 className="mb-3 text-sm font-medium text-muted-foreground">Models</h2>
-              {cards.length === 0 ? (
-                <p className="rounded-xl border border-dashed border-border/60 py-10 text-center text-sm text-muted-foreground">
-                  No model has traffic or health checks yet
-                </p>
-              ) : (
-                <div className="grid gap-4 sm:grid-cols-2 2xl:grid-cols-3">
-                  {cards.map((card) => (
-                    <ModelStatusCard key={card.model} card={card} />
-                  ))}
-                </div>
-              )}
-            </section>
           </div>
+        ))}
+      </section>
 
-          <div className="grid min-h-0 gap-6 xl:grid-rows-[auto_minmax(0,1fr)_minmax(0,1fr)]">
-            <AnnouncementsPanel accessToken={accessToken} canManage={canManage} now={now} />
-            <NewsPanel accessToken={accessToken} now={now} />
-            <ActivityPanel accessToken={accessToken} refreshMs={REFRESH_MS} now={now} />
-          </div>
+      <div className="grid min-h-0 flex-1 gap-6 xl:grid-cols-3">
+        <div className="flex min-w-0 flex-col gap-6 xl:col-span-2">
+          <section className="rounded-xl border bg-card shadow-xs p-5">
+            <h2 className="text-sm font-medium text-muted-foreground">Requests over the last 24 hours</h2>
+            <AreaChart
+              data={trends === undefined ? [] : requestVolume(trends)}
+              index="time"
+              categories={["requests"]}
+              colors={["cyan"]}
+              showLegend={false}
+              yAxisWidth={40}
+              className="mt-3 h-56"
+            />
+          </section>
+          <section>
+            <h2 className="mb-3 text-sm font-medium text-muted-foreground">Models</h2>
+            {cards.length === 0 ? (
+              <p className="rounded-xl border border-dashed border-border/60 py-10 text-center text-sm text-muted-foreground">
+                No model has traffic or health checks yet
+              </p>
+            ) : (
+              <div className="grid gap-4 sm:grid-cols-2 2xl:grid-cols-3">
+                {cards.map((card) => (
+                  <ModelStatusCard key={card.model} card={card} />
+                ))}
+              </div>
+            )}
+          </section>
+        </div>
+
+        <div className="grid min-h-0 gap-6 xl:grid-rows-[auto_minmax(0,1fr)_minmax(0,1fr)]">
+          <AnnouncementsPanel accessToken={accessToken} canManage={canManage} now={now} />
+          <NewsPanel accessToken={accessToken} now={now} />
+          <ActivityPanel accessToken={accessToken} refreshMs={REFRESH_MS} now={now} />
         </div>
       </div>
     </div>
