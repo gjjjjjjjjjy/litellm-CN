@@ -22,6 +22,41 @@ class QosPercentiles(LiteLLMBaseModel):
     p99: float | None
 
 
+PROVIDER_TASK_HIDDEN_PARAM: Final = "provider_task"
+
+
+class QosProviderTask(LiteLLMBaseModel):
+    """An asynchronous job as its provider reports it, such as a Moark video task, kept in hidden params."""
+
+    model_config = ConfigDict(frozen=True)
+
+    task_id: str
+    status: str
+    created_at: UtcDatetime | None = None
+    started_at: UtcDatetime | None = None
+    completed_at: UtcDatetime | None = None
+    price: float | None = None
+    currency: str | None = None
+
+
+class QosMedia(LiteLLMBaseModel):
+    """What service quality needs from an audio or video request, stored on its spend log row as `qos_media`."""
+
+    model_config = ConfigDict(frozen=True)
+
+    input_chars: int | None = None
+    audio_seconds: float | None = None
+    sample_rate: int | None = None
+    channels: int | None = None
+    format: str | None = None
+    task_id: str | None = None
+    task_status: str | None = None
+    queue_ms: float | None = None
+    run_ms: float | None = None
+    task_price: float | None = None
+    task_currency: str | None = None
+
+
 class QosResponseChecks(LiteLLMBaseModel):
     """How many benchmark responses were checked for cross-talk with concurrent requests, and what was found."""
 
@@ -68,6 +103,42 @@ class QosSummaryResponse(LiteLLMBaseModel):
     tag: str | None
     model_groups: tuple[QosModelGroupMetrics, ...]
     deployments: tuple[QosDeploymentMetrics, ...]
+
+
+class QosAudioMetrics(LiteLLMBaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    model_group: str
+    modality: Literal["speech", "transcription"]
+    requests: int
+    failed_requests: int
+    audio_seconds: float = Field(description="Audio produced (speech) or transcribed (transcription) by served calls")
+    input_chars: int = Field(description="Spoken characters sent to speech models, punctuation and spaces excluded")
+    latency_ms: QosPercentiles = Field(description="End-to-end time of served calls")
+    real_time_factor: QosPercentiles = Field(description="Latency over audio length; below 1 is faster than real time")
+
+
+class QosVideoMetrics(LiteLLMBaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    model_group: str
+    submitted: int
+    failed_submissions: int
+    succeeded: int
+    failed: int
+    cancelled: int
+    queue_ms: QosPercentiles = Field(description="From the task being created to the provider starting it")
+    run_ms: QosPercentiles = Field(description="From the provider starting a task to it succeeding")
+    task_price: float | None = Field(description="Sum of the prices the provider reported for finished tasks")
+
+
+class QosMediaResponse(LiteLLMBaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    start_time: UtcDatetime
+    end_time: UtcDatetime
+    audio: tuple[QosAudioMetrics, ...]
+    video: tuple[QosVideoMetrics, ...]
 
 
 QOS_BENCHMARK_MAX_REQUESTS: Final = 5000

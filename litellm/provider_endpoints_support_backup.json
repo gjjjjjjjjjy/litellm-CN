@@ -2150,7 +2150,8 @@
         "moderations": false,
         "batches": false,
         "rerank": true,
-        "a2a": false
+        "a2a": false,
+        "video_generations": true
       }
     },
     "scx-ai": {

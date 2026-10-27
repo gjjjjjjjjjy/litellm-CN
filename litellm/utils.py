@@ -9962,6 +9962,10 @@ class ProviderConfigManager:
             return get_hosted_vllm_video_config(model)
         elif LlmProviders.EDENAI == provider:
             return litellm.EdenAIVideoConfig()
+        elif LlmProviders.MOARK == provider:
+            from litellm.llms.moark.videos.transformation import MoarkVideoConfig
+
+            return MoarkVideoConfig()
         return None
 
     @staticmethod
@@ -10266,6 +10270,10 @@ class ProviderConfigManager:
             )
 
             return MistralTextToSpeechConfig()
+        elif litellm.LlmProviders.MOARK == provider:
+            from litellm.llms.moark.text_to_speech.transformation import MoarkTextToSpeechConfig
+
+            return MoarkTextToSpeechConfig()
         elif litellm.LlmProviders.AWS_POLLY == provider:
             from litellm.llms.aws_polly.text_to_speech.transformation import (
                 AWSPollyTextToSpeechConfig,
