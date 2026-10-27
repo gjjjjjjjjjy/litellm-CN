@@ -4,7 +4,8 @@ Per-account lockout for Admin UI password sign-in.
 Every third consecutive failure locks the account for a short time; the tenth locks it until a proxy admin
 unlocks it. The count, the temporary lock expiry and the permanent lock time live in
 ``LiteLLM_UserTable.metadata`` and are changed by single UPDATE statements, so concurrent failed sign-ins
-on several workers cannot lose an increment. A successful sign-in or an admin unlock clears all three.
+on several workers cannot lose an increment, and failures that arrive while the account is locked are not
+counted. A successful sign-in or an admin unlock clears all three.
 """
 
 import math
@@ -48,7 +49,13 @@ SET metadata = metadata
         ELSE '{{}}'::jsonb
     END
 WHERE user_id = $1
+    AND NOT COALESCE(metadata ? '{LOCKED_AT_KEY}', false)
+    AND COALESCE((metadata->>'{LOCKED_UNTIL_KEY}')::timestamptz, '-infinity'::timestamptz) <= now()
 RETURNING metadata
+"""
+
+CURRENT_LOGIN_LOCK_SQL: Final = """
+SELECT metadata FROM "LiteLLM_UserTable" WHERE user_id = $1
 """
 
 CLEAR_LOGIN_FAILURES_SQL: Final = f"""
@@ -103,13 +110,22 @@ def account_lock(metadata: object, now: datetime) -> AccountLock:
 
 
 async def record_failed_login(prisma_client: "PrismaClient", user_id: str, now: datetime) -> AccountLock:
-    """Count one failed password sign-in and return the lock it leaves the account in."""
-    (row,) = _UPDATED_ROWS.validate_python(
+    """
+    Count one failed password sign-in and return the lock it leaves the account in.
+
+    A failure is only counted while the account is unlocked. Sign-ins checked against the account before a
+    concurrent one locked it are refused with that lock instead, so parallel guesses cannot run the count past
+    a temporary lock up to a permanent one.
+    """
+    counted: Final = _UPDATED_ROWS.validate_python(
         await prisma_client.db.query_raw(
             RECORD_FAILED_LOGIN_SQL, user_id, PERMANENT_LOCK_AFTER, TEMPORARY_LOCK_EVERY, TEMPORARY_LOCK_MINUTES
         )
     )
-    return account_lock(row.metadata, now)
+    rows: Final = counted or _UPDATED_ROWS.validate_python(
+        await prisma_client.db.query_raw(CURRENT_LOGIN_LOCK_SQL, user_id)
+    )
+    return account_lock(rows[0].metadata, now) if rows else None
 
 
 async def clear_login_failures(prisma_client: "PrismaClient", user_id: str) -> None:

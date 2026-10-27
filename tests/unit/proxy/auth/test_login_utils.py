@@ -49,6 +49,7 @@ from litellm.proxy._types import (
 from litellm.proxy.auth.account_lockout import (
     ACCOUNT_LOCKED_MESSAGE,
     CLEAR_LOGIN_FAILURES_SQL,
+    CURRENT_LOGIN_LOCK_SQL,
     FAILED_ATTEMPTS_KEY,
     LOCKED_AT_KEY,
     LOCKED_UNTIL_KEY,
@@ -2459,6 +2460,23 @@ class TestAccountLockout:
             TEMPORARY_LOCK_EVERY,
             TEMPORARY_LOCK_MINUTES,
         )
+
+    @pytest.mark.asyncio
+    async def test_a_wrong_password_racing_a_lock_set_by_another_sign_in_is_refused_with_that_lock(self) -> None:
+        prisma = self._prisma(metadata={FAILED_ATTEMPTS_KEY: 2})
+        prisma.db.query_raw = AsyncMock(
+            side_effect=[
+                [],
+                [{"metadata": {FAILED_ATTEMPTS_KEY: 3, LOCKED_UNTIL_KEY: self._in_minutes(TEMPORARY_LOCK_MINUTES)}}],
+            ]
+        )
+
+        with pytest.raises(ProxyException) as error:
+            await self._login(prisma, "Wrong-Password-1")
+
+        assert error.value.code == "429"
+        assert f"Try again in {TEMPORARY_LOCK_MINUTES} minutes" in error.value.message
+        assert prisma.db.query_raw.await_args.args == (CURRENT_LOGIN_LOCK_SQL, "locked-user")
 
     @pytest.mark.asyncio
     async def test_a_wrong_password_that_locks_the_account_for_good_says_so(self) -> None:
