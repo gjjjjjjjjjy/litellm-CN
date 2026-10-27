@@ -155,6 +155,30 @@ class TestResponseCheckRecorder:
         assert spend_logs.rounds == [("a",), ("a",)]
 
     @pytest.mark.asyncio
+    async def test_a_failed_write_keeps_its_verdicts_for_the_next_round_and_later_verdicts_are_still_written(
+        self,
+    ) -> None:
+        spend_logs: Final = _SpendLogs(frozenset({"a"}), frozenset({"b"}))
+        failures: Final = iter((ConnectionError("database restarted"),))
+
+        async def write(checks: tuple[ResponseCheck, ...]) -> frozenset[str]:
+            failure: Final = next(failures, None)
+            if failure is not None:
+                raise failure
+            return await spend_logs.write(checks)
+
+        recorder: Final = ResponseCheckRecorder(write, attempts=3, retry_seconds=0)
+        recorder.add(A)
+        running: Final = asyncio.create_task(recorder.run())
+        await asyncio.wait_for(spend_logs.wrote.wait(), timeout=1)
+        recorder.add(B)
+        recorder.close()
+
+        await asyncio.wait_for(running, timeout=1)
+
+        assert spend_logs.rounds == [("a",), ("b",)]
+
+    @pytest.mark.asyncio
     async def test_a_run_without_verdicts_writes_nothing(self) -> None:
         spend_logs: Final = _SpendLogs()
         recorder: Final = ResponseCheckRecorder(spend_logs.write, attempts=3, retry_seconds=0)

@@ -196,11 +196,19 @@ class ResponseCheckRecorder:
         while await self._round():
             pass
 
+    async def _written(self, checks: tuple[ResponseCheck, ...]) -> frozenset[str]:
+        """A failed write leaves the whole batch unwritten, so its verdicts are retried like rows not yet flushed."""
+        try:
+            return await self._write(checks)
+        except Exception as error:
+            verbose_proxy_logger.warning("QoS response checks could not be written, retrying: %s", error)
+            return frozenset()
+
     async def _round(self) -> bool:
         await asyncio.sleep(self._retry_seconds)
         closed: Final = self._closed.is_set()
         batch: Final = tuple(self._queue.get_nowait() for _ in range(self._queue.qsize()))
-        written: Final = await self._write(tuple(item.check for item in batch)) if batch else frozenset[str]()
+        written: Final = await self._written(tuple(item.check for item in batch)) if batch else frozenset[str]()
         unwritten: Final = tuple(item for item in batch if item.check.call_id not in written)
         retry: Final = tuple(
             _Pending(check=item.check, attempts_left=item.attempts_left - 1)
