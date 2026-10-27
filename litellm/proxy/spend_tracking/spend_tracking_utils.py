@@ -53,6 +53,7 @@ from litellm.proxy._types import (
     SpendLogsPayload,
     SpendLogsRouterMetadata,
 )
+from litellm.proxy.management_endpoints.qos_media import VIDEO_STATUS_CALL_TYPES, qos_media
 from litellm.proxy.route_llm_request import ProxyModelNotFoundError
 from litellm.proxy.spend_tracking.spend_log_error_logger import spend_log_error
 from litellm.proxy.utils import PrismaClient, hash_token
@@ -167,6 +168,7 @@ _STAMPED_METADATA_KEYS: Final = frozenset(
         "autorouter_baseline_observation",
         "used_client_oauth_token",
         "litellm_roi_estimator",
+        "qos_media",
     )
 )
 
@@ -192,6 +194,7 @@ def _get_spend_logs_metadata(
     router_metadata: SpendLogsRouterMetadata | None = None,
     azure_spillover: AzureSpillover | None = None,
     used_client_oauth_token: bool | None = None,
+    qos_media: Mapping[str, JsonValue] | None = None,
 ) -> SpendLogsMetadata:
     if metadata is None:
         return SpendLogsMetadata(
@@ -238,6 +241,7 @@ def _get_spend_logs_metadata(
             router_metadata=router_metadata,
             azure_spillover=azure_spillover,
             used_client_oauth_token=used_client_oauth_token,
+            **({} if qos_media is None else {"qos_media": qos_media}),
         )
     verbose_proxy_logger.debug(
         "getting payload for SpendLogs, available keys in metadata: " + str(list(metadata.keys()))
@@ -255,6 +259,7 @@ def _get_spend_logs_metadata(
         azure_spillover=azure_spillover,
         used_client_oauth_token=used_client_oauth_token,
         litellm_roi_estimator=metadata.get("litellm_roi_estimator") is True,
+        **({} if qos_media is None else {"qos_media": qos_media}),
     )
     _raw_key: Final = clean_metadata.get("user_api_key")
     _trusted_hash: Final = metadata.get("user_api_key_hash")
@@ -301,6 +306,10 @@ def get_spend_logs_id(call_type: str, response_obj: dict, kwargs: dict) -> str |
     )
     if resolved_id is not None and call_type == CallTypes.aretrieve_batch.value:
         return f"{resolved_id}{BATCH_COST_REQUEST_ID_SUFFIX}"
+    video_status: Final = response_obj.get("status") if call_type in VIDEO_STATUS_CALL_TYPES else None
+    if resolved_id is not None and isinstance(video_status, str):
+        # every poll of a video returns its id; one row per state it reaches keeps the finished state
+        return f"{resolved_id}_{video_status}"
     return resolved_id
 
 
@@ -516,6 +525,7 @@ def get_logging_payload(
     if kwargs is None:
         kwargs = {}
 
+    media: Final = qos_media(kwargs.get("call_type"), kwargs.get("input"), response_obj)
     rejected_as_unknown_model: Final = isinstance(response_obj, ProxyModelNotFoundError)
     if response_obj is None:
         response_obj = {}
@@ -746,6 +756,7 @@ def get_logging_payload(
             and isinstance(standard_logging_payload.get("hidden_params"), Mapping)
             else None,
         ),
+        qos_media=media,
     )
 
     special_usage_fields: Final = ["completion_tokens", "prompt_tokens", "total_tokens"]

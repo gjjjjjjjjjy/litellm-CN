@@ -24,6 +24,15 @@ from litellm.proxy.management_endpoints.qos_health import (
     health_probe,
     probe_key,
 )
+from litellm.proxy.management_endpoints.qos_media_summary import (
+    AUDIO_ROWS,
+    AUDIO_SUMMARY_SQL,
+    VIDEO_ROWS,
+    VIDEO_SUMMARY_SQL,
+    audio_metrics,
+    deployment_modalities,
+    video_metrics,
+)
 from litellm.proxy.management_endpoints.qos_requests import (
     REQUEST_COUNT_ROWS,
     REQUEST_COUNT_SQL,
@@ -77,6 +86,7 @@ from litellm.types.qos import (
     QosBenchmarkRequests,
     QosBenchmarkStarted,
     QosHealthResponse,
+    QosMediaResponse,
     QosSummaryResponse,
     QosTargetModel,
     QosTargetsResponse,
@@ -365,6 +375,40 @@ async def get_qos_trends(
         current=overall(current, window),
         previous=previous,
         series=trend_series(rows),
+    )
+
+
+@router.get(
+    "/qos/media",
+    tags=["qos"],
+    dependencies=[Depends(user_api_key_auth)],
+    response_model=QosMediaResponse,
+)
+async def get_qos_media(
+    user_api_key_dict: Annotated[UserAPIKeyAuth, Depends(user_api_key_auth)],
+    start_time: Annotated[datetime | None, Query(description="ISO 8601, defaults to 24 hours before end_time")] = None,
+    end_time: Annotated[datetime | None, Query(description="ISO 8601, defaults to now")] = None,
+) -> QosMediaResponse:
+    """Speech and transcription latency against audio length, and how video tasks end, queue and run."""
+    from litellm.proxy.proxy_server import llm_router, prisma_client
+
+    require_reader(user_api_key_dict)
+    if prisma_client is None:
+        raise HTTPException(status_code=500, detail=CommonProxyErrors.db_not_connected_error.value)
+    start, end = resolve_window(start_time, end_time, utc_now())
+    modalities: Final = deployment_modalities(llm_router)
+    groups: Final = deployment_model_groups(llm_router)
+    audio_rows: Final = AUDIO_ROWS.validate_python(
+        await prisma_client.db.query_raw(AUDIO_SUMMARY_SQL, start, end, modalities, groups)
+    )
+    video_rows: Final = VIDEO_ROWS.validate_python(
+        await prisma_client.db.query_raw(VIDEO_SUMMARY_SQL, start, end, modalities, groups)
+    )
+    return QosMediaResponse(
+        start_time=start,
+        end_time=end,
+        audio=tuple(audio_metrics(row) for row in audio_rows),
+        video=tuple(video_metrics(row) for row in video_rows),
     )
 
 

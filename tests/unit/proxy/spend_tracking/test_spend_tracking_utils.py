@@ -1,12 +1,15 @@
 import asyncio
 import datetime
+import io
 import json
+import wave
 from collections.abc import Callable, Mapping
 from datetime import timezone
 from types import MappingProxyType
 from typing import Any, Final, cast
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import httpx
 import pytest
 from pydantic import TypeAdapter
 from typing_extensions import NotRequired, ReadOnly, TypedDict
@@ -53,6 +56,7 @@ from litellm.proxy.spend_tracking.spend_tracking_utils import (
     spend_log_row_with_retained_metadata,
 )
 from litellm.proxy.utils import hash_token
+from litellm.types.llms.openai import HttpxBinaryResponseContent
 from litellm.types.router import GenericLiteLLMParams
 from litellm.types.utils import (
     StandardLoggingHiddenParams,
@@ -143,6 +147,54 @@ def test_get_logging_payload_only_keeps_a_first_token_time_for_streamed_calls(st
     )
 
     assert payload["completionStartTime"] == (first_token_time if stream else end_time)
+
+
+def _logged_qos_media(call_type: str, response_obj: object) -> object:
+    now: Final = datetime.datetime.now(timezone.utc)
+    payload: Final = get_logging_payload(
+        kwargs={
+            "model": "moark/IndexTTS-2",
+            "call_type": call_type,
+            "input": "你好",
+            "litellm_params": {"metadata": {"user_api_key": "test-key", "qos_media": {"audio_seconds": 999}}},
+        },
+        response_obj=response_obj,
+        start_time=now,
+        end_time=now,
+    )
+    return json.loads(payload["metadata"]).get("qos_media")
+
+
+def test_get_logging_payload_measures_speech_audio_for_service_quality_instead_of_trusting_the_client() -> None:
+    audio: Final = io.BytesIO()
+    with wave.open(audio, "wb") as clip:
+        clip.setnchannels(1)
+        clip.setsampwidth(2)
+        clip.setframerate(16000)
+        clip.writeframes(b"\x00\x00" * 4000)
+
+    assert _logged_qos_media("aspeech", HttpxBinaryResponseContent(httpx.Response(200, content=audio.getvalue()))) == {
+        "input_chars": 2,
+        "audio_seconds": 0.25,
+        "sample_rate": 16000,
+        "channels": 1,
+        "format": "wav",
+    }
+
+
+def test_video_status_polls_get_one_spend_log_row_per_state_so_the_finished_state_is_kept() -> None:
+    poll_ids: Final = [
+        get_spend_logs_id("avideo_status", {"id": "video_abc", "status": status}, {})
+        for status in ("in_progress", "in_progress", "completed")
+    ]
+
+    assert poll_ids == ["video_abc_in_progress", "video_abc_in_progress", "video_abc_completed"]
+    assert get_spend_logs_id("avideo_generation", {"id": "video_abc", "status": "queued"}, {}) == "video_abc"
+    assert get_spend_logs_id("avideo_status", {}, {"litellm_call_id": "call-1"}) == "call-1", "a failed poll"
+
+
+def test_get_logging_payload_drops_a_client_supplied_qos_media_on_calls_it_does_not_measure() -> None:
+    assert _logged_qos_media("acompletion", litellm.ModelResponse(id="chatcmpl-test", choices=[])) is None
 
 
 class _HashingCache(litellm.Cache):

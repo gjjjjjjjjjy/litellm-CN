@@ -8,10 +8,12 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+import litellm
 from litellm.llms.openai_like.json_loader import JSONProviderRegistry
 from litellm.proxy._types import CommonProxyErrors, LitellmUserRoles, UserAPIKeyAuth
 from litellm.proxy.auth.user_api_key_auth import user_api_key_auth
 from litellm.proxy.management_endpoints.qos_endpoints import router
+from litellm.proxy.management_endpoints.qos_media_summary import AUDIO_SUMMARY_SQL, VIDEO_SUMMARY_SQL
 from litellm.proxy.management_endpoints.qos_requests import REQUEST_COUNT_SQL, REQUESTS_SQL
 from litellm.proxy.management_endpoints.qos_response_check import RECORD_RESPONSE_CHECKS_SQL, ResponseCheck
 from litellm.proxy.management_endpoints.qos_summary import (
@@ -101,7 +103,14 @@ def _client(role: LitellmUserRoles | None) -> TestClient:
     return TestClient(app)
 
 
-_READ_PATHS: Final = ("/qos/summary", "/qos/trends", "/qos/health", "/qos/benchmarks", "/qos/benchmarks/qos-run-1")
+_READ_PATHS: Final = (
+    "/qos/summary",
+    "/qos/trends",
+    "/qos/media",
+    "/qos/health",
+    "/qos/benchmarks",
+    "/qos/benchmarks/qos-run-1",
+)
 
 
 class TestReadAccess:
@@ -489,6 +498,104 @@ class TestAllHistory:
         assert response.status_code == 400
         assert response.json()["detail"] == f"The time window must not exceed {QOS_MAX_WINDOW.days} days"
         prisma.db.query_raw.assert_not_awaited()
+
+
+class TestMediaEndpoint:
+    def test_audio_and_video_metrics_are_read_with_each_deployments_configured_modality(self) -> None:
+        llm_router: Final = litellm.Router(
+            model_list=[
+                {
+                    "model_name": "IndexTTS-2",
+                    "litellm_params": {"model": "moark/IndexTTS-2", "api_key": "k"},
+                    "model_info": {"id": "tts-node", "mode": "audio_speech"},
+                },
+                {
+                    "model_name": "LTX-2",
+                    "litellm_params": {"model": "moark/LTX-2", "api_key": "k"},
+                    "model_info": {"id": "video-node", "mode": "video_generation"},
+                },
+                {
+                    "model_name": "qwen3.8-27b",
+                    "litellm_params": {"model": "moark/qwen3.8-27b", "api_key": "k"},
+                    "model_info": {"id": "chat-node", "mode": "chat"},
+                },
+            ]
+        )
+        audio_row: Final = {
+            "model_group": "IndexTTS-2",
+            "modality": "speech",
+            "requests": 5,
+            "failed_requests": 1,
+            "audio_seconds": 12.5,
+            "input_chars": 60,
+            "latency_p50": 2100.0,
+            "latency_p95": 3300.0,
+            "latency_p99": 3400.0,
+            "rtf_p50": 0.62,
+            "rtf_p95": 0.91,
+            "rtf_p99": 0.95,
+        }
+        video_row: Final = {
+            "model_group": "LTX-2",
+            "submitted": 3,
+            "failed_submissions": 1,
+            "succeeded": 1,
+            "failed": 0,
+            "cancelled": 0,
+            "queue_p50": 4000.0,
+            "queue_p95": 4000.0,
+            "queue_p99": 4000.0,
+            "run_p50": 61000.0,
+            "run_p95": 61000.0,
+            "run_p99": 61000.0,
+            "task_price": 0.9,
+        }
+        prisma = MagicMock()
+        prisma.db.query_raw = AsyncMock(side_effect=[[audio_row], [video_row]])
+
+        with (
+            patch("litellm.proxy.proxy_server.prisma_client", prisma),
+            patch("litellm.proxy.proxy_server.llm_router", llm_router),
+        ):
+            response = _client(LitellmUserRoles.INTERNAL_USER).get(
+                "/qos/media", params={"start_time": "2026-10-27T00:00:00", "end_time": "2026-10-27T12:00:00"}
+            )
+
+        assert response.status_code == 200, response.text
+        assert response.json() == {
+            "start_time": "2026-10-27T00:00:00Z",
+            "end_time": "2026-10-27T12:00:00Z",
+            "audio": [
+                {
+                    "model_group": "IndexTTS-2",
+                    "modality": "speech",
+                    "requests": 5,
+                    "failed_requests": 1,
+                    "audio_seconds": 12.5,
+                    "input_chars": 60,
+                    "latency_ms": {"p50": 2100.0, "p95": 3300.0, "p99": 3400.0},
+                    "real_time_factor": {"p50": 0.62, "p95": 0.91, "p99": 0.95},
+                }
+            ],
+            "video": [
+                {
+                    "model_group": "LTX-2",
+                    "submitted": 3,
+                    "failed_submissions": 1,
+                    "succeeded": 1,
+                    "failed": 0,
+                    "cancelled": 0,
+                    "queue_ms": {"p50": 4000.0, "p95": 4000.0, "p99": 4000.0},
+                    "run_ms": {"p50": 61000.0, "p95": 61000.0, "p99": 61000.0},
+                    "task_price": 0.9,
+                }
+            ],
+        }
+        audio_call, video_call = (call.args for call in prisma.db.query_raw.await_args_list)
+        assert (audio_call[0], video_call[0]) == (AUDIO_SUMMARY_SQL, VIDEO_SUMMARY_SQL)
+        assert audio_call[1:3] == video_call[1:3] == (datetime(2026, 10, 27, 0), datetime(2026, 10, 27, 12))
+        assert json.loads(audio_call[3]) == json.loads(video_call[3]) == {"tts-node": "speech", "video-node": "video"}
+        assert json.loads(audio_call[4])["video-node"] == "LTX-2"
 
 
 class TestHealthEndpoint:
