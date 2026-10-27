@@ -145,6 +145,48 @@ async def test_update_database_attributes_router_rejected_failure_to_model_group
     assert payload["custom_llm_provider"] == "openai"
 
 
+@pytest.mark.asyncio
+async def test_a_non_streamed_row_sends_its_first_token_time_to_the_database_exactly_like_its_end_time():
+    db_writer = DBSpendUpdateWriter()
+    db_writer._insert_spend_log_to_db = AsyncMock()
+    db_writer.add_spend_log_transaction_to_daily_user_transaction = AsyncMock()
+    end_time: Final = datetime(2026, 10, 27, 7, 40, 40, 748712, tzinfo=timezone.utc)
+
+    with (
+        patch(
+            "litellm.proxy.proxy_server.disable_spend_logs", True
+        ),  # test-quality-ok: update_database reads this proxy_server module global at call time; no injection seam
+        patch(
+            "litellm.proxy.proxy_server.prisma_client", MagicMock()
+        ),  # test-quality-ok: update_database reads this proxy_server module global at call time; no injection seam
+        patch(
+            "litellm.proxy.proxy_server.user_api_key_cache", MagicMock()
+        ),  # test-quality-ok: update_database reads this proxy_server module global at call time; no injection seam
+        patch(
+            "litellm.proxy.proxy_server.litellm_proxy_budget_name", "test-budget"
+        ),  # test-quality-ok: update_database reads this proxy_server module global at call time; no injection seam
+    ):
+        await db_writer.update_database(
+            token="test-token",
+            user_id="test-user",
+            end_user_id=None,
+            team_id=None,
+            org_id=None,
+            kwargs={"model": "qwen3.8-27b", "litellm_params": {"metadata": {"user_api_key": "test-token"}}},
+            completion_response=litellm.ModelResponse(id="chatcmpl-test", choices=[]),
+            start_time=end_time - timedelta(seconds=2),
+            end_time=end_time,
+            response_cost=0.0,
+        )
+        await asyncio.sleep(0)
+
+    payload: Final = db_writer.add_spend_log_transaction_to_daily_user_transaction.call_args[1]["payload"]
+    assert payload["completionStartTime"] == payload["endTime"] == end_time.isoformat(), (
+        "Postgres rounds an ISO string to the millisecond but the client truncates a datetime, so a non-streamed "
+        "row whose two times take different paths looks streamed and is counted in TTFT"
+    )
+
+
 def _tool_call_response(*names: str) -> object:
     from types import SimpleNamespace
 
