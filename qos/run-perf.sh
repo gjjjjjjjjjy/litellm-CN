@@ -14,7 +14,7 @@ concurrency=("$@")
 base_url="${LITELLM_BASE_URL:-http://host.docker.internal:4000}"
 requests_per_worker="${QOS_REQUESTS_PER_WORKER:-8}"
 max_tokens="${QOS_MAX_TOKENS:-512}"
-tag="qos-$(date +%Y%m%d-%H%M%S)-$(printf '%s' "$model" | tr -c 'A-Za-z0-9._-' '-')"
+tag="qos-$(date +%Y%m%d-%H%M%S)-$(printf '%s' "$model" | tr -c 'A-Za-z0-9.-' '-')"
 numbers=()
 for parallel in "${concurrency[@]}"; do
   numbers+=("$((parallel * requests_per_worker))")
