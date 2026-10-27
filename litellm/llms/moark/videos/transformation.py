@@ -5,22 +5,21 @@ A request with an input image goes to image-to-video (LTX-2, Wan2_2-I2V-A14B), a
 (MiniMax-H3). Model-specific fields such as seed, num_frames or task are sent unchanged.
 """
 
+import io
 import json
 from collections.abc import Mapping
 from datetime import datetime
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Any, Final
+from typing import TYPE_CHECKING, Final
 
 import httpx
-from httpx._types import RequestFiles
+from httpx._types import FileTypes, RequestFiles
 from pydantic import ConfigDict
 
-import litellm
 from litellm.images.utils import ImageEditRequestUtils
 from litellm.litellm_core_utils.url_utils import encode_url_path_segment
 from litellm.llms.base_llm.chat.transformation import BaseLLMException
 from litellm.llms.base_llm.videos.transformation import BaseVideoConfig
-from litellm.llms.custom_httpx.http_handler import get_async_httpx_client, get_httpx_client
 from litellm.llms.moark.common_utils import MoarkError, moark_api_base, moark_auth_headers
 from litellm.types.qos import PROVIDER_TASK_HIDDEN_PARAM, QosProviderTask
 from litellm.types.router import GenericLiteLLMParams
@@ -29,9 +28,9 @@ from litellm.types.videos.utils import encode_video_id_with_provider, extract_or
 
 if TYPE_CHECKING:
     from litellm.litellm_core_utils.litellm_logging import Logging as LiteLLMLoggingObj
-else:
-    LiteLLMLoggingObj = Any
+    from litellm.llms.custom_httpx.http_handler import HTTPHandler
 
+DOWNLOAD_TIMEOUT_SECONDS: Final = 300.0
 _VIDEO_STATUS: Final = MappingProxyType(
     {
         "waiting": "queued",
@@ -78,14 +77,12 @@ def _form_value(value: object) -> str:
     return value if isinstance(value, str) else json.dumps(value)
 
 
-def _image_file(image: object) -> object:
-    if isinstance(image, tuple):
-        return image
-    return (
-        getattr(image, "name", None) or "image.png",
-        image,
-        ImageEditRequestUtils.get_image_content_type(image),
-    )
+def _image_file(image: object) -> FileTypes:
+    """An uploaded input_reference, sent as a named part with its content type; Moark reads the type from it."""
+    if not isinstance(image, bytes | io.BytesIO | io.BufferedReader):
+        raise MoarkError(status_code=400, message="input_reference must be image bytes, a binary file or an image URL")
+    content_type: Final = ImageEditRequestUtils.get_image_content_type(image)
+    return f"image.{content_type.rpartition('/')[2]}", image, content_type
 
 
 def _file_url(task: MoarkTask) -> str:
@@ -119,7 +116,7 @@ def _video_object(task: MoarkTask, model: str | None, custom_llm_provider: str |
 
 
 class MoarkVideoConfig(BaseVideoConfig):
-    def get_supported_openai_params(self, model: str) -> list:
+    def get_supported_openai_params(self, model: str) -> list[str]:  # mutable-ok: mirrors override contract
         return ["input_reference", "seconds", "size", "user", "extra_headers"]
 
     def map_openai_params(
@@ -127,7 +124,7 @@ class MoarkVideoConfig(BaseVideoConfig):
         video_create_optional_params: VideoCreateOptionalRequestParams,
         model: str,
         drop_params: bool,
-    ) -> dict:
+    ) -> dict[str, object]:  # mutable-ok: the caller merges extra_body into the dict it gets back
         return {
             **{key: value for key, value in video_create_optional_params.items() if key not in _NOT_SENT},
             **_duration_field(video_create_optional_params.get("seconds")),
@@ -136,14 +133,14 @@ class MoarkVideoConfig(BaseVideoConfig):
 
     def validate_environment(
         self,
-        headers: dict,
+        headers: Mapping[str, str],
         model: str,
         api_key: str | None = None,
         litellm_params: GenericLiteLLMParams | None = None,
-    ) -> dict:
+    ) -> dict[str, str]:  # mutable-ok: the handler adds extra headers to the dict it gets back
         return {**headers, **moark_auth_headers(api_key or (litellm_params.api_key if litellm_params else None))}
 
-    def get_complete_url(self, model: str, api_base: str | None, litellm_params: dict) -> str:
+    def get_complete_url(self, model: str, api_base: str | None, litellm_params: Mapping[str, object]) -> str:
         return moark_api_base(api_base)
 
     def transform_video_create_request(
@@ -151,10 +148,10 @@ class MoarkVideoConfig(BaseVideoConfig):
         model: str,
         prompt: str,
         api_base: str,
-        video_create_optional_request_params: dict,
+        video_create_optional_request_params: Mapping[str, object],
         litellm_params: GenericLiteLLMParams,
-        headers: dict,
-    ) -> tuple[dict, RequestFiles, str]:
+        headers: Mapping[str, str],
+    ) -> tuple[dict[str, object], RequestFiles, str]:  # mutable-ok: mirrors override contract
         image: Final = video_create_optional_request_params.get("input_reference")
         fields: Final = {
             "model": model,
@@ -176,9 +173,9 @@ class MoarkVideoConfig(BaseVideoConfig):
         self,
         model: str,
         raw_response: httpx.Response,
-        logging_obj: LiteLLMLoggingObj,
+        logging_obj: "LiteLLMLoggingObj",
         custom_llm_provider: str | None = None,
-        request_data: dict | None = None,
+        request_data: Mapping[str, object] | None = None,
     ) -> VideoObject:
         return _video_object(_task(raw_response), model, custom_llm_provider)
 
@@ -187,16 +184,16 @@ class MoarkVideoConfig(BaseVideoConfig):
         video_id: str,
         api_base: str,
         litellm_params: GenericLiteLLMParams,
-        headers: dict,
-    ) -> tuple[str, dict]:
+        headers: Mapping[str, str],
+    ) -> tuple[str, dict[str, object]]:  # mutable-ok: mirrors override contract
         return f"{api_base}/task/{_task_path(video_id)}", {}
 
     def transform_video_status_retrieve_response(
         self,
         raw_response: httpx.Response,
-        logging_obj: LiteLLMLoggingObj,
+        logging_obj: "LiteLLMLoggingObj",
         custom_llm_provider: str | None = None,
-        client: object = None,
+        client: "HTTPHandler | None" = None,
     ) -> VideoObject:
         return _video_object(_task(raw_response), None, custom_llm_provider)
 
@@ -205,41 +202,81 @@ class MoarkVideoConfig(BaseVideoConfig):
         video_id: str,
         api_base: str,
         litellm_params: GenericLiteLLMParams,
-        headers: dict,
+        headers: Mapping[str, str],
         variant: str | None = None,
-    ) -> tuple[str, dict]:
+    ) -> tuple[str, dict[str, object]]:  # mutable-ok: mirrors override contract
         return f"{api_base}/task/{_task_path(video_id)}", {}
 
-    def transform_video_content_response(self, raw_response: httpx.Response, logging_obj: LiteLLMLoggingObj) -> bytes:
-        return _downloaded(get_httpx_client().get(_file_url(_task(raw_response))))
+    def transform_video_content_response(self, raw_response: httpx.Response, logging_obj: "LiteLLMLoggingObj") -> bytes:
+        file_url: Final = _file_url(_task(raw_response))
+        return _downloaded(httpx.get(file_url, timeout=DOWNLOAD_TIMEOUT_SECONDS, follow_redirects=True))
 
     async def async_transform_video_content_response(
         self,
         raw_response: httpx.Response,
-        logging_obj: LiteLLMLoggingObj,
+        logging_obj: "LiteLLMLoggingObj",
     ) -> bytes:
         file_url: Final = _file_url(_task(raw_response))
-        return _downloaded(await get_async_httpx_client(llm_provider=litellm.LlmProviders.MOARK).get(file_url))
+        async with httpx.AsyncClient(timeout=DOWNLOAD_TIMEOUT_SECONDS, follow_redirects=True) as client:
+            return _downloaded(await client.get(file_url))
 
-    def transform_video_remix_request(self, video_id, prompt, api_base, litellm_params, headers, extra_body=None):
+    def transform_video_remix_request(
+        self,
+        video_id: str,
+        prompt: str,
+        api_base: str,
+        litellm_params: GenericLiteLLMParams,
+        headers: Mapping[str, str],
+        extra_body: Mapping[str, object] | None = None,
+    ) -> tuple[str, dict[str, object]]:  # mutable-ok: mirrors override contract
         raise NotImplementedError("Moark has no video remix")
 
-    def transform_video_remix_response(self, raw_response, logging_obj, custom_llm_provider=None):
+    def transform_video_remix_response(
+        self,
+        raw_response: httpx.Response,
+        logging_obj: "LiteLLMLoggingObj",
+        custom_llm_provider: str | None = None,
+    ) -> VideoObject:
         raise NotImplementedError("Moark has no video remix")
 
     def transform_video_list_request(
-        self, api_base, litellm_params, headers, after=None, limit=None, order=None, extra_query=None
-    ):
+        self,
+        api_base: str,
+        litellm_params: GenericLiteLLMParams,
+        headers: Mapping[str, str],
+        after: str | None = None,
+        limit: int | None = None,
+        order: str | None = None,
+        extra_query: Mapping[str, object] | None = None,
+    ) -> tuple[str, dict[str, object]]:  # mutable-ok: mirrors override contract
         raise NotImplementedError("Moark has no video list")
 
-    def transform_video_list_response(self, raw_response, logging_obj, custom_llm_provider=None):
+    def transform_video_list_response(
+        self,
+        raw_response: httpx.Response,
+        logging_obj: "LiteLLMLoggingObj",
+        custom_llm_provider: str | None = None,
+    ) -> dict[str, str]:  # mutable-ok: mirrors override contract
         raise NotImplementedError("Moark has no video list")
 
-    def transform_video_delete_request(self, video_id, api_base, litellm_params, headers):
+    def transform_video_delete_request(
+        self,
+        video_id: str,
+        api_base: str,
+        litellm_params: GenericLiteLLMParams,
+        headers: Mapping[str, str],
+    ) -> tuple[str, dict[str, object]]:  # mutable-ok: mirrors override contract
         raise NotImplementedError("Moark cancels a task with POST /task/{id}/cancel; the videos DELETE route can't")
 
-    def transform_video_delete_response(self, raw_response, logging_obj):
+    def transform_video_delete_response(
+        self, raw_response: httpx.Response, logging_obj: "LiteLLMLoggingObj"
+    ) -> VideoObject:
         raise NotImplementedError("Moark cancels a task with POST /task/{id}/cancel; the videos DELETE route can't")
 
-    def get_error_class(self, error_message: str, status_code: int, headers: dict | httpx.Headers) -> BaseLLMException:
+    def get_error_class(
+        self,
+        error_message: str,
+        status_code: int,
+        headers: dict[str, str] | httpx.Headers,  # mutable-ok: BaseLLMException takes headers as a dict
+    ) -> BaseLLMException:
         return MoarkError(status_code=status_code, message=error_message, headers=headers)

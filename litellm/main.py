@@ -8411,7 +8411,7 @@ def speech(
     elif custom_llm_provider == "moark":
         from litellm.llms.moark.text_to_speech.transformation import MoarkTextToSpeechConfig
 
-        response = base_llm_http_handler.text_to_speech_handler(
+        response = base_llm_http_handler.text_to_speech_handler(  # rebind-ok: mirrors sibling provider branches
             model=model,
             input=input,
             voice=voice if isinstance(voice, str) else None,

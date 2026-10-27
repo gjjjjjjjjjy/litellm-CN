@@ -61,6 +61,7 @@ from litellm.proxy.management_endpoints.qos_summary import (
     deployment_metrics,
     group_metrics,
     level_interference,
+    query_rows,
     resolve_window,
     utc_now,
 )
@@ -115,7 +116,7 @@ async def _metrics_window(
     if start_time is not None:
         raise HTTPException(status_code=400, detail="all_time and start_time cannot be combined")
     end: Final = as_utc_naive(now if end_time is None else end_time)
-    (history,) = HISTORY_START_ROWS.validate_python(await prisma_client.db.query_raw(HISTORY_START_SQL, end))
+    (history,) = HISTORY_START_ROWS.validate_python(await query_rows(prisma_client, HISTORY_START_SQL, end))
     return (end if history.start_time is None else as_utc_naive(history.start_time)), end
 
 
@@ -144,10 +145,10 @@ async def get_qos_summary(
     start, end = await _metrics_window(prisma_client, start_time, end_time, all_time)
     groups: Final = deployment_model_groups(llm_router)
     group_rows: Final = SUMMARY_ROWS.validate_python(
-        await prisma_client.db.query_raw(MODEL_GROUP_SUMMARY_SQL, start, end, model_group, tag, groups)
+        await query_rows(prisma_client, MODEL_GROUP_SUMMARY_SQL, start, end, model_group, tag, groups)
     )
     deployment_rows: Final = SUMMARY_ROWS.validate_python(
-        await prisma_client.db.query_raw(DEPLOYMENT_SUMMARY_SQL, start, end, model_group, tag, groups)
+        await query_rows(prisma_client, DEPLOYMENT_SUMMARY_SQL, start, end, model_group, tag, groups)
     )
     return QosSummaryResponse(
         start_time=start,
@@ -225,7 +226,7 @@ async def list_qos_benchmarks(
         raise HTTPException(status_code=500, detail=CommonProxyErrors.db_not_connected_error.value)
     start, end = resolve_window(start_time, end_time, utc_now(), QOS_RUNS_DEFAULT_WINDOW)
     runs: Final = BENCHMARK_RUNS.validate_python(
-        await prisma_client.db.query_raw(BENCHMARK_RUNS_SQL, start, end, deployment_model_groups(llm_router))
+        await query_rows(prisma_client, BENCHMARK_RUNS_SQL, start, end, deployment_model_groups(llm_router))
     )
     return QosBenchmarkListResponse(runs=tuple(runs))
 
@@ -251,16 +252,16 @@ async def get_qos_benchmark(
     start: Final = end - QOS_MAX_WINDOW
     groups: Final = deployment_model_groups(llm_router)
     level_rows: Final = SUMMARY_ROWS.validate_python(
-        await prisma_client.db.query_raw(BENCHMARK_LEVEL_SUMMARY_SQL, start, end, None, run_id, groups)
+        await query_rows(prisma_client, BENCHMARK_LEVEL_SUMMARY_SQL, start, end, None, run_id, groups)
     )
     deployment_rows: Final = SUMMARY_ROWS.validate_python(
-        await prisma_client.db.query_raw(DEPLOYMENT_SUMMARY_SQL, start, end, None, run_id, groups)
+        await query_rows(prisma_client, DEPLOYMENT_SUMMARY_SQL, start, end, None, run_id, groups)
     )
     deployment_level_rows: Final = SUMMARY_ROWS.validate_python(
-        await prisma_client.db.query_raw(BENCHMARK_DEPLOYMENT_LEVEL_SUMMARY_SQL, start, end, None, run_id, groups)
+        await query_rows(prisma_client, BENCHMARK_DEPLOYMENT_LEVEL_SUMMARY_SQL, start, end, None, run_id, groups)
     )
     interference_rows: Final = INTERFERENCE_ROWS.validate_python(
-        await prisma_client.db.query_raw(BENCHMARK_INTERFERENCE_SQL, start, end, run_id)
+        await query_rows(prisma_client, BENCHMARK_INTERFERENCE_SQL, start, end, run_id)
     )
     interference: Final = {(row.model_id, row.level_tag): row for row in interference_rows}
     levels: Final = (
@@ -307,9 +308,9 @@ async def get_qos_benchmark_requests(
     if prisma_client is None:
         raise HTTPException(status_code=500, detail=CommonProxyErrors.db_not_connected_error.value)
     since: Final = utc_now() - QOS_MAX_WINDOW
-    (count,) = REQUEST_COUNT_ROWS.validate_python(await prisma_client.db.query_raw(REQUEST_COUNT_SQL, since, run_id))
+    (count,) = REQUEST_COUNT_ROWS.validate_python(await query_rows(prisma_client, REQUEST_COUNT_SQL, since, run_id))
     rows: Final = REQUEST_ROWS.validate_python(
-        await prisma_client.db.query_raw(REQUESTS_SQL, since, run_id, page_size, (page - 1) * page_size)
+        await query_rows(prisma_client, REQUESTS_SQL, since, run_id, page_size, (page - 1) * page_size)
     )
     return QosBenchmarkRequests(
         requests=tuple(request_log(row) for row in rows), total=count.total, page=page, page_size=page_size
@@ -353,18 +354,18 @@ async def get_qos_trends(
             previous=EMPTY_HISTORY_OVERALL,
             series=(),
         )
-    (current,) = OVERALL_ROWS.validate_python(await prisma_client.db.query_raw(OVERALL_SQL, start, end, tag))
+    (current,) = OVERALL_ROWS.validate_python(await query_rows(prisma_client, OVERALL_SQL, start, end, tag))
     previous: Final = (
         EMPTY_HISTORY_OVERALL
         if all_time
         else overall(
-            OVERALL_ROWS.validate_python(await prisma_client.db.query_raw(OVERALL_SQL, start - window, start, tag))[0],
+            OVERALL_ROWS.validate_python(await query_rows(prisma_client, OVERALL_SQL, start - window, start, tag))[0],
             window,
         )
     )
     rows: Final = TREND_ROWS.validate_python(
-        await prisma_client.db.query_raw(
-            TREND_SQL[group_by], start, end, bucket, tag, deployment_model_groups(llm_router)
+        await query_rows(
+            prisma_client, TREND_SQL[group_by], start, end, bucket, tag, deployment_model_groups(llm_router)
         )
     )
     return QosTrendsResponse(
@@ -399,10 +400,10 @@ async def get_qos_media(
     modalities: Final = deployment_modalities(llm_router)
     groups: Final = deployment_model_groups(llm_router)
     audio_rows: Final = AUDIO_ROWS.validate_python(
-        await prisma_client.db.query_raw(AUDIO_SUMMARY_SQL, start, end, modalities, groups)
+        await query_rows(prisma_client, AUDIO_SUMMARY_SQL, start, end, modalities, groups)
     )
     video_rows: Final = VIDEO_ROWS.validate_python(
-        await prisma_client.db.query_raw(VIDEO_SUMMARY_SQL, start, end, modalities, groups)
+        await query_rows(prisma_client, VIDEO_SUMMARY_SQL, start, end, modalities, groups)
     )
     return QosMediaResponse(
         start_time=start,
@@ -464,9 +465,9 @@ async def get_qos_health(
         raise HTTPException(status_code=500, detail=CommonProxyErrors.db_not_connected_error.value)
     start, end = await _metrics_window(prisma_client, start_time, end_time, all_time)
     history: Final = HEALTH_HISTORY_ROWS.validate_python(
-        await prisma_client.db.query_raw(HEALTH_HISTORY_SQL, start, end)
+        await query_rows(prisma_client, HEALTH_HISTORY_SQL, start, end)
     )
-    probes: Final = HEALTH_PROBE_ROWS.validate_python(await prisma_client.db.query_raw(HEALTH_PROBES_SQL, start, end))
+    probes: Final = HEALTH_PROBE_ROWS.validate_python(await query_rows(prisma_client, HEALTH_PROBES_SQL, start, end))
     target_of: Final = deployment_target_lookup(llm_router)
     model_ids: Final = () if llm_router is None else tuple(llm_router.get_model_ids())
     current_probe_keys: Final = frozenset(
@@ -507,5 +508,5 @@ async def delete_qos_benchmark(
     if prisma_client is None:
         raise HTTPException(status_code=500, detail=CommonProxyErrors.db_not_connected_error.value)
     since: Final = utc_now() - QOS_MAX_WINDOW
-    (result,) = _DELETED_COUNT.validate_python(await prisma_client.db.query_raw(BENCHMARK_DELETE_SQL, since, run_id))
+    (result,) = _DELETED_COUNT.validate_python(await query_rows(prisma_client, BENCHMARK_DELETE_SQL, since, run_id))
     return QosBenchmarkDeleted(run_id=run_id, deleted_requests=result.deleted_requests)

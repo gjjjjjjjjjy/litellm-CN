@@ -1,3 +1,4 @@
+from collections.abc import Mapping
 from typing import Final
 
 from litellm.llms.base_llm.chat.transformation import BaseLLMException
@@ -20,13 +21,14 @@ def _registered() -> SimpleProviderConfig:
 
 def moark_api_base(api_base: str | None) -> str:
     config: Final = _registered()
+    registered_base: Final = config.base_url if isinstance(config.base_url, str) else ""
     configured: Final = api_base or (get_secret_str(config.api_base_env) if config.api_base_env else None)
-    return (configured or config.base_url).rstrip("/")
+    return (configured or registered_base).rstrip("/")
 
 
-def moark_auth_headers(api_key: str | None) -> dict[str, str]:
-    config: Final = _registered()
-    key: Final = api_key or get_secret_str(config.api_key_env)
+def moark_auth_headers(api_key: str | None) -> Mapping[str, str]:
+    key_env: Final = _registered().api_key_env
+    key: Final = api_key or get_secret_str(key_env)
     if key is None:
-        raise ValueError(f"Moark API key is required: set {config.api_key_env} or pass api_key")
+        raise ValueError(f"Moark API key is required: set {key_env} or pass api_key")
     return {"Authorization": f"Bearer {key}"}

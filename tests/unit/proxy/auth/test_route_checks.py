@@ -4723,17 +4723,23 @@ def test_route_matches_pattern():
 
 
 def _qos_routes() -> tuple[str, ...]:
+    from fastapi.routing import APIRoute
+
     from litellm.proxy.management_endpoints.qos_endpoints import router as qos_router
     from litellm.proxy.management_endpoints.qos_home_endpoints import router as qos_home_router
 
-    return tuple(sorted({route.path for route in (*qos_router.routes, *qos_home_router.routes)}))
+    return tuple(
+        sorted(
+            {route.path for route in (*qos_router.routes, *qos_home_router.routes) if isinstance(route, APIRoute)}
+        )
+    )
 
 
-@pytest.mark.parametrize(
-    "user_role", [LitellmUserRoles.INTERNAL_USER.value, LitellmUserRoles.INTERNAL_USER_VIEW_ONLY.value]
-)
-def test_internal_users_reach_every_service_quality_route_whose_handler_checks_the_role(user_role: str) -> None:
-    user_obj: Final = LiteLLM_UserTable(user_id="test_user", user_email="test@example.com", user_role=user_role)
+@pytest.mark.parametrize("user_role", [LitellmUserRoles.INTERNAL_USER, LitellmUserRoles.INTERNAL_USER_VIEW_ONLY])
+def test_internal_users_reach_every_service_quality_route_whose_handler_checks_the_role(
+    user_role: LitellmUserRoles,
+) -> None:
+    user_obj: Final = LiteLLM_UserTable(user_id="test_user", user_email="test@example.com", user_role=user_role.value)
     valid_token: Final = UserAPIKeyAuth(user_id="test_user", user_role=user_role)
     request: Final = MagicMock(spec=Request)
     request.query_params = {}

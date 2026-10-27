@@ -117,15 +117,20 @@ async def record_failed_login(prisma_client: "PrismaClient", user_id: str, now: 
     concurrent one locked it are refused with that lock instead, so parallel guesses cannot run the count past
     a temporary lock up to a permanent one.
     """
-    counted: Final = _UPDATED_ROWS.validate_python(
-        await prisma_client.db.query_raw(
-            RECORD_FAILED_LOGIN_SQL, user_id, PERMANENT_LOCK_AFTER, TEMPORARY_LOCK_EVERY, TEMPORARY_LOCK_MINUTES
-        )
+    counted: Final = await _metadata_rows(
+        prisma_client,
+        RECORD_FAILED_LOGIN_SQL,
+        user_id,
+        PERMANENT_LOCK_AFTER,
+        TEMPORARY_LOCK_EVERY,
+        TEMPORARY_LOCK_MINUTES,
     )
-    rows: Final = counted or _UPDATED_ROWS.validate_python(
-        await prisma_client.db.query_raw(CURRENT_LOGIN_LOCK_SQL, user_id)
-    )
+    rows: Final = counted or await _metadata_rows(prisma_client, CURRENT_LOGIN_LOCK_SQL, user_id)
     return account_lock(rows[0].metadata, now) if rows else None
+
+
+async def _metadata_rows(prisma_client: "PrismaClient", sql: str, *params: object) -> list[_UpdatedRow]:
+    return _UPDATED_ROWS.validate_python(await prisma_client.db.query_raw(sql, *params))
 
 
 async def clear_login_failures(prisma_client: "PrismaClient", user_id: str) -> None:

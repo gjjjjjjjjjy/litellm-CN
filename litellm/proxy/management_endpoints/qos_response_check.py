@@ -200,7 +200,7 @@ class ResponseCheckRecorder:
         """A failed write leaves the whole batch unwritten, so its verdicts are retried like rows not yet flushed."""
         try:
             return await self._write(checks)
-        except Exception as error:
+        except Exception as error:  # noqa: BLE001  # any failed write must leave the recorder running for later rounds
             verbose_proxy_logger.warning("QoS response checks could not be written, retrying: %s", error)
             return frozenset()
 

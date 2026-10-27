@@ -45,7 +45,13 @@ def test_speech_length_counts_the_audio_actually_received_when_the_wav_header_ov
     whole: Final = _wav(16000, 2, 16000)
     truncated: Final = whole[: len(whole) - 2 * 2 * 8000]
 
-    assert qos_media("speech", "好", _speech_reply(truncated))["audio_seconds"] == 0.5
+    assert qos_media("speech", "好", _speech_reply(truncated)) == {
+        "input_chars": 1,
+        "audio_seconds": 0.5,
+        "sample_rate": 16000,
+        "channels": 2,
+        "format": "wav",
+    }
 
 
 def test_mp3_speech_records_its_format_without_a_length() -> None:
@@ -57,7 +63,7 @@ def test_mp3_speech_records_its_format_without_a_length() -> None:
 
 def test_transcription_records_the_audio_length_litellm_measured() -> None:
     response: Final = TranscriptionResponse(text="你好")
-    response._hidden_params = {"audio_transcription_duration": 3.25}
+    response.hidden_params = {"audio_transcription_duration": 3.25}
 
     assert qos_media("atranscription", None, response) == {"audio_seconds": 3.25}
 

@@ -241,7 +241,7 @@ def _get_spend_logs_metadata(
             router_metadata=router_metadata,
             azure_spillover=azure_spillover,
             used_client_oauth_token=used_client_oauth_token,
-            **({} if qos_media is None else {"qos_media": qos_media}),
+            qos_media=qos_media,
         )
     verbose_proxy_logger.debug(
         "getting payload for SpendLogs, available keys in metadata: " + str(list(metadata.keys()))
@@ -259,7 +259,7 @@ def _get_spend_logs_metadata(
         azure_spillover=azure_spillover,
         used_client_oauth_token=used_client_oauth_token,
         litellm_roi_estimator=metadata.get("litellm_roi_estimator") is True,
-        **({} if qos_media is None else {"qos_media": qos_media}),
+        qos_media=qos_media,
     )
     _raw_key: Final = clean_metadata.get("user_api_key")
     _trusted_hash: Final = metadata.get("user_api_key_hash")
@@ -294,7 +294,7 @@ def _get_spend_logs_metadata(
 BATCH_COST_REQUEST_ID_SUFFIX: Final = "_batch_cost"
 
 
-def get_spend_logs_id(call_type: str, response_obj: dict, kwargs: dict) -> str | None:
+def get_spend_logs_id(call_type: str, response_obj: Mapping[str, object], kwargs: Mapping[str, object]) -> str | None:
     standard_logging_payload = kwargs.get("standard_logging_object")
     candidate_ids: Final = (
         response_obj.get("id"),
@@ -525,7 +525,7 @@ def get_logging_payload(
     if kwargs is None:
         kwargs = {}
 
-    media: Final = qos_media(kwargs.get("call_type"), kwargs.get("input"), response_obj)
+    original_response: Final[object] = response_obj
     rejected_as_unknown_model: Final = isinstance(response_obj, ProxyModelNotFoundError)
     if response_obj is None:
         response_obj = {}
@@ -539,6 +539,7 @@ def get_logging_payload(
     )
     call_type: Final = kwargs.get("call_type")
     cache_hit: Final = kwargs.get("cache_hit", False)
+    media: Final = qos_media(call_type, kwargs.get("input"), original_response)
 
     # Convert response_obj to dict first
     if isinstance(response_obj, dict):

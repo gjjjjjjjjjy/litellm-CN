@@ -2,7 +2,7 @@
 
 from datetime import datetime, timedelta, timezone
 from types import MappingProxyType
-from typing import Final
+from typing import TYPE_CHECKING, Final
 
 from fastapi import HTTPException
 from pydantic import ConfigDict, TypeAdapter
@@ -24,6 +24,9 @@ from litellm.types.qos import (
     QosPercentiles,
     QosResponseChecks,
 )
+
+if TYPE_CHECKING:
+    from litellm.proxy.utils import PrismaClient
 
 QOS_DEFAULT_WINDOW: Final = timedelta(hours=24)
 QOS_MAX_WINDOW: Final = timedelta(days=31)
@@ -343,6 +346,11 @@ def deployment_metrics(row: QosSummaryRow) -> QosDeploymentMetrics:
         api_base=row.api_base,
         vendor=vendor_of(row.custom_llm_provider, row.api_base),
     )
+
+
+async def query_rows(prisma_client: "PrismaClient", sql: str, *params: object) -> object:
+    """Rows of one service quality query, for a TypeAdapter to validate; the only place that calls Prisma."""
+    return await prisma_client.db.query_raw(sql, *params)
 
 
 def utc_now() -> datetime:

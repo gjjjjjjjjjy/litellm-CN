@@ -2476,7 +2476,7 @@ class TestAccountLockout:
 
         assert error.value.code == "429"
         assert f"Try again in {TEMPORARY_LOCK_MINUTES} minutes" in error.value.message
-        assert prisma.db.query_raw.await_args.args == (CURRENT_LOGIN_LOCK_SQL, "locked-user")
+        assert prisma.db.query_raw.await_args_list[-1].args == (CURRENT_LOGIN_LOCK_SQL, "locked-user")
 
     @pytest.mark.asyncio
     async def test_a_wrong_password_that_locks_the_account_for_good_says_so(self) -> None:

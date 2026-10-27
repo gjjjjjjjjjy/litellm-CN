@@ -10,6 +10,8 @@ from collections.abc import Mapping
 from datetime import datetime
 from typing import Final
 
+from pydantic import JsonValue, TypeAdapter
+
 from litellm.types.llms.openai import HttpxBinaryResponseContent
 from litellm.types.qos import PROVIDER_TASK_HIDDEN_PARAM, QosMedia, QosProviderTask
 
@@ -34,6 +36,7 @@ VIDEO_STATUS_CALL_TYPES: Final = frozenset({"video_status", "avideo_status", "vi
 VIDEO_TASK_CALL_TYPES: Final = VIDEO_CREATE_CALL_TYPES | VIDEO_STATUS_CALL_TYPES
 _UNSPOKEN_CATEGORIES: Final = ("P", "Z", "C")
 _MP3_SYNC: Final = (b"ID3", b"\xff\xfb", b"\xff\xf3", b"\xff\xf2", b"\xff\xfa")
+_HIDDEN_PARAMS: Final = TypeAdapter(dict[str, object])
 
 
 def spoken_chars(text: str) -> int:
@@ -41,14 +44,14 @@ def spoken_chars(text: str) -> int:
     return sum(1 for char in text if not unicodedata.category(char).startswith(_UNSPOKEN_CATEGORIES))
 
 
-def _hidden_params(response: object) -> Mapping[str, object]:
-    hidden: Final = getattr(response, "_hidden_params", None)
-    return hidden if isinstance(hidden, Mapping) else {}
+def _hidden_param(response: object, key: str) -> object:
+    hidden: Final[object] = getattr(response, "_hidden_params", None)
+    return _HIDDEN_PARAMS.validate_python(hidden).get(key) if isinstance(hidden, dict) else None
 
 
 def _wav(audio: bytes) -> QosMedia | None:
     try:
-        with wave.open(io.BytesIO(audio)) as clip:
+        with wave.open(io.BytesIO(audio), "rb") as clip:
             frame_bytes: Final = clip.getsampwidth() * clip.getnchannels()
             frames: Final = len(clip.readframes(len(audio))) // frame_bytes
             return QosMedia(
@@ -77,7 +80,7 @@ def _speech(request_input: object, response: object) -> QosMedia:
 
 
 def _transcription(response: object) -> QosMedia:
-    duration: Final = _hidden_params(response).get("audio_transcription_duration") or getattr(
+    duration: Final[object] = _hidden_param(response, "audio_transcription_duration") or getattr(
         response, "duration", None
     )
     return QosMedia(audio_seconds=float(duration) if isinstance(duration, int | float) else None)
@@ -88,7 +91,7 @@ def _milliseconds(start: datetime | None, end: datetime | None) -> float | None:
 
 
 def _video(response: object) -> QosMedia | None:
-    reported: Final = _hidden_params(response).get(PROVIDER_TASK_HIDDEN_PARAM)
+    reported: Final = _hidden_param(response, PROVIDER_TASK_HIDDEN_PARAM)
     if not isinstance(reported, Mapping):
         return None
     task: Final = QosProviderTask.model_validate(reported)
@@ -112,7 +115,7 @@ def _media(call_type: object, request_input: object, response: object) -> QosMed
     return None
 
 
-def qos_media(call_type: object, request_input: object, response: object) -> dict[str, object] | None:
+def qos_media(call_type: object, request_input: object, response: object) -> Mapping[str, JsonValue] | None:
     """The `qos_media` entry of a request's spend log metadata, or None for calls it does not describe."""
     media: Final = _media(call_type, request_input, response)
     return None if media is None else media.model_dump(mode="json", exclude_none=True)

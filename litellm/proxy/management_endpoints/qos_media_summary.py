@@ -181,12 +181,16 @@ def deployment_modalities(llm_router: "Router | None") -> str:
     """The audio or video modality of each deployment configured with one, keyed by model id, as JSON."""
     if llm_router is None:
         return "{}"
+    modes: Final = {
+        model_id: getattr(deployment.model_info, "mode", None)
+        for model_id in llm_router.get_model_ids()
+        if (deployment := llm_router.get_deployment(model_id)) is not None
+    }
     return json.dumps(
         {
             model_id: _MODALITY_OF_MODE[mode]
-            for model_id in llm_router.get_model_ids()
-            if (deployment := llm_router.get_deployment(model_id)) is not None
-            and (mode := deployment.model_info.get("mode")) in _MODALITY_OF_MODE
+            for model_id, mode in modes.items()
+            if isinstance(mode, str) and mode in _MODALITY_OF_MODE
         }
     )
 

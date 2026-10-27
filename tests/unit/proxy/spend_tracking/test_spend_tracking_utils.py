@@ -162,7 +162,7 @@ def _logged_qos_media(call_type: str, response_obj: object) -> object:
         start_time=now,
         end_time=now,
     )
-    return json.loads(payload["metadata"]).get("qos_media")
+    return TypeAdapter(dict[str, object]).validate_json(payload["metadata"]).get("qos_media")
 
 
 def test_get_logging_payload_measures_speech_audio_for_service_quality_instead_of_trusting_the_client() -> None:

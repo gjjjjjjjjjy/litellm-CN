@@ -1,16 +1,19 @@
 import json
+from pathlib import Path
 from typing import Final
 
 import httpx
 import pytest
 import respx
+from pydantic import TypeAdapter
 
 import litellm
-from litellm.llms.openai_like.json_loader import JSONProviderRegistry
+from litellm.types.llms.openai import HttpxBinaryResponseContent
 
-_REGISTRY: Final = JSONProviderRegistry.get("moark")
-assert _REGISTRY is not None
-_SPEECH_URL: Final = f"{_REGISTRY.base_url}/audio/speech"
+_MOARK: Final = TypeAdapter(dict[str, str | list[str]]).validate_python(
+    json.loads((Path(litellm.__file__).parent / "llms" / "openai_like" / "providers.json").read_text())["moark"]
+)
+_SPEECH_URL: Final = f"{_MOARK['base_url']}/audio/speech"
 _AUDIO: Final = b"RIFF\x24\x00\x00\x00WAVEfmt "
 
 
@@ -41,7 +44,7 @@ def test_index_tts_sends_its_voice_clone_fields_and_needs_no_preset_voice() -> N
         "emo_text": "开心",
         "response_data_format": "blob",
     }
-    assert response.content == _AUDIO
+    assert isinstance(response, HttpxBinaryResponseContent) and response.content == _AUDIO
 
 
 @respx.mock
@@ -68,7 +71,7 @@ def test_a_preset_voice_and_extra_body_fields_are_sent_but_cannot_replace_the_mo
 
 @respx.mock
 def test_the_key_falls_back_to_moark_api_key(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv(_REGISTRY.api_key_env, "key-from-env")
+    monkeypatch.setenv(str(_MOARK["api_key_env"]), "key-from-env")
     route: Final = respx.post(_SPEECH_URL).mock(return_value=_audio_reply())
 
     litellm.speech(model="moark/IndexTTS-2", input="你好", prompt_audio_url="https://cdn.example.com/r.wav")

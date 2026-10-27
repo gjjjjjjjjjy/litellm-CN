@@ -1,24 +1,25 @@
 import io
 import json
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Final
 from unittest.mock import Mock
 
 import httpx
 import pytest
 import respx
+from pydantic import TypeAdapter
 
 import litellm
 from litellm.llms.moark.common_utils import MoarkError
 from litellm.llms.moark.videos.transformation import MoarkVideoConfig
-from litellm.llms.openai_like.json_loader import JSONProviderRegistry
 from litellm.types.qos import PROVIDER_TASK_HIDDEN_PARAM
 from litellm.types.router import GenericLiteLLMParams
 from litellm.types.videos.utils import decode_video_id_with_provider
 
-_REGISTRY: Final = JSONProviderRegistry.get("moark")
-assert _REGISTRY is not None
-_BASE: Final = _REGISTRY.base_url
+_BASE: Final = TypeAdapter(dict[str, str | list[str]]).validate_python(
+    json.loads((Path(litellm.__file__).parent / "llms" / "openai_like" / "providers.json").read_text())["moark"]
+)["base_url"]
 _CREATED: Final = "2026-10-27T08:00:00+08:00"
 
 
@@ -41,7 +42,7 @@ def test_an_image_url_goes_to_image_to_video_with_the_model_fields_unchanged() -
     video: Final = litellm.video_generation(
         model="moark/LTX-2",
         prompt="猫在弹钢琴",
-        input_reference="https://cdn.example.com/cat.png",
+        image_url="https://cdn.example.com/cat.png",
         seed=7,
         num_frames=25,
         api_key="moark-test-key",
@@ -87,6 +88,20 @@ def test_a_prompt_alone_goes_to_text_to_video_with_seconds_as_duration_and_size_
         "height": 720,
         "task": "t2va",
     }
+
+
+def test_an_image_reference_given_as_a_url_string_is_sent_as_image_url() -> None:
+    data, files, url = MoarkVideoConfig().transform_video_create_request(
+        model="LTX-2",
+        prompt="猫在弹钢琴",
+        api_base=_BASE,
+        video_create_optional_request_params={"input_reference": "https://cdn.example.com/cat.png", "seed": 7},
+        litellm_params=GenericLiteLLMParams(),
+        headers={},
+    )
+
+    assert (url, files) == (f"{_BASE}/async/videos/image-to-video", [])
+    assert data == {"model": "LTX-2", "prompt": "猫在弹钢琴", "seed": 7, "image_url": "https://cdn.example.com/cat.png"}
 
 
 def test_an_uploaded_image_is_sent_as_a_multipart_file_with_the_other_fields_as_form_values() -> None:

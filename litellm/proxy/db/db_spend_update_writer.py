@@ -588,9 +588,8 @@ class DBSpendUpdateWriter:
                 payload["startTime"] = payload["startTime"].isoformat()
             if isinstance(payload["endTime"], datetime):
                 payload["endTime"] = payload["endTime"].isoformat()
-            completion_start_time: Final = payload.get("completionStartTime")
-            if isinstance(completion_start_time, datetime):
-                payload["completionStartTime"] = completion_start_time.isoformat()
+            if "completionStartTime" in payload and isinstance(payload["completionStartTime"], datetime):
+                payload["completionStartTime"] = payload["completionStartTime"].isoformat()
 
             if org_id is not None and org_id != "":
                 payload["organization_id"] = org_id
