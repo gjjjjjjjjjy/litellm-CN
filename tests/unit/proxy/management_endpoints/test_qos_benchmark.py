@@ -180,6 +180,96 @@ async def test_verdicts_of_finished_requests_are_written_when_the_run_fails_part
 
 
 @pytest.mark.asyncio
+async def test_a_failed_worker_cancels_and_awaits_its_siblings_before_the_recorder_closes() -> None:
+    requests: Final[list[httpx.Request]] = []  # mutable-ok: test transport records request arrivals
+    written: Final[list[str]] = []  # mutable-ok: test writer records persisted call ids
+    pending_started: Final = asyncio.Event()
+    pending_cancelled: Final = asyncio.Event()
+    pending_finished: Final = asyncio.Event()
+    release_pending: Final = asyncio.Event()
+    first_written: Final = asyncio.Event()
+
+    async def handle(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        arrival: Final = len(requests)
+        marker: Final = _MARKER.findall(json.loads(request.content)["messages"][0]["content"])[0]
+        if arrival == 1:
+            await pending_started.wait()
+            return httpx.Response(200, text=_sse(marker))
+        if arrival == 2:
+            await first_written.wait()
+            raise RuntimeError("worker failed")
+        pending_started.set()
+        try:
+            await release_pending.wait()
+            return httpx.Response(200, text=_sse(marker))
+        except asyncio.CancelledError:
+            await asyncio.sleep(0)
+            pending_cancelled.set()
+            raise
+        finally:
+            pending_finished.set()
+
+    async def write(checks: tuple[ResponseCheck, ...]) -> frozenset[str]:
+        written.extend(check.call_id for check in checks)
+        first_written.set()
+        return frozenset(check.call_id for check in checks)
+
+    recorder: Final = ResponseCheckRecorder(write, attempts=1, retry_seconds=0)
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handle)) as client:
+        try:
+            with pytest.raises(RuntimeError, match="worker failed"):
+                await run_and_record(
+                    client,
+                    "http://127.0.0.1:4000/",
+                    "sk-master",
+                    "qos-run",
+                    _plan(concurrency=(3, 1), requests_per_worker=1),
+                    recorder,
+                )
+            assert pending_cancelled.is_set()
+            assert pending_finished.is_set()
+            assert len(requests) == 3
+            assert written == [requests[0].headers["x-litellm-call-id"]]
+        finally:
+            release_pending.set()
+            await pending_finished.wait()
+
+
+@pytest.mark.asyncio
+async def test_the_recorder_persists_all_32_concurrent_responses() -> None:
+    requests: Final[list[httpx.Request]] = []  # mutable-ok: test transport records request arrivals
+    written: Final[list[str]] = []  # mutable-ok: test writer records persisted call ids
+    all_started: Final = asyncio.Event()
+
+    async def handle(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        if len(requests) == 32:
+            all_started.set()
+        await all_started.wait()
+        marker: Final = _MARKER.findall(json.loads(request.content)["messages"][0]["content"])[0]
+        return httpx.Response(200, text=_sse(marker))
+
+    async def write(checks: tuple[ResponseCheck, ...]) -> frozenset[str]:
+        written.extend(check.call_id for check in checks)
+        return frozenset(check.call_id for check in checks)
+
+    recorder: Final = ResponseCheckRecorder(write, attempts=1, retry_seconds=0)
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handle)) as client:
+        await run_and_record(
+            client,
+            "http://127.0.0.1:4000/",
+            "sk-master",
+            "qos-run",
+            _plan(concurrency=(32,), requests_per_worker=1),
+            recorder,
+        )
+
+    assert len(requests) == len(written) == 32
+    assert set(written) == {request.headers["x-litellm-call-id"] for request in requests}
+
+
+@pytest.mark.asyncio
 async def test_a_provider_comparison_runs_every_level_against_each_deployment_in_turn() -> None:
     upstream: Final = _RecordingUpstream()
 

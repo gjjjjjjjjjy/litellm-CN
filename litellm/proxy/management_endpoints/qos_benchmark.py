@@ -124,7 +124,16 @@ async def _run_level(
     concurrency: int,
     record: RecordCheck,
 ) -> None:
-    await asyncio.gather(*(_worker(client, url, headers, plan, target, index, record) for index in range(concurrency)))
+    workers: Final = tuple(
+        asyncio.create_task(_worker(client, url, headers, plan, target, index, record)) for index in range(concurrency)
+    )
+    try:
+        await asyncio.gather(*workers)
+    finally:
+        for worker in workers:
+            if not worker.done():
+                worker.cancel()
+        await asyncio.gather(*workers, return_exceptions=True)
 
 
 async def run_benchmark(
