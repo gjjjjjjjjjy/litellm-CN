@@ -1,3 +1,4 @@
+import asyncio
 import json
 from datetime import datetime
 from typing import Final
@@ -9,11 +10,12 @@ from pydantic import ValidationError
 from litellm.proxy.management_endpoints.qos_response_check import (
     RECORD_RESPONSE_CHECKS_SQL,
     ResponseCheck,
+    ResponseCheckRecorder,
     chunk_text,
     marked_prompt,
     new_marker,
-    record_response_checks,
     verdict,
+    write_response_checks,
 )
 
 OWN: Final = "QOS-0123456789AB"
@@ -58,44 +60,87 @@ class TestChunkText:
             chunk_text("data: {not json")
 
 
-def _prisma(*recorded_batches: list[str]) -> MagicMock:
-    prisma = MagicMock()
-    prisma.db.query_raw = AsyncMock(
-        side_effect=[[{"call_id": call_id} for call_id in batch] for batch in recorded_batches]
-    )
-    return prisma
+A: Final = ResponseCheck("a", "passed")
+B: Final = ResponseCheck("b", "crosstalk")
+C: Final = ResponseCheck("c", "passed")
 
 
-def _sent_call_ids(prisma: MagicMock) -> list[list[str]]:
-    return [[check["call_id"] for check in json.loads(call.args[1])] for call in prisma.db.query_raw.await_args_list]
+class TestWriteResponseChecks:
+    @pytest.mark.asyncio
+    async def test_writes_every_verdict_in_one_query_and_reports_which_rows_existed(self) -> None:
+        prisma: Final = MagicMock()
+        prisma.db.query_raw = AsyncMock(return_value=[{"call_id": "a"}])
+
+        written: Final = await write_response_checks(prisma, SINCE, (A, B))
+
+        assert written == frozenset({"a"})
+        sql, payload, since = prisma.db.query_raw.await_args.args
+        assert (sql, since) == (RECORD_RESPONSE_CHECKS_SQL, SINCE)
+        assert json.loads(payload) == [{"call_id": "a", "verdict": "passed"}, {"call_id": "b", "verdict": "crosstalk"}]
 
 
-class TestRecordResponseChecks:
-    CHECKS: Final = (ResponseCheck("a", "passed"), ResponseCheck("b", "crosstalk"), ResponseCheck("c", "passed"))
+class _SpendLogs:
+    """Accepts the verdicts whose rows exist, one list of call ids per round."""
+
+    def __init__(self, *existing_per_round: frozenset[str]) -> None:
+        self.rounds: list[tuple[str, ...]] = []  # mutable-ok: test double records each round's write
+        self.existing = existing_per_round
+        self.wrote = asyncio.Event()
+
+    async def write(self, checks: tuple[ResponseCheck, ...]) -> frozenset[str]:
+        self.rounds.append(tuple(check.call_id for check in checks))
+        self.wrote.set()
+        existing: Final = self.existing[len(self.rounds) - 1]
+        return frozenset(check.call_id for check in checks if check.call_id in existing)
+
+
+class TestResponseCheckRecorder:
+    @pytest.mark.asyncio
+    async def test_writes_verdicts_as_they_arrive_without_waiting_for_the_run_to_end(self) -> None:
+        spend_logs: Final = _SpendLogs(frozenset({"a", "b"}), frozenset({"c"}))
+        recorder: Final = ResponseCheckRecorder(spend_logs.write, attempts=3, retry_seconds=0)
+        recorder.add(A)
+        recorder.add(B)
+        running: Final = asyncio.create_task(recorder.run())
+
+        await asyncio.wait_for(spend_logs.wrote.wait(), timeout=1)
+
+        assert spend_logs.rounds == [("a", "b")]
+        assert not running.done()
+        recorder.add(C)
+        recorder.close()
+        await asyncio.wait_for(running, timeout=1)
+        assert spend_logs.rounds == [("a", "b"), ("c",)]
 
     @pytest.mark.asyncio
-    async def test_retries_only_the_checks_whose_spend_logs_were_not_written_yet(self) -> None:
-        prisma: Final = _prisma(["a"], ["b", "c"])
+    async def test_retries_a_verdict_until_its_spend_log_appears(self) -> None:
+        spend_logs: Final = _SpendLogs(frozenset({"a"}), frozenset(), frozenset({"b"}))
+        recorder: Final = ResponseCheckRecorder(spend_logs.write, attempts=3, retry_seconds=0)
+        recorder.add(A)
+        recorder.add(B)
+        recorder.close()
 
-        await record_response_checks(prisma, self.CHECKS, SINCE, attempts=3, retry_seconds=0)
+        await asyncio.wait_for(recorder.run(), timeout=1)
 
-        assert _sent_call_ids(prisma) == [["a", "b", "c"], ["b", "c"]]
-        first: Final = prisma.db.query_raw.await_args_list[0].args
-        assert (first[0], first[2]) == (RECORD_RESPONSE_CHECKS_SQL, SINCE)
-        assert json.loads(first[1])[1] == {"call_id": "b", "verdict": "crosstalk"}
-
-    @pytest.mark.asyncio
-    async def test_stops_after_the_last_attempt(self) -> None:
-        prisma: Final = _prisma([], [], [])
-
-        await record_response_checks(prisma, self.CHECKS, SINCE, attempts=2, retry_seconds=0)
-
-        assert prisma.db.query_raw.await_count == 2
+        assert spend_logs.rounds == [("a", "b"), ("b",), ("b",)]
 
     @pytest.mark.asyncio
-    async def test_a_level_without_checks_touches_nothing(self) -> None:
-        prisma: Final = _prisma()
+    async def test_gives_up_on_a_verdict_after_its_last_attempt(self) -> None:
+        spend_logs: Final = _SpendLogs(frozenset(), frozenset(), frozenset())
+        recorder: Final = ResponseCheckRecorder(spend_logs.write, attempts=2, retry_seconds=0)
+        recorder.add(A)
+        recorder.close()
 
-        await record_response_checks(prisma, (), SINCE, attempts=3, retry_seconds=0)
+        await asyncio.wait_for(recorder.run(), timeout=1)
 
-        prisma.db.query_raw.assert_not_awaited()
+        assert spend_logs.rounds == [("a",), ("a",)]
+
+    @pytest.mark.asyncio
+    async def test_a_run_without_verdicts_writes_nothing(self) -> None:
+        spend_logs: Final = _SpendLogs()
+        recorder: Final = ResponseCheckRecorder(spend_logs.write, attempts=3, retry_seconds=0)
+        recorder.close()
+
+        await asyncio.wait_for(recorder.run(), timeout=1)
+
+        assert spend_logs.rounds == []

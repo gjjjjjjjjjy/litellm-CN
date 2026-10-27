@@ -24,7 +24,7 @@ from litellm.proxy.management_endpoints.qos_health import (
     health_probe,
     probe_key,
 )
-from litellm.proxy.management_endpoints.qos_response_check import record_response_checks
+from litellm.proxy.management_endpoints.qos_response_check import ResponseCheckRecorder, write_response_checks
 from litellm.proxy.management_endpoints.qos_summary import (
     BENCHMARK_DELETE_SQL,
     BENCHMARK_DEPLOYMENT_LEVEL_SUMMARY_SQL,
@@ -145,14 +145,12 @@ async def start_qos_benchmark(
         )
     started_at: Final = utc_now()
     run_id: Final = new_run_id(plan.model_group, started_at)
-    record_checks: Final = partial(
-        record_response_checks,
-        prisma_client,
-        since=started_at,
+    recorder: Final = ResponseCheckRecorder(
+        write=partial(write_response_checks, prisma_client, started_at),
         attempts=RESPONSE_CHECK_RECORD_ATTEMPTS,
         retry_seconds=RESPONSE_CHECK_RETRY_SECONDS,
     )
-    start_benchmark(_loopback_base_url(request), master_key, run_id, plan, record_checks)
+    start_benchmark(_loopback_base_url(request), master_key, run_id, plan, recorder)
     return QosBenchmarkStarted(
         run_id=run_id,
         model_group=plan.model_group,

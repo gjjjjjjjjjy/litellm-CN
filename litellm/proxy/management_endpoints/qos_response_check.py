@@ -10,6 +10,7 @@ import asyncio
 import json
 import re
 import secrets
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import datetime
 from typing import TYPE_CHECKING, Final, Literal, TypeAlias
@@ -41,6 +42,15 @@ RETURNING logs.litellm_call_id AS call_id
 class ResponseCheck:
     call_id: str
     verdict: ResponseVerdict
+
+
+WriteChecks: TypeAlias = Callable[[tuple[ResponseCheck, ...]], Awaitable[frozenset[str]]]
+
+
+@dataclass(frozen=True, slots=True)
+class _Pending:
+    check: ResponseCheck
+    attempts_left: int
 
 
 class _Delta(LiteLLMBaseModel):
@@ -102,30 +112,62 @@ def verdict(marker: str, text: str) -> ResponseVerdict:
     return "marker_missing"
 
 
-async def record_response_checks(
-    prisma_client: "PrismaClient",
-    checks: tuple[ResponseCheck, ...],
-    since: datetime,
-    attempts: int,
-    retry_seconds: float,
-) -> None:
-    """Write each verdict onto its spend log row, retrying while the batched spend log writer catches up."""
-    if not checks:
-        return
+async def write_response_checks(
+    prisma_client: "PrismaClient", since: datetime, checks: tuple[ResponseCheck, ...]
+) -> frozenset[str]:
+    """Write each verdict whose spend log row exists, returning the call ids written."""
     payload: Final = json.dumps([{"call_id": check.call_id, "verdict": check.verdict} for check in checks])
-    recorded: Final = frozenset(
+    return frozenset(
         row.call_id
         for row in _RECORDED.validate_python(
             await prisma_client.db.query_raw(RECORD_RESPONSE_CHECKS_SQL, payload, since)
         )
     )
-    remaining: Final = tuple(check for check in checks if check.call_id not in recorded)
-    if not remaining:
-        return
-    if attempts == 1:
-        verbose_proxy_logger.warning(
-            "QoS response checks for %s requests could not be recorded: their spend logs never appeared", len(remaining)
+
+
+class ResponseCheckRecorder:
+    """
+    Writes verdicts while the benchmark runs, so a request keeps its verdict even if the run stops part way.
+
+    One query per round writes every verdict handed over since the last round, keeping the load on the gateway
+    under test flat at any concurrency. A verdict whose spend log row the batched writer has not flushed yet is
+    retried in later rounds until its attempts run out.
+    """
+
+    def __init__(self, write: WriteChecks, attempts: int, retry_seconds: float) -> None:
+        self._write = write
+        self._attempts = attempts
+        self._retry_seconds = retry_seconds
+        self._queue: Final[asyncio.Queue[_Pending]] = asyncio.Queue()
+        self._closed: Final = asyncio.Event()
+
+    def add(self, check: ResponseCheck) -> None:
+        self._queue.put_nowait(_Pending(check=check, attempts_left=self._attempts))
+
+    def close(self) -> None:
+        """No more verdicts will arrive; run() returns once the ones handed over are written or given up."""
+        self._closed.set()
+
+    async def run(self) -> None:
+        while await self._round():
+            pass
+
+    async def _round(self) -> bool:
+        await asyncio.sleep(self._retry_seconds)
+        closed: Final = self._closed.is_set()
+        batch: Final = tuple(self._queue.get_nowait() for _ in range(self._queue.qsize()))
+        written: Final = await self._write(tuple(item.check for item in batch)) if batch else frozenset[str]()
+        unwritten: Final = tuple(item for item in batch if item.check.call_id not in written)
+        retry: Final = tuple(
+            _Pending(check=item.check, attempts_left=item.attempts_left - 1)
+            for item in unwritten
+            if item.attempts_left > 1
         )
-        return
-    await asyncio.sleep(retry_seconds)
-    await record_response_checks(prisma_client, remaining, since, attempts - 1, retry_seconds)
+        if len(retry) < len(unwritten):
+            verbose_proxy_logger.warning(
+                "QoS response checks for %s requests could not be recorded: their spend logs never appeared",
+                len(unwritten) - len(retry),
+            )
+        for item in retry:
+            self._queue.put_nowait(item)
+        return not closed or bool(retry)

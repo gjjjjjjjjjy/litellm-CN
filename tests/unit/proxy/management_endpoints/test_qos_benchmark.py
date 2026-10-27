@@ -1,16 +1,22 @@
 import asyncio
 import json
 import re
+from collections.abc import Awaitable, Callable
 from datetime import datetime
-from itertools import chain
 from typing import Final, Literal
 
 import httpx
 import pytest
 from pydantic import ValidationError
 
-from litellm.proxy.management_endpoints.qos_benchmark import concurrency_of, level_tag, new_run_id, run_benchmark
-from litellm.proxy.management_endpoints.qos_response_check import ResponseCheck
+from litellm.proxy.management_endpoints.qos_benchmark import (
+    concurrency_of,
+    level_tag,
+    new_run_id,
+    run_and_record,
+    run_benchmark,
+)
+from litellm.proxy.management_endpoints.qos_response_check import ResponseCheck, ResponseCheckRecorder
 from litellm.types.qos import QOS_BENCHMARK_MAX_REQUESTS, QosBenchmarkRequest
 
 _MARKER: Final = re.compile(r"QOS-[0-9A-F]{12}")
@@ -48,10 +54,10 @@ class _RecordingUpstream:
 
 class _CheckRecorder:
     def __init__(self) -> None:
-        self.batches: list[tuple[ResponseCheck, ...]] = []  # mutable-ok: test double records each level's batch
+        self.checks: list[ResponseCheck] = []  # mutable-ok: test double records checks in hand-over order
 
-    async def record(self, checks: tuple[ResponseCheck, ...]) -> None:
-        self.batches.append(checks)
+    def record(self, check: ResponseCheck) -> None:
+        self.checks.append(check)
 
 
 def _plan(**overrides: object) -> QosBenchmarkRequest:
@@ -61,10 +67,15 @@ def _plan(**overrides: object) -> QosBenchmarkRequest:
 
 
 async def _run(
-    upstream: _RecordingUpstream, plan: QosBenchmarkRequest, api_key: str | None, recorder: _CheckRecorder | None = None
+    upstream: _RecordingUpstream,
+    plan: QosBenchmarkRequest,
+    api_key: str | None,
+    recorder: _CheckRecorder | None = None,
+    handle: Callable[[httpx.Request], Awaitable[httpx.Response]] | None = None,
 ) -> _CheckRecorder:
     checks: Final = _CheckRecorder() if recorder is None else recorder
-    async with httpx.AsyncClient(transport=httpx.MockTransport(upstream.handle)) as client:
+    transport: Final = httpx.MockTransport(upstream.handle if handle is None else handle)
+    async with httpx.AsyncClient(transport=transport) as client:
         await run_benchmark(client, "http://127.0.0.1:4000/", api_key, "qos-run", plan, checks.record)
     return checks
 
@@ -95,7 +106,7 @@ async def test_a_failed_request_does_not_stop_the_run_and_no_key_sends_no_auth_h
 
     assert len(upstream.requests) == 4
     assert all("authorization" not in request.headers for request in upstream.requests)
-    assert [len(batch) for batch in recorder.batches] == [3]
+    assert len(recorder.checks) == 3
 
 
 @pytest.mark.asyncio
@@ -111,10 +122,8 @@ async def test_each_request_asks_for_its_own_code_and_is_checked_under_the_call_
     assert len({found[0] for found in markers}) == len(upstream.requests)
     call_ids: Final = [request.headers["x-litellm-call-id"] for request in upstream.requests]
     assert len(set(call_ids)) == len(call_ids)
-    assert [len(batch) for batch in recorder.batches] == [1 * 2, 3 * 2]
-    recorded: Final = list(chain.from_iterable(recorder.batches))
-    assert sorted(check.call_id for check in recorded) == sorted(call_ids)
-    assert {check.verdict for check in recorded} == {"passed"}
+    assert sorted(check.call_id for check in recorder.checks) == sorted(call_ids)
+    assert {check.verdict for check in recorder.checks} == {"passed"}
 
 
 @pytest.mark.parametrize(("answer", "expected"), [("previous", "crosstalk"), ("none", "marker_missing")])
@@ -122,7 +131,52 @@ async def test_each_request_asks_for_its_own_code_and_is_checked_under_the_call_
 async def test_a_response_without_its_own_code_is_flagged(answer: Literal["previous", "none"], expected: str) -> None:
     recorder: Final = await _run(_RecordingUpstream(answer=answer), _plan(concurrency=(2,)), "sk-master")
 
-    assert {check.verdict for check in chain.from_iterable(recorder.batches)} == {expected}
+    assert {check.verdict for check in recorder.checks} == {expected}
+
+
+@pytest.mark.asyncio
+async def test_each_check_is_handed_over_as_soon_as_its_request_finishes() -> None:
+    upstream: Final = _RecordingUpstream()
+    recorder: Final = _CheckRecorder()
+    handed_over_before: Final[list[int]] = []  # mutable-ok: test double records progress at each arrival
+
+    async def handle(request: httpx.Request) -> httpx.Response:
+        handed_over_before.append(len(recorder.checks))
+        return await upstream.handle(request)
+
+    await _run(upstream, _plan(concurrency=(1,), requests_per_worker=3), "sk-master", recorder, handle)
+
+    assert handed_over_before == [0, 1, 2]
+
+
+@pytest.mark.asyncio
+async def test_verdicts_of_finished_requests_are_written_when_the_run_fails_part_way() -> None:
+    upstream: Final = _RecordingUpstream()
+    written: Final[list[str]] = []  # mutable-ok: test double records the call ids written
+
+    async def handle(request: httpx.Request) -> httpx.Response:
+        if len(upstream.requests) == 2:
+            raise RuntimeError("gateway restarted")
+        return await upstream.handle(request)
+
+    async def write(checks: tuple[ResponseCheck, ...]) -> frozenset[str]:
+        written.extend(check.call_id for check in checks)
+        return frozenset(check.call_id for check in checks)
+
+    recorder: Final = ResponseCheckRecorder(write, attempts=1, retry_seconds=0)
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handle)) as client:
+        with pytest.raises(RuntimeError, match="gateway restarted"):
+            await run_and_record(
+                client,
+                "http://127.0.0.1:4000/",
+                "sk-master",
+                "qos-run",
+                _plan(concurrency=(1,), requests_per_worker=3),
+                recorder,
+            )
+
+    assert written == [request.headers["x-litellm-call-id"] for request in upstream.requests]
+    assert len(written) == 2
 
 
 @pytest.mark.asyncio

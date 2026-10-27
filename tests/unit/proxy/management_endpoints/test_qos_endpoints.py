@@ -1,3 +1,4 @@
+import asyncio
 import json
 from datetime import datetime, timezone
 from typing import Final
@@ -11,7 +12,7 @@ from litellm.llms.openai_like.json_loader import JSONProviderRegistry
 from litellm.proxy._types import CommonProxyErrors, LitellmUserRoles, UserAPIKeyAuth
 from litellm.proxy.auth.user_api_key_auth import user_api_key_auth
 from litellm.proxy.management_endpoints.qos_endpoints import router
-from litellm.proxy.management_endpoints.qos_response_check import record_response_checks
+from litellm.proxy.management_endpoints.qos_response_check import RECORD_RESPONSE_CHECKS_SQL, ResponseCheck
 from litellm.proxy.management_endpoints.qos_summary import (
     BENCHMARK_DELETE_SQL,
     BENCHMARK_DEPLOYMENT_LEVEL_SUMMARY_SQL,
@@ -209,6 +210,7 @@ class TestBenchmarkEndpoints:
             patch("litellm.proxy.proxy_server.llm_router", _router(_QWEN_ON_TWO_PROVIDERS)),
             patch("litellm.proxy.proxy_server.master_key", "sk-master"),
             patch("litellm.proxy.proxy_server.prisma_client", prisma),
+            patch("litellm.proxy.management_endpoints.qos_endpoints.RESPONSE_CHECK_RETRY_SECONDS", 0),
             patch("litellm.proxy.management_endpoints.qos_endpoints.start_benchmark") as start,
         ):
             response = _client(LitellmUserRoles.PROXY_ADMIN).post("/qos/benchmarks", json=_PLAN)
@@ -217,8 +219,14 @@ class TestBenchmarkEndpoints:
         body: Final = response.json()
         assert body["total_requests"] == (1 + 4) * 2
         assert body["run_id"].startswith("qos-")
-        base_url, api_key, run_id, plan, record_checks = start.call_args.args
-        assert (record_checks.func, record_checks.args) == (record_response_checks, (prisma,))
+        base_url, api_key, run_id, plan, recorder = start.call_args.args
+        prisma.db.query_raw = AsyncMock(return_value=[{"call_id": "call-1"}])
+        recorder.add(ResponseCheck("call-1", "passed"))
+        recorder.close()
+        asyncio.run(recorder.run())
+        sql, payload, since = prisma.db.query_raw.await_args.args
+        assert (sql, json.loads(payload)) == (RECORD_RESPONSE_CHECKS_SQL, [{"call_id": "call-1", "verdict": "passed"}])
+        assert since == datetime.fromisoformat(body["started_at"]).replace(tzinfo=None)
         assert base_url.startswith("http://127.0.0.1:")
         assert (api_key, run_id, plan.concurrency, plan.targets) == (
             "sk-master",
