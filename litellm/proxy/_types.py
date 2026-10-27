@@ -896,6 +896,9 @@ class LiteLLMRoutes(enum.Enum):
         "/compliance/gdpr",
     ]
 
+    # Each service quality handler checks the caller's role itself (qos_access.py)
+    qos_routes = ["/qos/*"]
+
     # Routes in `global_spend_tracking_routes` return proxy-wide spend across
     # every team, customer, and api_key. They are intentionally NOT included
     # here — non-admin roles must not see other tenants' spend. Admin roles go
@@ -929,11 +932,13 @@ class LiteLLMRoutes(enum.Enum):
         + spend_tracking_routes
         + key_management_routes
         + compliance_check_routes
+        + qos_routes
     )
 
     internal_user_view_only_routes = (
         spend_tracking_routes
         + compliance_check_routes
+        + qos_routes
         + [
             # Tag usage endpoints scope internal viewers to tags produced by
             # their own keys in tag_management_endpoints.py.
@@ -1147,7 +1152,9 @@ class LiteLLMRoutes(enum.Enum):
     )
 
     # All routes accesible by an Org Admin
-    org_admin_allowed_routes = org_admin_only_routes + management_routes + self_managed_routes + admin_viewer_routes
+    org_admin_allowed_routes = (
+        org_admin_only_routes + management_routes + self_managed_routes + admin_viewer_routes + qos_routes
+    )
 
 
 class LiteLLMPromptInjectionParams(LiteLLMPydanticObjectBase):

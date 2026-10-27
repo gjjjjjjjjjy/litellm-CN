@@ -4720,3 +4720,37 @@ def test_route_matches_pattern():
         is False
     )
     assert RouteChecks._route_matches_pattern("/v1/{thread_id}/messages", "/v1/messages/thread_2345") is False
+
+
+def _qos_routes() -> tuple[str, ...]:
+    from litellm.proxy.management_endpoints.qos_endpoints import router as qos_router
+    from litellm.proxy.management_endpoints.qos_home_endpoints import router as qos_home_router
+
+    return tuple(sorted({route.path for route in (*qos_router.routes, *qos_home_router.routes)}))
+
+
+@pytest.mark.parametrize(
+    "user_role", [LitellmUserRoles.INTERNAL_USER.value, LitellmUserRoles.INTERNAL_USER_VIEW_ONLY.value]
+)
+def test_internal_users_reach_every_service_quality_route_whose_handler_checks_the_role(user_role: str) -> None:
+    user_obj: Final = LiteLLM_UserTable(user_id="test_user", user_email="test@example.com", user_role=user_role)
+    valid_token: Final = UserAPIKeyAuth(user_id="test_user", user_role=user_role)
+    request: Final = MagicMock(spec=Request)
+    request.query_params = {}
+
+    def blocked(route: str) -> bool:
+        try:
+            RouteChecks.non_proxy_admin_allowed_routes_check(
+                user_obj=user_obj,
+                _user_role=user_role,
+                route=route,
+                request=request,
+                valid_token=valid_token,
+                request_data={},
+            )
+        except Exception:
+            return True
+        return False
+
+    assert [route for route in _qos_routes() if blocked(route)] == []
+    assert blocked("/config/update"), "opening /qos/* must not open admin routes outside it"
