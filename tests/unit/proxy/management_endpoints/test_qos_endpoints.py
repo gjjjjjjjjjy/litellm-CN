@@ -361,6 +361,28 @@ class TestBenchmarkEndpoints:
             ],
         }
 
+    def test_a_deployment_whose_provider_comes_from_its_endpoint_is_listed_instead_of_failing_the_page(self) -> None:
+        groq_by_endpoint: Final = {"node-groq": _deployment("llama", "llama-4", "https://api.groq.com/openai/v1")}
+
+        with patch("litellm.proxy.proxy_server.llm_router", _router(groq_by_endpoint)):
+            response = _client(LitellmUserRoles.PROXY_ADMIN_VIEW_ONLY).get("/qos/targets")
+
+        assert response.status_code == 200, response.text
+        assert response.json()["models"] == [
+            {
+                "model_group": "llama",
+                "deployments": [
+                    {
+                        "model_id": "node-groq",
+                        "provider": "groq",
+                        "vendor": "groq",
+                        "api_base": "https://api.groq.com/openai/v1",
+                        "upstream_model": "llama-4",
+                    }
+                ],
+            }
+        ]
+
 
 _OVERALL: Final = {
     "requests": 40,

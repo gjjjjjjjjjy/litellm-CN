@@ -31,7 +31,7 @@ def deployment_target_lookup(llm_router: "Router | None") -> Callable[[str], Dep
             return None
         params: Final = deployment.litellm_params
         upstream_model, provider, _, default_api_base = get_llm_provider(
-            model=params.model, custom_llm_provider=params.custom_llm_provider
+            model=params.model, custom_llm_provider=params.custom_llm_provider, api_base=params.api_base
         )
         if params.api_base is not None:
             return DeploymentTarget(provider=provider, api_base=params.api_base, upstream_model=upstream_model)
