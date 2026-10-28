@@ -130,6 +130,34 @@ describe("QosView", () => {
     expect(await screen.findByText("No public model name")).toBeInTheDocument();
   });
 
+  it("switches the summary, trends and health to all retained history and back to a fixed range", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<QosView accessToken="token" />);
+    await within(await screen.findByRole("table")).findByText("qwen3-max");
+
+    await user.click(screen.getByLabelText("Time range"));
+    await user.click(await screen.findByRole("option", { name: "All", exact: true }));
+
+    await waitFor(() => expect(summaryCalls().at(-1)?.[1]?.query?.all_time).toBe(true));
+    for (const path of ["/qos/summary", "/qos/trends", "/qos/health"]) {
+      const call = vi
+        .mocked(apiClient.get)
+        .mock.calls.filter(([called]) => called === path)
+        .at(-1);
+      expect(call?.[1]?.query).toEqual(expect.objectContaining({ all_time: true }));
+      expect(call?.[1]?.query?.start_time).toBeUndefined();
+    }
+    expect(screen.getByLabelText("Time range")).toHaveTextContent("All");
+
+    await user.click(screen.getByLabelText("Time range"));
+    await user.click(await screen.findByRole("option", { name: "Last 7 days" }));
+
+    await waitFor(() => expect(screen.getByLabelText("Time range")).toHaveTextContent("Last 7 days"));
+    const query = summaryCalls().at(-1)?.[1]?.query;
+    expect(query?.all_time).toBeUndefined();
+    expect(Date.parse(String(query?.end_time)) - Date.parse(String(query?.start_time))).toBe(7 * 24 * 60 * 60 * 1000);
+  });
+
   it("shows the server's error message when loading fails", async () => {
     vi.mocked(apiClient.get).mockRejectedValue(new Error("Only proxy admins can view service quality metrics"));
     renderWithProviders(<QosView accessToken="token" />);

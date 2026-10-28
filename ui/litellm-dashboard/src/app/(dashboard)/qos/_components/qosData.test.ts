@@ -61,7 +61,15 @@ describe("qosData", () => {
 
   it("only accepts known range values", () => {
     expect(isQosRange("1h")).toBe(true);
+    expect(isQosRange("all")).toBe(true);
     expect(isQosRange("2h")).toBe(false);
+  });
+
+  it("requests all retained history without imposing a start date", () => {
+    expect(qosWindow("all", new Date("2026-10-27T12:00:00Z"))).toEqual({
+      all_time: true,
+      end_time: "2026-10-27T12:00:00.000Z",
+    });
   });
 
   it("computes success rate from failures and leaves an empty window undefined", () => {

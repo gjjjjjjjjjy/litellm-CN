@@ -29,6 +29,24 @@ QOS_DEFAULT_WINDOW: Final = timedelta(hours=24)
 QOS_MAX_WINDOW: Final = timedelta(days=31)
 QOS_RUNS_DEFAULT_WINDOW: Final = timedelta(days=7)
 
+HISTORY_START_SQL: Final = """
+SELECT MIN(start_time) AS start_time
+FROM (
+    SELECT MIN("startTime") AS start_time FROM "LiteLLM_SpendLogs" WHERE "startTime" < $1::timestamp
+    UNION ALL
+    SELECT MIN(checked_at) AS start_time FROM "LiteLLM_HealthCheckTable" WHERE checked_at < $1::timestamp
+) AS history
+"""
+
+
+class HistoryStart(LiteLLMBaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    start_time: datetime | None
+
+
+HISTORY_START_ROWS: Final = TypeAdapter(tuple[HistoryStart])
+
 BENCHMARK_DELETE_SQL: Final = """
 WITH deleted AS (
     DELETE FROM "LiteLLM_SpendLogs"
@@ -261,7 +279,7 @@ INTERFERENCE_ROWS: Final = TypeAdapter(list[InterferenceRow])
 BENCHMARK_RUNS: Final = TypeAdapter(list[QosBenchmarkRun])
 
 
-def _as_utc_naive(value: datetime) -> datetime:
+def as_utc_naive(value: datetime) -> datetime:
     return value if value.tzinfo is None else value.astimezone(timezone.utc).replace(tzinfo=None)
 
 
@@ -271,8 +289,8 @@ def resolve_window(
     now: datetime,
     default_window: timedelta = QOS_DEFAULT_WINDOW,
 ) -> tuple[datetime, datetime]:
-    end: Final = _as_utc_naive(end_time) if end_time is not None else now
-    start: Final = _as_utc_naive(start_time) if start_time is not None else end - default_window
+    end: Final = as_utc_naive(end_time) if end_time is not None else now
+    start: Final = as_utc_naive(start_time) if start_time is not None else end - default_window
     if start >= end:
         raise HTTPException(status_code=400, detail="start_time must be earlier than end_time")
     if end - start > QOS_MAX_WINDOW:

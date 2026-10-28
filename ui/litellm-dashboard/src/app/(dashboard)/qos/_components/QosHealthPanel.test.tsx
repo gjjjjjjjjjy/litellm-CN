@@ -1,4 +1,5 @@
-import { screen, within } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import QosHealthPanel from "./QosHealthPanel";
@@ -90,5 +91,18 @@ describe("QosHealthPanel", () => {
     expect(path).toBe("/qos/health");
     const query = options?.query;
     expect(Date.parse(String(query?.end_time)) - Date.parse(String(query?.start_time))).toBe(24 * 60 * 60 * 1000);
+  });
+
+  it("requests all retained checks when All is selected", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<QosHealthPanel accessToken="token" />);
+    await screen.findByText("https://ai.gitee.com/v1");
+
+    await user.click(screen.getByLabelText("Time range"));
+    await user.click(await screen.findByRole("option", { name: "All", exact: true }));
+
+    await waitFor(() => expect(vi.mocked(apiClient.get).mock.lastCall?.[1]?.query?.all_time).toBe(true));
+    expect(vi.mocked(apiClient.get).mock.lastCall?.[1]?.query?.start_time).toBeUndefined();
+    expect(screen.getByLabelText("Time range")).toHaveTextContent("All");
   });
 });

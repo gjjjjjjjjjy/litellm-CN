@@ -72596,6 +72596,8 @@ export interface operations {
                 start_time?: string | null;
                 /** @description ISO 8601, defaults to now */
                 end_time?: string | null;
+                /** @description Include all retained history; cannot be combined with start_time */
+                all_time?: boolean;
             };
             header?: never;
             path?: never;
@@ -72686,6 +72688,8 @@ export interface operations {
                 model_group?: string | null;
                 /** @description Only include requests carrying this request tag */
                 tag?: string | null;
+                /** @description Include all retained history; cannot be combined with start_time */
+                all_time?: boolean;
             };
             header?: never;
             path?: never;
@@ -72744,6 +72748,8 @@ export interface operations {
                 tag?: string | null;
                 /** @description One series per model, or per deployment of a model */
                 group_by?: "model" | "deployment";
+                /** @description Include all retained history; cannot be combined with start_time */
+                all_time?: boolean;
             };
             header?: never;
             path?: never;

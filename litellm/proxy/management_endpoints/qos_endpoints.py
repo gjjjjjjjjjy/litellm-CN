@@ -1,7 +1,7 @@
 import re
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from functools import partial
-from typing import Annotated, Final
+from typing import TYPE_CHECKING, Annotated, Final
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import ConfigDict, TypeAdapter
@@ -33,11 +33,14 @@ from litellm.proxy.management_endpoints.qos_summary import (
     BENCHMARK_RUNS,
     BENCHMARK_RUNS_SQL,
     DEPLOYMENT_SUMMARY_SQL,
+    HISTORY_START_ROWS,
+    HISTORY_START_SQL,
     INTERFERENCE_ROWS,
     MODEL_GROUP_SUMMARY_SQL,
     QOS_MAX_WINDOW,
     QOS_RUNS_DEFAULT_WINDOW,
     SUMMARY_ROWS,
+    as_utc_naive,
     deployment_interference,
     deployment_metrics,
     group_metrics,
@@ -71,11 +74,30 @@ from litellm.types.qos import (
     QosTrendsResponse,
 )
 
+if TYPE_CHECKING:
+    from litellm.proxy.utils import PrismaClient
+
 router: Final = APIRouter()
 
 RESPONSE_CHECK_RECORD_ATTEMPTS: Final = 30
 RESPONSE_CHECK_RETRY_SECONDS: Final = 5.0
 _RUN_ID: Final = re.compile(rf"{QOS_RUN_PREFIX}[A-Za-z0-9.-]+")
+
+
+async def _metrics_window(
+    prisma_client: "PrismaClient",
+    start_time: datetime | None,
+    end_time: datetime | None,
+    all_time: bool,
+) -> tuple[datetime, datetime]:
+    now: Final = utc_now()
+    if not all_time:
+        return resolve_window(start_time, end_time, now)
+    if start_time is not None:
+        raise HTTPException(status_code=400, detail="all_time and start_time cannot be combined")
+    end: Final = as_utc_naive(now if end_time is None else end_time)
+    (history,) = HISTORY_START_ROWS.validate_python(await prisma_client.db.query_raw(HISTORY_START_SQL, end))
+    return (end if history.start_time is None else as_utc_naive(history.start_time)), end
 
 
 @router.get(
@@ -90,6 +112,9 @@ async def get_qos_summary(
     end_time: Annotated[datetime | None, Query(description="ISO 8601, defaults to now")] = None,
     model_group: Annotated[str | None, Query(description="Only include this public model name")] = None,
     tag: Annotated[str | None, Query(description="Only include requests carrying this request tag")] = None,
+    all_time: Annotated[
+        bool, Query(description="Include all retained history; cannot be combined with start_time")
+    ] = False,
 ) -> QosSummaryResponse:
     from litellm.proxy.proxy_server import llm_router, prisma_client
 
@@ -97,7 +122,7 @@ async def get_qos_summary(
     if prisma_client is None:
         raise HTTPException(status_code=500, detail=CommonProxyErrors.db_not_connected_error.value)
 
-    start, end = resolve_window(start_time, end_time, datetime.now(timezone.utc).replace(tzinfo=None))
+    start, end = await _metrics_window(prisma_client, start_time, end_time, all_time)
     groups: Final = deployment_model_groups(llm_router)
     group_rows: Final = SUMMARY_ROWS.validate_python(
         await prisma_client.db.query_raw(MODEL_GROUP_SUMMARY_SQL, start, end, model_group, tag, groups)
@@ -180,8 +205,10 @@ async def list_qos_benchmarks(
     if prisma_client is None:
         raise HTTPException(status_code=500, detail=CommonProxyErrors.db_not_connected_error.value)
     start, end = resolve_window(start_time, end_time, utc_now(), QOS_RUNS_DEFAULT_WINDOW)
-    rows: Final = await prisma_client.db.query_raw(BENCHMARK_RUNS_SQL, start, end, deployment_model_groups(llm_router))
-    return QosBenchmarkListResponse(runs=tuple(BENCHMARK_RUNS.validate_python(rows)))
+    runs: Final = BENCHMARK_RUNS.validate_python(
+        await prisma_client.db.query_raw(BENCHMARK_RUNS_SQL, start, end, deployment_model_groups(llm_router))
+    )
+    return QosBenchmarkListResponse(runs=tuple(runs))
 
 
 @router.get(
@@ -255,6 +282,9 @@ async def get_qos_trends(
     group_by: Annotated[
         TrendGrouping, Query(description="One series per model, or per deployment of a model")
     ] = "model",
+    all_time: Annotated[
+        bool, Query(description="Include all retained history; cannot be combined with start_time")
+    ] = False,
 ) -> QosTrendsResponse:
     """Headline figures for a window and the window before it, and per-model or per-deployment time series."""
     from litellm.proxy.proxy_server import llm_router, prisma_client
@@ -262,12 +292,12 @@ async def get_qos_trends(
     require_reader(user_api_key_dict)
     if prisma_client is None:
         raise HTTPException(status_code=500, detail=CommonProxyErrors.db_not_connected_error.value)
-    start, end = resolve_window(start_time, end_time, utc_now())
+    start, end = await _metrics_window(prisma_client, start_time, end_time, all_time)
     window: Final = end - start
     bucket: Final = bucket_seconds(window)
     (current,) = OVERALL_ROWS.validate_python(await prisma_client.db.query_raw(OVERALL_SQL, start, end, tag))
     (previous,) = OVERALL_ROWS.validate_python(
-        await prisma_client.db.query_raw(OVERALL_SQL, start - window, start, tag)
+        await prisma_client.db.query_raw(OVERALL_SQL, start if all_time else start - window, start, tag)
     )
     rows: Final = TREND_ROWS.validate_python(
         await prisma_client.db.query_raw(
@@ -326,13 +356,16 @@ async def get_qos_health(
     user_api_key_dict: Annotated[UserAPIKeyAuth, Depends(user_api_key_auth)],
     start_time: Annotated[datetime | None, Query(description="ISO 8601, defaults to 24 hours before end_time")] = None,
     end_time: Annotated[datetime | None, Query(description="ISO 8601, defaults to now")] = None,
+    all_time: Annotated[
+        bool, Query(description="Include all retained history; cannot be combined with start_time")
+    ] = False,
 ) -> QosHealthResponse:
     from litellm.proxy.proxy_server import llm_router, prisma_client
 
     require_reader(user_api_key_dict)
     if prisma_client is None:
         raise HTTPException(status_code=500, detail=CommonProxyErrors.db_not_connected_error.value)
-    start, end = resolve_window(start_time, end_time, utc_now())
+    start, end = await _metrics_window(prisma_client, start_time, end_time, all_time)
     history: Final = HEALTH_HISTORY_ROWS.validate_python(
         await prisma_client.db.query_raw(HEALTH_HISTORY_SQL, start, end)
     )

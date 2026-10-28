@@ -8,9 +8,15 @@ export type QosPercentiles = components["schemas"]["QosPercentiles"];
 
 export const QOS_BENCHMARK_MODEL_PARAM = "benchmark";
 
-export type QosRange = "15m" | "1h" | "6h" | "24h" | "7d";
+export type QosRange = "15m" | "1h" | "6h" | "24h" | "7d" | "all";
 
-const RANGE_MINUTES: Readonly<Record<QosRange, number>> = { "15m": 15, "1h": 60, "6h": 360, "24h": 1440, "7d": 10080 };
+const RANGE_MINUTES: Readonly<Record<Exclude<QosRange, "all">, number>> = {
+  "15m": 15,
+  "1h": 60,
+  "6h": 360,
+  "24h": 1440,
+  "7d": 10080,
+};
 
 export const QOS_RANGES: readonly { readonly value: QosRange; readonly label: string }[] = [
   { value: "15m", label: "Last 15 minutes" },
@@ -18,14 +24,21 @@ export const QOS_RANGES: readonly { readonly value: QosRange; readonly label: st
   { value: "6h", label: "Last 6 hours" },
   { value: "24h", label: "Last 24 hours" },
   { value: "7d", label: "Last 7 days" },
+  { value: "all", label: "All" },
 ];
 
-export const isQosRange = (value: string): value is QosRange => Object.hasOwn(RANGE_MINUTES, value);
+export const isQosRange = (value: string): value is QosRange => QOS_RANGES.some((range) => range.value === value);
 
-export const qosWindow = (range: QosRange, now: Date): { readonly start_time: string; readonly end_time: string } => ({
-  start_time: new Date(now.getTime() - RANGE_MINUTES[range] * 60_000).toISOString(),
-  end_time: now.toISOString(),
-});
+export const qosWindow = (
+  range: QosRange,
+  now: Date,
+): { readonly start_time?: string; readonly end_time: string; readonly all_time?: boolean } =>
+  range === "all"
+    ? { all_time: true, end_time: now.toISOString() }
+    : {
+        start_time: new Date(now.getTime() - RANGE_MINUTES[range] * 60_000).toISOString(),
+        end_time: now.toISOString(),
+      };
 
 export const successRate = (metrics: QosModelGroupMetrics): number | null =>
   metrics.requests === 0 ? null : (metrics.requests - metrics.failed_requests) / metrics.requests;

@@ -55,10 +55,11 @@ export const clockTime = (at: Date): string => `${twoDigits(at.getHours())}:${tw
 /** MM-DD in the viewer's time zone. */
 export const monthDay = (at: Date): string => `${twoDigits(at.getMonth() + 1)}-${twoDigits(at.getDate())}`;
 
-const bucketLabel = (bucketStart: string, bucketSeconds: number, multiDay: boolean): string => {
+const bucketLabel = (bucketStart: string, bucketSeconds: number, multiDay: boolean, multiYear: boolean): string => {
   const at = new Date(bucketStart);
-  if (bucketSeconds >= 86_400) return monthDay(at);
-  return multiDay ? `${monthDay(at)} ${clockTime(at)}` : clockTime(at);
+  const day = multiYear ? `${at.getFullYear()}-${monthDay(at)}` : monthDay(at);
+  if (bucketSeconds >= 86_400) return day;
+  return multiDay ? `${day} ${clockTime(at)}` : clockTime(at);
 };
 
 export interface TrendChart {
@@ -72,6 +73,7 @@ export const trendChart = (trends: QosTrends, metric: TrendMetric): TrendChart =
     ...new Set(trends.series.flatMap((series) => series.points.map((point) => point.bucket_start))),
   ].sort();
   const multiDay = new Date(trends.end_time).getTime() - new Date(trends.start_time).getTime() > 86_400_000;
+  const multiYear = new Date(trends.start_time).getFullYear() !== new Date(trends.end_time).getFullYear();
   const valuesBySeries = trends.series.map(
     (series) =>
       [
@@ -83,7 +85,7 @@ export const trendChart = (trends: QosTrends, metric: TrendMetric): TrendChart =
     categories: valuesBySeries.map(([label]) => label),
     rows: buckets.map((bucket) =>
       Object.fromEntries([
-        ["time", bucketLabel(bucket, trends.bucket_seconds, multiDay)],
+        ["time", bucketLabel(bucket, trends.bucket_seconds, multiDay, multiYear)],
         ...valuesBySeries.map(([label, values]) => [label, values.get(bucket) ?? null]),
       ]),
     ),

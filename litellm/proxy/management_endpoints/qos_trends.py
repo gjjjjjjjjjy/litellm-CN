@@ -6,6 +6,7 @@ and per-model or per-deployment time series bucketed so that each series has abo
 from collections.abc import Sequence
 from datetime import datetime, timedelta
 from itertools import groupby
+from math import ceil
 from types import MappingProxyType
 from typing import Final, Literal, TypeAlias
 
@@ -155,7 +156,7 @@ def bucket_seconds(window: timedelta) -> int:
     """The shortest bucket that keeps a series within TREND_POINTS points."""
     return next(
         (seconds for seconds in TREND_BUCKET_SECONDS if window.total_seconds() / seconds <= TREND_POINTS),
-        TREND_BUCKET_SECONDS[-1],
+        max(1, ceil(window.total_seconds() / TREND_POINTS / 86400)) * 86400,
     )
 
 
@@ -164,7 +165,7 @@ def overall(row: OverallRow, window: timedelta) -> QosOverall:
         requests=row.requests,
         failed_requests=row.failed_requests,
         output_tokens=row.output_tokens,
-        output_tokens_per_second=row.output_tokens / window.total_seconds(),
+        output_tokens_per_second=row.output_tokens / window.total_seconds() if window.total_seconds() > 0 else 0.0,
         ttft_ms=row.ttft(),
         tpot_ms=row.tpot(),
         response_checks=QosResponseChecks(

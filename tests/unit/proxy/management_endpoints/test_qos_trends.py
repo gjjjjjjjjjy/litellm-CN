@@ -68,6 +68,12 @@ def test_each_series_collects_its_own_buckets_in_order() -> None:
     assert series[0].points[0].ttft_ms.p95 == 900.0
 
 
+@pytest.mark.parametrize("days", (61, 365, 730, 3650))
+def test_long_history_keeps_the_same_point_budget(days: int) -> None:
+    window: Final = timedelta(days=days)
+    assert window.total_seconds() / bucket_seconds(window) <= TREND_POINTS
+
+
 def test_a_deployment_series_names_its_vendor() -> None:
     rows: Final = [
         _trend_row("GLM-5.3", "node-gitee", 1),

@@ -1,6 +1,6 @@
 import asyncio
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Final
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -19,10 +19,11 @@ from litellm.proxy.management_endpoints.qos_summary import (
     BENCHMARK_INTERFERENCE_SQL,
     BENCHMARK_LEVEL_SUMMARY_SQL,
     DEPLOYMENT_SUMMARY_SQL,
+    HISTORY_START_SQL,
     MODEL_GROUP_SUMMARY_SQL,
     QOS_MAX_WINDOW,
 )
-from litellm.proxy.management_endpoints.qos_trends import TREND_SQL
+from litellm.proxy.management_endpoints.qos_trends import OVERALL_SQL, TREND_POINTS, TREND_SQL
 
 NOW: Final = datetime(2026, 10, 22, 12, 0, 0)
 
@@ -401,6 +402,84 @@ class TestTrendsEndpoint:
         assert previous_call[1:] == (datetime(2026, 10, 22, 8), datetime(2026, 10, 22, 10), None)
         assert (trend_call[0], trend_call[3]) == (TREND_SQL["deployment"], 120)
         assert json.loads(trend_call[5]) == {"node-moark": "qwen3-max", "node-gitee": "qwen3-max"}
+
+
+_EMPTY_OVERALL: Final = {
+    **_OVERALL,
+    "requests": 0,
+    "failed_requests": 0,
+    "output_tokens": 0,
+    **{key: None for key in _OVERALL if "_p" in key},
+}
+
+
+class TestAllHistory:
+    @pytest.mark.parametrize("path", ("/qos/summary", "/qos/health", "/qos/trends"))
+    @pytest.mark.parametrize(
+        "history_start",
+        (None, NOW - timedelta(days=730), (NOW - timedelta(days=730)).replace(tzinfo=timezone.utc)),
+    )
+    def test_all_history_uses_the_first_retained_record_and_handles_an_empty_database(
+        self, path: str, history_start: datetime | None
+    ) -> None:
+        prisma: Final = MagicMock()
+        current: Final = _EMPTY_OVERALL if history_start is None else _OVERALL
+        result_rows: Final = [[current], [_EMPTY_OVERALL], []] if path == "/qos/trends" else [[], []]
+        prisma.db.query_raw = AsyncMock(side_effect=[[{"start_time": history_start}], *result_rows])
+
+        with (
+            patch("litellm.proxy.proxy_server.prisma_client", prisma),
+            patch("litellm.proxy.proxy_server.llm_router", None),
+        ):
+            response: Final = _client(LitellmUserRoles.INTERNAL_USER_VIEW_ONLY).get(
+                path, params={"all_time": "true", "end_time": "2026-10-22T20:00:00+08:00"}
+            )
+
+        assert response.status_code == 200, response.text
+        start: Final = NOW if history_start is None else history_start.replace(tzinfo=None)
+        body: Final = response.json()
+        assert (body["start_time"], body["end_time"]) == (start.isoformat() + "Z", NOW.isoformat() + "Z")
+        calls: Final = tuple(call.args for call in prisma.db.query_raw.await_args_list)
+        assert calls[0] == (HISTORY_START_SQL, NOW)
+        assert calls[1][1:3] == (start, NOW)
+        if path == "/qos/trends":
+            assert calls[2] == (OVERALL_SQL, start, start, None)
+            assert calls[3][1:3] == (start, NOW)
+            assert (NOW - start).total_seconds() / body["bucket_seconds"] <= TREND_POINTS
+            assert body["previous"]["requests"] == 0
+            if history_start is None:
+                assert body["current"]["requests"] == 0
+                assert body["current"]["output_tokens_per_second"] == 0
+        else:
+            assert calls[2][1:3] == (start, NOW)
+
+    @pytest.mark.parametrize("path", ("/qos/summary", "/qos/health", "/qos/trends"))
+    def test_all_history_rejects_a_conflicting_start_date(self, path: str) -> None:
+        prisma: Final = MagicMock()
+        prisma.db.query_raw = AsyncMock()
+        with patch("litellm.proxy.proxy_server.prisma_client", prisma):
+            response: Final = _client(LitellmUserRoles.PROXY_ADMIN).get(
+                path, params={"all_time": "true", "start_time": NOW.isoformat()}
+            )
+        assert response.status_code == 400
+        assert response.json()["detail"] == "all_time and start_time cannot be combined"
+        prisma.db.query_raw.assert_not_awaited()
+
+    @pytest.mark.parametrize("path", ("/qos/summary", "/qos/health", "/qos/trends"))
+    def test_explicit_windows_keep_the_existing_maximum(self, path: str) -> None:
+        prisma: Final = MagicMock()
+        prisma.db.query_raw = AsyncMock()
+        with patch("litellm.proxy.proxy_server.prisma_client", prisma):
+            response: Final = _client(LitellmUserRoles.PROXY_ADMIN).get(
+                path,
+                params={
+                    "start_time": (NOW - QOS_MAX_WINDOW - timedelta(days=1)).isoformat(),
+                    "end_time": NOW.isoformat(),
+                },
+            )
+        assert response.status_code == 400
+        assert response.json()["detail"] == f"The time window must not exceed {QOS_MAX_WINDOW.days} days"
+        prisma.db.query_raw.assert_not_awaited()
 
 
 class TestHealthEndpoint:

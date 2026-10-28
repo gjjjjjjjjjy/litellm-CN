@@ -53871,6 +53871,18 @@
                 "description": "ISO 8601, defaults to now",
                 "title": "End Time"
               }
+            },
+            {
+              "description": "Include all retained history; cannot be combined with start_time",
+              "in": "query",
+              "name": "all_time",
+              "required": false,
+              "schema": {
+                "default": false,
+                "description": "Include all retained history; cannot be combined with start_time",
+                "title": "All Time",
+                "type": "boolean"
+              }
             }
           ],
           "responses": {
@@ -54063,6 +54075,18 @@
                 "description": "Only include requests carrying this request tag",
                 "title": "Tag"
               }
+            },
+            {
+              "description": "Include all retained history; cannot be combined with start_time",
+              "in": "query",
+              "name": "all_time",
+              "required": false,
+              "schema": {
+                "default": false,
+                "description": "Include all retained history; cannot be combined with start_time",
+                "title": "All Time",
+                "type": "boolean"
+              }
             }
           ],
           "responses": {
@@ -54200,6 +54224,18 @@
                 ],
                 "title": "Group By",
                 "type": "string"
+              }
+            },
+            {
+              "description": "Include all retained history; cannot be combined with start_time",
+              "in": "query",
+              "name": "all_time",
+              "required": false,
+              "schema": {
+                "default": false,
+                "description": "Include all retained history; cannot be combined with start_time",
+                "title": "All Time",
+                "type": "boolean"
               }
             }
           ],

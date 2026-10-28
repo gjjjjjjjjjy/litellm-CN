@@ -75,6 +75,24 @@ describe("trendChart", () => {
     const providerSeries = { model_group: "GLM-5.3", model_id: "node-a", vendor: "moark", api_base: "", points: [] };
     expect(seriesLabel(providerSeries)).toBe("GLM-5.3 · Moark (Gitee AI)");
   });
+
+  it("includes the year when all history spans the same calendar date in different years", () => {
+    const history = {
+      ...trends([
+        {
+          model_group: "GLM-5.3",
+          model_id: "",
+          vendor: "",
+          api_base: "",
+          points: [point("2025-10-26T12:00:00Z", 300), point("2026-10-26T12:00:00Z", 500)],
+        },
+      ]),
+      start_time: "2025-10-01T12:00:00Z",
+      end_time: "2026-10-27T12:00:00Z",
+      bucket_seconds: 86400,
+    };
+    expect(trendChart(history, "ttft").rows.map((row) => row.time)).toEqual(["2025-10-26", "2026-10-26"]);
+  });
 });
 
 describe("headlines", () => {
