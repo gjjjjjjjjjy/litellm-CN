@@ -1,0 +1,165 @@
+name: QosLLM
+
+on:
+  push:
+    branches:
+      - litellm_zh_cn
+  pull_request:
+    branches:
+      - litellm_zh_cn
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: qosllm-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      UV_PYTHON: "3.12"
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        with:
+          persist-credentials: false
+
+      - name: Fetch the upstream release this branch is built on
+        run: |
+          version="$(sed -n 's/^version = "\(.*\)"$/\1/p' pyproject.toml | head -n 1)"
+          git fetch --no-tags --depth 1 https://github.com/BerriAI/litellm.git "refs/tags/v$version:refs/tags/v$version"
+          echo "UPSTREAM_BASE=v$version" >> "$GITHUB_ENV"
+
+      - name: Set up uv
+        uses: ./.github/actions/setup-uv-with-retries
+        with:
+          version: "0.10.9"
+
+      - name: Install dependencies
+        run: |
+          uv sync --frozen --extra proxy --extra extra_proxy --group dev --group admin-mcp
+          uv run --no-sync prisma generate --schema litellm/proxy/schema.prisma
+
+      - name: Lint the Python files this fork added
+        run: |
+          mapfile -t files < <(git diff --name-only --diff-filter=A "$UPSTREAM_BASE" HEAD -- '*.py')
+          if [ "${#files[@]}" -gt 0 ]; then
+            uv run --no-sync ruff check "${files[@]}"
+          fi
+
+      - name: Test the Python code this fork changed
+        run: |
+          mapfile -t tests < <(
+            {
+              git diff --name-only --diff-filter=AM "$UPSTREAM_BASE" HEAD -- 'tests/unit/**test_*.py'
+              git diff --name-only --diff-filter=AM "$UPSTREAM_BASE" HEAD -- 'litellm/**.py' \
+                | sed -E 's#^litellm/(.*/)?([^/]+)\.py$#tests/unit/\1test_\2.py#'
+            } | sort -u | while read -r path; do
+              if [ -f "$path" ]; then echo "$path"; fi
+            done
+          )
+          if [ "${#tests[@]}" -gt 0 ]; then
+            uv run --no-sync pytest -n 4 "${tests[@]}"
+          fi
+
+  frontend:
+    name: Frontend
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: ui/litellm-dashboard
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        with:
+          persist-credentials: false
+
+      - name: Fetch the upstream release this branch is built on
+        working-directory: .
+        run: |
+          version="$(sed -n 's/^version = "\(.*\)"$/\1/p' pyproject.toml | head -n 1)"
+          git fetch --no-tags --depth 1 https://github.com/BerriAI/litellm.git "refs/tags/v$version:refs/tags/v$version"
+          echo "UPSTREAM_BASE=v$version" >> "$GITHUB_ENV"
+
+      - name: Set up Node
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version-file: ui/litellm-dashboard/.nvmrc
+          cache: npm
+          cache-dependency-path: ui/litellm-dashboard/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Check types
+        run: npm run -s typecheck
+
+      - name: Check translations
+        run: |
+          TYPESCRIPT_PATH="$PWD/node_modules/typescript" node --test ../../localization/zh-CN/tests/*.test.mjs
+          mkdir "$RUNNER_TEMP/ui"
+          cp -R src "$RUNNER_TEMP/ui/"
+          node ../../localization/zh-CN/localize.mjs apply --source "$RUNNER_TEMP/ui" \
+            --catalog ../../localization/zh-CN/zh-CN.json --output "$RUNNER_TEMP/translation-report.json" \
+            --typescript "$PWD/node_modules/typescript"
+
+      - name: Lint and format the files this fork changed
+        run: |
+          mapfile -t files < <(
+            git diff --relative --name-only --diff-filter=AM "$UPSTREAM_BASE" HEAD -- \
+              'src/**.ts' 'src/**.tsx' 'tests/**.ts' 'tests/**.tsx'
+          )
+          if [ "${#files[@]}" -gt 0 ]; then
+            npx eslint --no-warn-ignored --pass-on-unpruned-suppressions "${files[@]}"
+            npx prettier --check "${files[@]}"
+          fi
+
+      - name: Test the UI code this fork changed
+        run: |
+          mapfile -t tests < <(
+            git diff --relative --name-only --diff-filter=AM "$UPSTREAM_BASE" HEAD -- \
+              'src/**.ts' 'src/**.tsx' 'tests/**.ts' 'tests/**.tsx' \
+              | sed -E 's/\.test(\.tsx?)$/\1/' | sort -u | while read -r source; do
+                for candidate in "${source%.*}.test.ts" "${source%.*}.test.tsx"; do
+                  if [ -f "$candidate" ]; then echo "$candidate"; fi
+                done
+              done
+          )
+          if [ "${#tests[@]}" -gt 0 ]; then
+            npx vitest run "${tests[@]}"
+          fi
+
+  image:
+    name: Publish image
+    needs: [backend, frontend]
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        with:
+          persist-credentials: false
+
+      - name: Log in to the image registry
+        env:
+          IMAGE_REPOSITORY: ${{ secrets.QOSLLM_IMAGE_REPOSITORY }}
+          REGISTRY_USERNAME: ${{ secrets.QOSLLM_REGISTRY_USERNAME }}
+          REGISTRY_PASSWORD: ${{ secrets.QOSLLM_REGISTRY_PASSWORD }}
+        run: |
+          printf '%s' "$REGISTRY_PASSWORD" \
+            | docker login "${IMAGE_REPOSITORY%%/*}" --username "$REGISTRY_USERNAME" --password-stdin
+
+      - name: Build and push the image
+        env:
+          IMAGE_REPOSITORY: ${{ secrets.QOSLLM_IMAGE_REPOSITORY }}
+        run: ./deploy/qosllm/publish.sh "$IMAGE_REPOSITORY"
+
+      - name: Record the image tag
+        run: echo "镜像标签：\`$(git rev-parse --short=12 HEAD)\`" >> "$GITHUB_STEP_SUMMARY"

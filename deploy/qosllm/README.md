@@ -4,6 +4,20 @@
 
 服务由 PostgreSQL、QosLLM 网关和 Caddy 组成。只有 Caddy 对外开放 80 和 443，网关和数据库使用 Docker 内部网络
 
+## 自动检查和发布
+
+推送到 `litellm_zh_cn` 或向它发起 PR 时，GitHub Actions 运行 `.github/workflows/qosllm.yml`。检查以分支所基于的上游版本为基准，即 `pyproject.toml` 版本号对应的上游标签，只检查 Fork 改动的部分。后端对 Fork 新增的 Python 文件运行 ruff，并运行 Fork 改过的测试以及改过模块对应的测试。前端运行 TypeScript 检查和翻译检查，对 Fork 改过的文件运行 eslint、prettier 和对应的 vitest 测试，出现未翻译的文案时检查失败
+
+推送到分支且检查全部通过后，自动构建镜像并推送到镜像仓库，镜像标签与本机 `publish.sh` 相同，为提交编号的前 12 位，显示在运行结果的摘要中。首次使用前在 GitHub 仓库的 Settings > Secrets and variables > Actions 中添加三个 Secret
+
+| 名称 | 内容 |
+|---|---|
+| `QOSLLM_IMAGE_REPOSITORY` | `<仓库域名>/<命名空间>/qosllm`，与 `publish.sh` 的参数相同 |
+| `QOSLLM_REGISTRY_USERNAME` | 镜像仓库用户名 |
+| `QOSLLM_REGISTRY_PASSWORD` | 镜像仓库密码 |
+
+仓库公开时 Actions 日志所有人可见，镜像仓库地址也放在 Secret 中，日志里显示为 `***`。服务器更新时把 `.env` 的 `LITELLM_IMAGE` 改为 `<QOSLLM_IMAGE_REPOSITORY>:<镜像标签>`，再运行 `docker compose pull --policy always litellm` 和 `./start.sh`
+
 ## 本机发布
 
 多人合作时，先把经过测试的改动合并到 `litellm_zh_cn`，再从该提交构建一次发布镜像。先用 `docker login` 登录镜像仓库，密码在终端交互输入
