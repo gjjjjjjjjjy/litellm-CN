@@ -36,9 +36,11 @@ jobs:
           echo "UPSTREAM_BASE=v$version" >> "$GITHUB_ENV"
 
       - name: Set up uv
-        uses: ./.github/actions/setup-uv-with-retries
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
           version: "0.10.9"
+          enable-cache: true
+          cache-dependency-glob: uv.lock
 
       - name: Install dependencies
         run: |
