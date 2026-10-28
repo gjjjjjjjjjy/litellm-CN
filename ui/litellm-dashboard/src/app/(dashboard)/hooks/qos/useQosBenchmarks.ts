@@ -5,6 +5,7 @@ import {
   type QosBenchmarkDeleted,
   type QosBenchmarkDetail,
   type QosBenchmarkRequest,
+  type QosBenchmarkRequests,
   type QosBenchmarkRun,
   type QosBenchmarkStarted,
   type QosTargetModel,
@@ -52,6 +53,26 @@ export const useQosBenchmarkDetail = (
     retry: false,
   } as const;
   return useQuery<QosBenchmarkDetail>(options);
+};
+
+export const useQosBenchmarkRequests = (
+  accessToken: string | null,
+  runId: string,
+  page: number,
+  pageSize: number,
+): UseQueryResult<QosBenchmarkRequests> => {
+  const options = {
+    queryKey: [...benchmarkKeys.detail(runId), "requests", page, pageSize],
+    queryFn: () =>
+      apiClient.get<QosBenchmarkRequests>(`/qos/benchmarks/${encodeURIComponent(runId)}/requests`, {
+        accessToken,
+        query: { page, page_size: pageSize },
+      }),
+    enabled: Boolean(accessToken),
+    staleTime: Infinity,
+    retry: false,
+  };
+  return useQuery<QosBenchmarkRequests>(options);
 };
 
 export const useQosTargets = (accessToken: string | null): UseQueryResult<QosTargetModel[]> => {

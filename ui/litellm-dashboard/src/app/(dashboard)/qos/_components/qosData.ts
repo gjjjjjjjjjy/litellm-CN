@@ -78,6 +78,9 @@ export type QosBenchmarkRun = components["schemas"]["QosBenchmarkRun"];
 export type QosBenchmarkDetail = components["schemas"]["QosBenchmarkDetail"];
 export type QosBenchmarkLevel = components["schemas"]["QosBenchmarkLevel"];
 export type QosBenchmarkDeleted = components["schemas"]["QosBenchmarkDeleted"];
+export type QosBenchmarkRequests = components["schemas"]["QosBenchmarkRequests"];
+export type QosBenchmarkRequestLog = components["schemas"]["QosBenchmarkRequestLog"];
+export type QosBenchmarkExchange = components["schemas"]["QosBenchmarkExchange"];
 export type QosBenchmarkDeploymentLevel = components["schemas"]["QosBenchmarkDeploymentLevel"];
 export type QosTargetModel = components["schemas"]["QosTargetModel"];
 export type QosTargetDeployment = components["schemas"]["QosTargetDeployment"];
@@ -200,6 +203,7 @@ export interface BenchmarkFormInput {
   readonly concurrency: string;
   readonly requestsPerWorker: string;
   readonly maxTokens: string;
+  readonly saveResponses: boolean;
 }
 
 export type BenchmarkPlanCheck =
@@ -234,6 +238,7 @@ export const checkBenchmarkPlan = (input: BenchmarkFormInput): BenchmarkPlanChec
       concurrency: [...concurrency.levels],
       requests_per_worker: requestsPerWorker,
       max_tokens: maxTokens,
+      save_responses: input.saveResponses,
     },
   };
 };

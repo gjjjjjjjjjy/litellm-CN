@@ -14,9 +14,10 @@ from litellm._logging import verbose_proxy_logger
 from litellm.proxy.management_endpoints.qos_response_check import (
     ResponseCheck,
     ResponseCheckRecorder,
-    chunk_text,
+    chunk_parts,
     marked_prompt,
     new_marker,
+    saved_exchange,
     verdict,
 )
 from litellm.types.qos import QosBenchmarkRequest
@@ -59,24 +60,38 @@ RecordCheck: TypeAlias = Callable[[ResponseCheck], None]
 
 
 async def _send(
-    client: httpx.AsyncClient, url: str, headers: Mapping[str, str], body: Mapping[str, object], marker: str
-) -> ResponseCheck | None:
-    call_id: Final = uuid.uuid4().hex
+    client: httpx.AsyncClient,
+    url: str,
+    headers: Mapping[str, str],
+    body: Mapping[str, object],
+    marker: str,
+    call_id: str,
+    question: str | None,
+) -> ResponseCheck:
     async with client.stream("POST", url, json=body, headers={**headers, "x-litellm-call-id": call_id}) as response:
-        text: Final = "".join([chunk_text(line) async for line in response.aiter_lines()])
         if response.status_code >= 400:
+            await response.aread()
+            error: Final = f"HTTP {response.status_code}: {response.text}"
             verbose_proxy_logger.warning("QoS benchmark request failed with HTTP %s", response.status_code)
-            return None
-    return ResponseCheck(call_id=call_id, verdict=verdict(marker, text))
+            return ResponseCheck(call_id=call_id, verdict=None, exchange=saved_exchange(question, None, None, error))
+        parts: Final = tuple([chunk_parts(line) async for line in response.aiter_lines()])
+        answer: Final = "".join(part.answer for part in parts)
+        reasoning: Final = "".join(part.reasoning for part in parts)
+        stream_errors: Final = tuple(part.error for part in parts if part.error is not None)
+        stream_error: Final = "\n".join(stream_errors) if stream_errors else None
+        return ResponseCheck(
+            call_id=call_id,
+            verdict=verdict(marker, reasoning + answer) if stream_error is None else None,
+            exchange=saved_exchange(question, answer, reasoning, stream_error),
+        )
 
 
-def _request_body(plan: QosBenchmarkRequest, target: str, sequence: int, marker: str) -> Mapping[str, object]:
-    prompt: Final = BENCHMARK_PROMPTS[sequence % len(BENCHMARK_PROMPTS)]
+def _request_body(plan: QosBenchmarkRequest, target: str, prompt: str) -> Mapping[str, object]:
     return {
         "model": target,
         "stream": True,
         "max_tokens": plan.max_tokens,
-        "messages": [{"role": "user", "content": marked_prompt(marker, prompt)}],
+        "messages": [{"role": "user", "content": prompt}],
     }
 
 
@@ -87,13 +102,16 @@ async def _attempt(
     plan: QosBenchmarkRequest,
     target: str,
     sequence: int,
-) -> ResponseCheck | None:
+) -> ResponseCheck:
     marker: Final = new_marker()
+    call_id: Final = uuid.uuid4().hex
+    prompt: Final = marked_prompt(marker, BENCHMARK_PROMPTS[sequence % len(BENCHMARK_PROMPTS)])
+    question: Final = prompt if plan.save_responses else None
     try:
-        return await _send(client, url, headers, _request_body(plan, target, sequence, marker), marker)
+        return await _send(client, url, headers, _request_body(plan, target, prompt), marker, call_id, question)
     except (httpx.HTTPError, ValidationError) as error:
         verbose_proxy_logger.warning("QoS benchmark request did not complete: %s", error)
-        return None
+        return ResponseCheck(call_id=call_id, verdict=None, exchange=saved_exchange(question, None, None, str(error)))
 
 
 async def _worker(
@@ -107,8 +125,11 @@ async def _worker(
 ) -> None:
     first: Final = worker_index * plan.requests_per_worker
     for sequence in range(first, first + plan.requests_per_worker):
-        if (check := await _attempt(client, url, headers, plan, target, sequence)) is not None:
-            record(check)
+        if (
+            check := await _attempt(client, url, headers, plan, target, sequence)
+        ).verdict is None and check.exchange is None:
+            continue
+        record(check)
 
 
 def _level_headers(auth: Mapping[str, str], run_id: str, concurrency: int) -> Mapping[str, str]:

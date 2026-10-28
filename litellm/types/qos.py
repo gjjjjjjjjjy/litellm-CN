@@ -85,6 +85,7 @@ class QosBenchmarkRequest(LiteLLMBaseModel):
     concurrency: tuple[Annotated[int, Field(ge=1, le=256)], ...] = Field(min_length=1, max_length=8)
     requests_per_worker: int = Field(ge=1, le=50)
     max_tokens: int = Field(ge=1, le=8192)
+    save_responses: bool = Field(default=False, description="Save this benchmark's question and response text")
 
     @property
     def targets(self) -> tuple[str, ...]:
@@ -160,6 +161,38 @@ class QosBenchmarkDetail(LiteLLMBaseModel):
     levels: tuple[QosBenchmarkLevel, ...]
     deployments: tuple[QosDeploymentMetrics, ...]
     deployment_levels: tuple[QosBenchmarkDeploymentLevel, ...]
+
+
+class QosBenchmarkExchange(LiteLLMBaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    question: str
+    answer: str | None
+    reasoning: str | None
+    error: str | None
+
+
+class QosBenchmarkRequestLog(LiteLLMBaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    request_id: str
+    started_at: UtcDatetime
+    concurrency: int | None
+    model_id: str
+    api_base: str
+    vendor: str
+    status: str | None
+    response_check: Literal["passed", "crosstalk", "marker_missing"] | None
+    exchange: QosBenchmarkExchange | None
+
+
+class QosBenchmarkRequests(LiteLLMBaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    requests: tuple[QosBenchmarkRequestLog, ...]
+    total: int
+    page: int
+    page_size: int
 
 
 class QosTargetDeployment(LiteLLMBaseModel):

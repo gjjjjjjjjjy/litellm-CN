@@ -12,6 +12,7 @@ from litellm.llms.openai_like.json_loader import JSONProviderRegistry
 from litellm.proxy._types import CommonProxyErrors, LitellmUserRoles, UserAPIKeyAuth
 from litellm.proxy.auth.user_api_key_auth import user_api_key_auth
 from litellm.proxy.management_endpoints.qos_endpoints import router
+from litellm.proxy.management_endpoints.qos_requests import REQUEST_COUNT_SQL, REQUESTS_SQL
 from litellm.proxy.management_endpoints.qos_response_check import RECORD_RESPONSE_CHECKS_SQL, ResponseCheck
 from litellm.proxy.management_endpoints.qos_summary import (
     BENCHMARK_DELETE_SQL,
@@ -222,11 +223,14 @@ class TestBenchmarkEndpoints:
         assert body["run_id"].startswith("qos-")
         base_url, api_key, run_id, plan, recorder = start.call_args.args
         prisma.db.query_raw = AsyncMock(return_value=[{"call_id": "call-1"}])
-        recorder.add(ResponseCheck("call-1", "passed"))
+        recorder.add(ResponseCheck("call-1", "passed", None))
         recorder.close()
         asyncio.run(recorder.run())
         sql, payload, since = prisma.db.query_raw.await_args.args
-        assert (sql, json.loads(payload)) == (RECORD_RESPONSE_CHECKS_SQL, [{"call_id": "call-1", "verdict": "passed"}])
+        assert (sql, json.loads(payload)) == (
+            RECORD_RESPONSE_CHECKS_SQL,
+            [{"call_id": "call-1", "verdict": "passed", "exchange": None}],
+        )
         assert since == datetime.fromisoformat(body["started_at"]).replace(tzinfo=None)
         assert base_url.startswith("http://127.0.0.1:")
         assert (api_key, run_id, plan.concurrency, plan.targets) == (
@@ -578,6 +582,65 @@ class TestHealthEndpoint:
         assert (probe["model"], probe["probes"]) == ("GLM-5.3", 53)
         assert probe["latency_ms"] == {"p50": 1275.0, "p95": 2075.2, "p99": 4598.8}
         assert probe["last_probe_at"] == "2026-10-23T05:28:41Z"
+
+
+class TestBenchmarkRequestLogs:
+    @pytest.mark.parametrize("role", (LitellmUserRoles.PROXY_ADMIN, LitellmUserRoles.PROXY_ADMIN_VIEW_ONLY))
+    def test_proxy_admins_and_read_only_admins_can_read_saved_text(self, role: LitellmUserRoles) -> None:
+        with patch("litellm.proxy.proxy_server.prisma_client", None):
+            response: Final = _client(role).get("/qos/benchmarks/qos-run-1/requests")
+        assert response.status_code == 500
+        assert response.json()["detail"] == CommonProxyErrors.db_not_connected_error.value
+
+    @pytest.mark.parametrize(
+        "role",
+        (None, LitellmUserRoles.INTERNAL_USER, LitellmUserRoles.INTERNAL_USER_VIEW_ONLY, LitellmUserRoles.ORG_ADMIN),
+    )
+    def test_metric_read_access_does_not_grant_access_to_full_response_text(
+        self, role: LitellmUserRoles | None
+    ) -> None:
+        with patch("litellm.proxy.proxy_server.prisma_client", None):
+            response: Final = _client(role).get("/qos/benchmarks/qos-run-1/requests")
+        assert response.status_code == 403
+
+    def test_filters_both_queries_to_the_run_and_returns_a_stable_page_of_saved_text(self) -> None:
+        prisma: Final = MagicMock()
+        exchange: Final = {"question": "question\ncode", "answer": "<answer>", "reasoning": "think", "error": None}
+        row: Final = {
+            "request_id": "request-2",
+            "started_at": NOW,
+            "concurrency": 32,
+            "model_id": "node-a",
+            "api_base": "https://ai.gitee.com/v1",
+            "custom_llm_provider": "openai",
+            "status": "success",
+            "response_check": "passed",
+            "exchange": exchange,
+        }
+        prisma.db.query_raw = AsyncMock(side_effect=[[{"total": 3}], [row]])
+        with patch("litellm.proxy.proxy_server.prisma_client", prisma):
+            response: Final = _client(LitellmUserRoles.PROXY_ADMIN_VIEW_ONLY).get(
+                "/qos/benchmarks/qos-run-1/requests", params={"page": 2, "page_size": 1}
+            )
+        assert response.status_code == 200, response.text
+        body: Final = response.json()
+        assert (body["page"], body["page_size"], body["total"]) == (2, 1, 3)
+        (request,) = body["requests"]
+        assert (request["exchange"], request["vendor"], request["concurrency"]) == (exchange, "moark", 32)
+        count_call, rows_call = (call.args for call in prisma.db.query_raw.await_args_list)
+        assert (count_call[0], count_call[2]) == (REQUEST_COUNT_SQL, "qos-run-1")
+        assert rows_call == (REQUESTS_SQL, count_call[1], "qos-run-1", 1, 1)
+
+    @pytest.mark.parametrize("params", ({"page": 0}, {"page_size": 0}, {"page_size": 51}))
+    def test_rejects_invalid_pagination_before_querying(self, params: dict[str, int]) -> None:
+        prisma: Final = MagicMock()
+        prisma.db.query_raw = AsyncMock()
+        with patch("litellm.proxy.proxy_server.prisma_client", prisma):
+            response: Final = _client(LitellmUserRoles.PROXY_ADMIN).get(
+                "/qos/benchmarks/qos-run-1/requests", params=params
+            )
+        assert response.status_code == 422
+        prisma.db.query_raw.assert_not_awaited()
 
 
 class TestBenchmarkDeletion:

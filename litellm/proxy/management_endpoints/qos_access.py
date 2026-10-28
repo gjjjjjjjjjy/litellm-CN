@@ -23,3 +23,8 @@ def require_reader(user_api_key_dict: UserAPIKeyAuth) -> None:
 def require_admin(user_api_key_dict: UserAPIKeyAuth) -> None:
     if user_api_key_dict.user_role != LitellmUserRoles.PROXY_ADMIN:
         raise HTTPException(status_code=403, detail="Only proxy admins can change service quality data")
+
+
+def require_content_reader(user_api_key_dict: UserAPIKeyAuth) -> None:
+    if user_api_key_dict.user_role not in (LitellmUserRoles.PROXY_ADMIN, LitellmUserRoles.PROXY_ADMIN_VIEW_ONLY):
+        raise HTTPException(status_code=403, detail="Only proxy admins can view benchmark question and response text")

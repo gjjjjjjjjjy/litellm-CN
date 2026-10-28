@@ -109,6 +109,7 @@ describe("benchmark plan", () => {
     concurrency: "1, 4，16",
     requestsPerWorker: "8",
     maxTokens: "512",
+    saveResponses: true,
   };
 
   it("parses concurrency levels separated by commas, Chinese commas or spaces", () => {
@@ -133,6 +134,7 @@ describe("benchmark plan", () => {
         concurrency: [1, 4, 16],
         requests_per_worker: 8,
         max_tokens: 512,
+        save_responses: true,
       },
     });
   });

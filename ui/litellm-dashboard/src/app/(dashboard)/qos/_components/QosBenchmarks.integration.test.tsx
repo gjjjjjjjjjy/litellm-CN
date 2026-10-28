@@ -152,6 +152,7 @@ const blobText = (blob: Blob): Promise<string> =>
 const respondWith =
   (detail: unknown) =>
   async (path: string): Promise<unknown> => {
+    if (path.endsWith("/requests")) return { requests: [], total: 0, page: 1, page_size: 10 };
     if (path === "/qos/summary") return { start_time: "", end_time: "", tag: null, model_groups: [], deployments: [] };
     if (path === "/qos/benchmarks") return { runs: [pastRun] };
     if (path === "/qos/targets") return { models: [{ model_group: "qwen3-max", deployments: qwenProviders }] };
@@ -177,6 +178,8 @@ describe("QoS benchmarks", () => {
     expect(await screen.findByRole("dialog")).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "Benchmarks", hidden: true })).toHaveAttribute("aria-selected", "true");
     expect(screen.getByLabelText("Model")).toHaveTextContent("qwen3-max");
+    expect(screen.getByRole("switch", { name: "Save questions and answers for this test" })).toBeChecked();
+    await user.click(screen.getByRole("switch", { name: "Save questions and answers for this test" }));
 
     fireEvent.change(screen.getByLabelText("Concurrency levels"), { target: { value: "1, 4" } });
     fireEvent.change(screen.getByLabelText("Requests per worker"), { target: { value: "2" } });
@@ -192,6 +195,7 @@ describe("QoS benchmarks", () => {
         concurrency: [1, 4],
         requests_per_worker: 2,
         max_tokens: 256,
+        save_responses: false,
       },
     });
     expect(await screen.findByText(started.run_id)).toBeInTheDocument();

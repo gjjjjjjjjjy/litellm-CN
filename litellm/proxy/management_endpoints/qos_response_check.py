@@ -19,11 +19,13 @@ from pydantic import ConfigDict, TypeAdapter
 
 from litellm._logging import verbose_proxy_logger
 from litellm.types.llms.base import LiteLLMBaseModel
+from litellm.types.qos import QosBenchmarkExchange
 
 if TYPE_CHECKING:
     from litellm.proxy.utils import PrismaClient
 
 RESPONSE_CHECK_KEY: Final = "qos_response_check"
+BENCHMARK_EXCHANGE_KEY: Final = "qos_benchmark_exchange"
 _MARKER: Final = re.compile(r"QOS-[0-9A-F]{12}")
 _SSE_DATA_PREFIX: Final = "data:"
 
@@ -32,7 +34,9 @@ ResponseVerdict: TypeAlias = Literal["passed", "crosstalk", "marker_missing"]
 RECORD_RESPONSE_CHECKS_SQL: Final = f"""
 UPDATE "LiteLLM_SpendLogs" AS logs
 SET metadata = COALESCE(logs.metadata, '{{}}'::jsonb) || jsonb_build_object('{RESPONSE_CHECK_KEY}', checks.verdict)
-FROM jsonb_to_recordset($1::jsonb) AS checks(call_id text, verdict text)
+    || CASE WHEN checks.exchange IS NULL THEN '{{}}'::jsonb
+        ELSE jsonb_build_object('{BENCHMARK_EXCHANGE_KEY}', checks.exchange) END
+FROM jsonb_to_recordset($1::jsonb) AS checks(call_id text, verdict text, exchange jsonb)
 WHERE logs.litellm_call_id = checks.call_id AND logs."startTime" >= $2::timestamp
 RETURNING logs.litellm_call_id AS call_id
 """
@@ -41,7 +45,15 @@ RETURNING logs.litellm_call_id AS call_id
 @dataclass(frozen=True, slots=True)
 class ResponseCheck:
     call_id: str
-    verdict: ResponseVerdict
+    verdict: ResponseVerdict | None
+    exchange: QosBenchmarkExchange | None
+
+
+@dataclass(frozen=True, slots=True)
+class ResponseText:
+    answer: str
+    reasoning: str
+    error: str | None
 
 
 WriteChecks: TypeAlias = Callable[[tuple[ResponseCheck, ...]], Awaitable[frozenset[str]]]
@@ -66,10 +78,17 @@ class _Choice(LiteLLMBaseModel):
     delta: _Delta
 
 
+class _StreamError(LiteLLMBaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    message: str
+
+
 class _Chunk(LiteLLMBaseModel):
     model_config = ConfigDict(frozen=True)
 
     choices: tuple[_Choice, ...] = ()
+    error: _StreamError | str | None = None
 
 
 class _Recorded(LiteLLMBaseModel):
@@ -89,18 +108,34 @@ def marked_prompt(marker: str, prompt: str) -> str:
     return f"Write the code {marker} alone on the first line of your reply, then answer:\n\n{prompt}"
 
 
-def chunk_text(line: str) -> str:
-    """The generated text in one server-sent event line of a streamed chat completion, reasoning included."""
+def chunk_parts(line: str) -> ResponseText:
     if not line.startswith(_SSE_DATA_PREFIX):
-        return ""
+        return ResponseText(answer="", reasoning="", error=None)
     data: Final = line.removeprefix(_SSE_DATA_PREFIX).strip()
     if data == "[DONE]":
-        return ""
-    return "".join(_delta_text(choice.delta) for choice in _Chunk.model_validate_json(data).choices)
+        return ResponseText(answer="", reasoning="", error=None)
+    chunk: Final = _Chunk.model_validate_json(data)
+    choices: Final = chunk.choices
+    return ResponseText(
+        answer="".join(choice.delta.content for choice in choices if choice.delta.content is not None),
+        reasoning="".join(
+            choice.delta.reasoning_content for choice in choices if choice.delta.reasoning_content is not None
+        ),
+        error=chunk.error.message if isinstance(chunk.error, _StreamError) else chunk.error,
+    )
 
 
-def _delta_text(delta: _Delta) -> str:
-    return "".join(part for part in (delta.reasoning_content, delta.content) if part is not None)
+def chunk_text(line: str) -> str:
+    parts: Final = chunk_parts(line)
+    return parts.reasoning + parts.answer
+
+
+def saved_exchange(
+    question: str | None, answer: str | None, reasoning: str | None, error: str | None
+) -> QosBenchmarkExchange | None:
+    if question is None:
+        return None
+    return QosBenchmarkExchange(question=question, answer=answer, reasoning=reasoning, error=error)
 
 
 def verdict(marker: str, text: str) -> ResponseVerdict:
@@ -116,7 +151,16 @@ async def write_response_checks(
     prisma_client: "PrismaClient", since: datetime, checks: tuple[ResponseCheck, ...]
 ) -> frozenset[str]:
     """Write each verdict whose spend log row exists, returning the call ids written."""
-    payload: Final = json.dumps([{"call_id": check.call_id, "verdict": check.verdict} for check in checks])
+    payload: Final = json.dumps(
+        [
+            {
+                "call_id": check.call_id,
+                "verdict": check.verdict,
+                "exchange": None if check.exchange is None else check.exchange.model_dump(),
+            }
+            for check in checks
+        ]
+    )
     return frozenset(
         row.call_id
         for row in _RECORDED.validate_python(

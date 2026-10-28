@@ -17,6 +17,7 @@ from litellm.proxy.management_endpoints.qos_response_check import (
     verdict,
     write_response_checks,
 )
+from litellm.types.qos import QosBenchmarkExchange
 
 OWN: Final = "QOS-0123456789AB"
 OTHER: Final = "QOS-BA9876543210"
@@ -60,9 +61,9 @@ class TestChunkText:
             chunk_text("data: {not json")
 
 
-A: Final = ResponseCheck("a", "passed")
-B: Final = ResponseCheck("b", "crosstalk")
-C: Final = ResponseCheck("c", "passed")
+A: Final = ResponseCheck("a", "passed", None)
+B: Final = ResponseCheck("b", "crosstalk", None)
+C: Final = ResponseCheck("c", "passed", None)
 
 
 class TestWriteResponseChecks:
@@ -76,7 +77,25 @@ class TestWriteResponseChecks:
         assert written == frozenset({"a"})
         sql, payload, since = prisma.db.query_raw.await_args.args
         assert (sql, since) == (RECORD_RESPONSE_CHECKS_SQL, SINCE)
-        assert json.loads(payload) == [{"call_id": "a", "verdict": "passed"}, {"call_id": "b", "verdict": "crosstalk"}]
+        assert json.loads(payload) == [
+            {"call_id": "a", "verdict": "passed", "exchange": None},
+            {"call_id": "b", "verdict": "crosstalk", "exchange": None},
+        ]
+
+    @pytest.mark.asyncio
+    async def test_the_same_batched_write_keeps_question_answer_and_reasoning(self) -> None:
+        prisma: Final = MagicMock()
+        prisma.db.query_raw = AsyncMock(return_value=[{"call_id": "a"}])
+        exchange: Final = QosBenchmarkExchange(
+            question="question\ncode", answer="answer", reasoning="think", error=None
+        )
+
+        await write_response_checks(prisma, SINCE, (ResponseCheck("a", "passed", exchange),))
+
+        assert prisma.db.query_raw.await_count == 1
+        assert json.loads(prisma.db.query_raw.await_args.args[1]) == [
+            {"call_id": "a", "verdict": "passed", "exchange": exchange.model_dump()}
+        ]
 
 
 class _SpendLogs:

@@ -124,6 +124,88 @@ async def test_each_request_asks_for_its_own_code_and_is_checked_under_the_call_
     assert len(set(call_ids)) == len(call_ids)
     assert sorted(check.call_id for check in recorder.checks) == sorted(call_ids)
     assert {check.verdict for check in recorder.checks} == {"passed"}
+    assert all(check.exchange is None for check in recorder.checks)
+
+
+@pytest.mark.asyncio
+async def test_saves_the_exact_question_and_keeps_reasoning_separate_from_the_answer() -> None:
+    upstream: Final = _RecordingUpstream()
+
+    async def handle(request: httpx.Request) -> httpx.Response:
+        upstream.requests.append(request)
+        marker: Final = _MARKER.findall(json.loads(request.content)["messages"][0]["content"])[0]
+        chunks: Final = (
+            {"choices": [{"delta": {"reasoning_content": "think first"}}]},
+            {"choices": [{"delta": {"content": marker + "\n"}}]},
+            {"choices": [{"delta": {"content": "<answer>\n第二行"}}]},
+        )
+        return httpx.Response(200, text="".join(f"data: {json.dumps(chunk)}\n\n" for chunk in chunks))
+
+    recorder: Final = await _run(
+        upstream, _plan(concurrency=(1,), requests_per_worker=1, save_responses=True), None, handle=handle
+    )
+    (check,) = recorder.checks
+    question: Final = json.loads(upstream.requests[0].content)["messages"][0]["content"]
+    assert check.exchange is not None
+    assert check.exchange.question == question
+    assert check.exchange.answer == _MARKER.findall(question)[0] + "\n<answer>\n第二行"
+    assert (check.exchange.reasoning, check.exchange.error, check.verdict) == ("think first", None, "passed")
+
+
+@pytest.mark.asyncio
+async def test_saves_the_question_and_http_error_when_the_provider_rejects_a_request() -> None:
+    upstream: Final = _RecordingUpstream()
+
+    async def handle(request: httpx.Request) -> httpx.Response:
+        upstream.requests.append(request)
+        return httpx.Response(429, json={"error": {"message": "rate limit exceeded"}})
+
+    recorder: Final = await _run(
+        upstream, _plan(concurrency=(1,), requests_per_worker=1, save_responses=True), None, handle=handle
+    )
+    (check,) = recorder.checks
+    assert check.verdict is None
+    assert check.exchange is not None
+    assert check.exchange.question == json.loads(upstream.requests[0].content)["messages"][0]["content"]
+    assert (check.exchange.answer, check.exchange.reasoning) == (None, None)
+    assert check.exchange.error is not None
+    assert "HTTP 429" in check.exchange.error
+    assert "rate limit exceeded" in check.exchange.error
+
+
+@pytest.mark.asyncio
+async def test_saves_a_transport_failure_only_when_response_saving_is_enabled() -> None:
+    recorder: Final = await _run(
+        _RecordingUpstream(fail_first=1),
+        _plan(concurrency=(1,), requests_per_worker=1, save_responses=True),
+        None,
+    )
+    (check,) = recorder.checks
+    assert check.verdict is None
+    assert check.exchange is not None
+    assert check.exchange.error == "node unreachable"
+    assert (check.exchange.answer, check.exchange.reasoning) == (None, None)
+
+
+@pytest.mark.asyncio
+async def test_a_stream_error_is_saved_instead_of_passing_a_partial_answer_with_the_right_code() -> None:
+    upstream: Final = _RecordingUpstream()
+
+    async def handle(request: httpx.Request) -> httpx.Response:
+        upstream.requests.append(request)
+        marker: Final = _MARKER.findall(json.loads(request.content)["messages"][0]["content"])[0]
+        error: Final = {"error": {"message": "upstream stream interrupted"}}
+        partial: Final = _sse(marker).removesuffix("data: [DONE]\n\n")
+        return httpx.Response(200, text=partial + f"data: {json.dumps(error)}\n\ndata: [DONE]\n\n")
+
+    recorder: Final = await _run(
+        upstream, _plan(concurrency=(1,), requests_per_worker=1, save_responses=True), None, handle=handle
+    )
+    (check,) = recorder.checks
+    assert check.verdict is None
+    assert check.exchange is not None
+    assert check.exchange.error == "upstream stream interrupted"
+    assert check.exchange.answer == _MARKER.findall(check.exchange.question)[0]
 
 
 @pytest.mark.parametrize(("answer", "expected"), [("previous", "crosstalk"), ("none", "marker_missing")])

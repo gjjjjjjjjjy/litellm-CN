@@ -15,6 +15,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { extractErrorMessage } from "@/utils/errorUtils";
 import {
@@ -84,9 +85,10 @@ export default function StartBenchmarkDialog({
   const [concurrency, setConcurrency] = React.useState("1, 4, 16");
   const [requestsPerWorker, setRequestsPerWorker] = React.useState("8");
   const [maxTokens, setMaxTokens] = React.useState("512");
+  const [saveResponses, setSaveResponses] = React.useState(true);
   const start = useStartQosBenchmark(accessToken);
   const deploymentIds = deploymentIdsFor(target, deployments);
-  const formInput = { model, deploymentIds, concurrency, requestsPerWorker, maxTokens };
+  const formInput = { model, deploymentIds, concurrency, requestsPerWorker, maxTokens, saveResponses };
   const check = checkBenchmarkPlan(formInput);
 
   const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
@@ -180,6 +182,11 @@ export default function StartBenchmarkDialog({
             </Field>
           </div>
 
+          <label htmlFor="qos-save-responses" className="flex items-center gap-2 text-sm">
+            <Switch id="qos-save-responses" checked={saveResponses} onCheckedChange={setSaveResponses} />
+            Save questions and answers for this test
+          </label>
+          <p className="text-xs text-muted-foreground">Saved text is available to proxy admins in the test details.</p>
           <p className={`text-sm ${check.ok ? "text-muted-foreground" : "text-destructive"}`} role="status">
             {!check.ok && check.message}
             {check.ok && target.kind !== "compare" && `Sends ${check.total} streamed requests through the gateway`}

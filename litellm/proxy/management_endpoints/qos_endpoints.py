@@ -8,7 +8,7 @@ from pydantic import ConfigDict, TypeAdapter
 
 from litellm.proxy._types import CommonProxyErrors, UserAPIKeyAuth
 from litellm.proxy.auth.user_api_key_auth import user_api_key_auth
-from litellm.proxy.management_endpoints.qos_access import require_admin, require_reader
+from litellm.proxy.management_endpoints.qos_access import require_admin, require_content_reader, require_reader
 from litellm.proxy.management_endpoints.qos_benchmark import QOS_RUN_PREFIX, concurrency_of, new_run_id, start_benchmark
 from litellm.proxy.management_endpoints.qos_deployments import (
     deployment_model_groups,
@@ -23,6 +23,13 @@ from litellm.proxy.management_endpoints.qos_health import (
     health_node,
     health_probe,
     probe_key,
+)
+from litellm.proxy.management_endpoints.qos_requests import (
+    REQUEST_COUNT_ROWS,
+    REQUEST_COUNT_SQL,
+    REQUEST_ROWS,
+    REQUESTS_SQL,
+    request_log,
 )
 from litellm.proxy.management_endpoints.qos_response_check import ResponseCheckRecorder, write_response_checks
 from litellm.proxy.management_endpoints.qos_summary import (
@@ -67,6 +74,7 @@ from litellm.types.qos import (
     QosBenchmarkLevel,
     QosBenchmarkListResponse,
     QosBenchmarkRequest,
+    QosBenchmarkRequests,
     QosBenchmarkStarted,
     QosHealthResponse,
     QosSummaryResponse,
@@ -266,6 +274,35 @@ async def get_qos_benchmark(
         levels=tuple(sorted(levels, key=lambda level: level.concurrency)),
         deployments=tuple(deployment_metrics(row) for row in deployment_rows),
         deployment_levels=tuple(sorted(deployment_levels, key=lambda level: (level.concurrency, level.model_id))),
+    )
+
+
+@router.get(
+    "/qos/benchmarks/{run_id}/requests",
+    tags=["qos"],
+    dependencies=[Depends(user_api_key_auth)],
+    response_model=QosBenchmarkRequests,
+)
+async def get_qos_benchmark_requests(
+    run_id: str,
+    user_api_key_dict: Annotated[UserAPIKeyAuth, Depends(user_api_key_auth)],
+    page: Annotated[int, Query(ge=1)] = 1,
+    page_size: Annotated[int, Query(ge=1, le=50)] = 10,
+) -> QosBenchmarkRequests:
+    from litellm.proxy.proxy_server import prisma_client
+
+    require_content_reader(user_api_key_dict)
+    if _RUN_ID.fullmatch(run_id) is None:
+        raise HTTPException(status_code=400, detail="Not a QoS benchmark run id")
+    if prisma_client is None:
+        raise HTTPException(status_code=500, detail=CommonProxyErrors.db_not_connected_error.value)
+    since: Final = utc_now() - QOS_MAX_WINDOW
+    (count,) = REQUEST_COUNT_ROWS.validate_python(await prisma_client.db.query_raw(REQUEST_COUNT_SQL, since, run_id))
+    rows: Final = REQUEST_ROWS.validate_python(
+        await prisma_client.db.query_raw(REQUESTS_SQL, since, run_id, page_size, (page - 1) * page_size)
+    )
+    return QosBenchmarkRequests(
+        requests=tuple(request_log(row) for row in rows), total=count.total, page=page, page_size=page_size
     )
 
 

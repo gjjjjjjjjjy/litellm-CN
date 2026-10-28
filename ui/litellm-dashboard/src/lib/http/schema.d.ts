@@ -14247,6 +14247,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/qos/benchmarks/{run_id}/requests": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Qos Benchmark Requests */
+        get: operations["get_qos_benchmark_requests_qos_benchmarks__run_id__requests_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/qos/health": {
         parameters: {
             query?: never;
@@ -43116,6 +43133,17 @@ export interface components {
             /** Run Id */
             run_id: string;
         };
+        /** QosBenchmarkExchange */
+        QosBenchmarkExchange: {
+            /** Answer */
+            answer: string | null;
+            /** Error */
+            error: string | null;
+            /** Question */
+            question: string;
+            /** Reasoning */
+            reasoning: string | null;
+        };
         /** QosBenchmarkLevel */
         QosBenchmarkLevel: {
             /** Concurrency */
@@ -43173,6 +43201,46 @@ export interface components {
             model_group: string;
             /** Requests Per Worker */
             requests_per_worker: number;
+            /**
+             * Save Responses
+             * @description Save this benchmark's question and response text
+             * @default false
+             */
+            save_responses: boolean;
+        };
+        /** QosBenchmarkRequestLog */
+        QosBenchmarkRequestLog: {
+            /** Api Base */
+            api_base: string;
+            /** Concurrency */
+            concurrency: number | null;
+            exchange: components["schemas"]["QosBenchmarkExchange"] | null;
+            /** Model Id */
+            model_id: string;
+            /** Request Id */
+            request_id: string;
+            /** Response Check */
+            response_check: ("passed" | "crosstalk" | "marker_missing") | null;
+            /**
+             * Started At
+             * Format: date-time
+             */
+            started_at: string;
+            /** Status */
+            status: string | null;
+            /** Vendor */
+            vendor: string;
+        };
+        /** QosBenchmarkRequests */
+        QosBenchmarkRequests: {
+            /** Page */
+            page: number;
+            /** Page Size */
+            page_size: number;
+            /** Requests */
+            requests: components["schemas"]["QosBenchmarkRequestLog"][];
+            /** Total */
+            total: number;
         };
         /** QosBenchmarkRun */
         QosBenchmarkRun: {
@@ -72576,6 +72644,40 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["QosBenchmarkDeleted"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_qos_benchmark_requests_qos_benchmarks__run_id__requests_get: {
+        parameters: {
+            query?: {
+                page?: number;
+                page_size?: number;
+            };
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QosBenchmarkRequests"];
                 };
             };
             /** @description Validation Error */

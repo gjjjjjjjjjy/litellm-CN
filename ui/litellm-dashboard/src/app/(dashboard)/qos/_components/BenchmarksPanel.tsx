@@ -30,6 +30,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { extractErrorMessage } from "@/utils/errorUtils";
 import { isProxyAdminRole } from "@/utils/roles";
+import BenchmarkRequests from "./BenchmarkRequests";
 import { benchmarkCsv, benchmarkCsvFileName, type BenchmarkExport } from "./benchmarkCsv";
 import { deploymentColumns, deploymentLevelColumns, levelColumns } from "./QosColumns";
 import {
@@ -262,6 +263,7 @@ export default function BenchmarksPanel({
               size="compact"
               noDataMessage="No node results yet"
             />
+            <BenchmarkRequests key={selectedRunId} accessToken={accessToken} runId={selectedRunId} />
           </CardContent>
         </Card>
       )}

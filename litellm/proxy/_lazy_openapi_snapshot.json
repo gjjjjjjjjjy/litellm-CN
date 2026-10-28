@@ -52321,6 +52321,55 @@
           "title": "QosBenchmarkEvent",
           "type": "object"
         },
+        "QosBenchmarkExchange": {
+          "properties": {
+            "answer": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Answer"
+            },
+            "error": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Error"
+            },
+            "question": {
+              "title": "Question",
+              "type": "string"
+            },
+            "reasoning": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Reasoning"
+            }
+          },
+          "required": [
+            "question",
+            "answer",
+            "reasoning",
+            "error"
+          ],
+          "title": "QosBenchmarkExchange",
+          "type": "object"
+        },
         "QosBenchmarkLevel": {
           "properties": {
             "concurrency": {
@@ -52462,6 +52511,12 @@
               "minimum": 1.0,
               "title": "Requests Per Worker",
               "type": "integer"
+            },
+            "save_responses": {
+              "default": false,
+              "description": "Save this benchmark's question and response text",
+              "title": "Save Responses",
+              "type": "boolean"
             }
           },
           "required": [
@@ -52471,6 +52526,123 @@
             "max_tokens"
           ],
           "title": "QosBenchmarkRequest",
+          "type": "object"
+        },
+        "QosBenchmarkRequestLog": {
+          "properties": {
+            "api_base": {
+              "title": "Api Base",
+              "type": "string"
+            },
+            "concurrency": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Concurrency"
+            },
+            "exchange": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/QosBenchmarkExchange"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "model_id": {
+              "title": "Model Id",
+              "type": "string"
+            },
+            "request_id": {
+              "title": "Request Id",
+              "type": "string"
+            },
+            "response_check": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "passed",
+                    "crosstalk",
+                    "marker_missing"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Response Check"
+            },
+            "started_at": {
+              "format": "date-time",
+              "title": "Started At",
+              "type": "string"
+            },
+            "status": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            },
+            "vendor": {
+              "title": "Vendor",
+              "type": "string"
+            }
+          },
+          "required": [
+            "request_id",
+            "started_at",
+            "concurrency",
+            "model_id",
+            "api_base",
+            "vendor",
+            "status",
+            "response_check",
+            "exchange"
+          ],
+          "title": "QosBenchmarkRequestLog",
+          "type": "object"
+        },
+        "QosBenchmarkRequests": {
+          "properties": {
+            "page": {
+              "title": "Page",
+              "type": "integer"
+            },
+            "page_size": {
+              "title": "Page Size",
+              "type": "integer"
+            },
+            "requests": {
+              "items": {
+                "$ref": "#/components/schemas/QosBenchmarkRequestLog"
+              },
+              "title": "Requests",
+              "type": "array"
+            },
+            "total": {
+              "title": "Total",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "requests",
+            "total",
+            "page",
+            "page_size"
+          ],
+          "title": "QosBenchmarkRequests",
           "type": "object"
         },
         "QosBenchmarkRun": {
@@ -53832,6 +54004,76 @@
             }
           ],
           "summary": "Get Qos Benchmark",
+          "tags": [
+            "qos"
+          ]
+        }
+      },
+      "/qos/benchmarks/{run_id}/requests": {
+        "get": {
+          "operationId": "get_qos_benchmark_requests_qos_benchmarks__run_id__requests_get",
+          "parameters": [
+            {
+              "in": "path",
+              "name": "run_id",
+              "required": true,
+              "schema": {
+                "title": "Run Id",
+                "type": "string"
+              }
+            },
+            {
+              "in": "query",
+              "name": "page",
+              "required": false,
+              "schema": {
+                "default": 1,
+                "minimum": 1,
+                "title": "Page",
+                "type": "integer"
+              }
+            },
+            {
+              "in": "query",
+              "name": "page_size",
+              "required": false,
+              "schema": {
+                "default": 10,
+                "maximum": 50,
+                "minimum": 1,
+                "title": "Page Size",
+                "type": "integer"
+              }
+            }
+          ],
+          "responses": {
+            "200": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/QosBenchmarkRequests"
+                  }
+                }
+              },
+              "description": "Successful Response"
+            },
+            "422": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/HTTPValidationError"
+                  }
+                }
+              },
+              "description": "Validation Error"
+            }
+          },
+          "security": [
+            {
+              "APIKeyHeader": []
+            }
+          ],
+          "summary": "Get Qos Benchmark Requests",
           "tags": [
             "qos"
           ]
