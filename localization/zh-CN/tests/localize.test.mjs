@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import test from "node:test";
 import { createRequire } from "node:module";
-import { translateSource, terminologyViolations } from "../localize.mjs";
+import { run, translateSource, terminologyViolations } from "../localize.mjs";
 import { inspectSource } from "../units.mjs";
 
 const require = createRequire(import.meta.url);
@@ -79,6 +82,24 @@ test("上游新增文案明确列入报告，已应用中文补丁的文件可�
   const second = translateSource(ts, "empty.tsx", first.source, dictionary);
   assert.equal(second.source, first.source);
   assert.equal(second.translated, 0);
+});
+
+test("构建遇到词库中没有的文案直接报错，列出文案和源文件位置", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "localize-"));
+  t.after(() => fs.rmSync(root, { recursive: true }));
+  fs.mkdirSync(path.join(root, "src"));
+  fs.writeFileSync(path.join(root, "src", "page.tsx"), "export const Page = () => <button>New upstream action</button>;\n");
+  fs.writeFileSync(path.join(root, "zh-CN.json"), JSON.stringify(dictionary));
+  const apply = (output) => run("apply", [
+    "--source", root, "--catalog", path.join(root, "zh-CN.json"), "--output", output, "--typescript", process.env.TYPESCRIPT_PATH,
+  ]);
+
+  assert.throws(() => apply(path.join(root, "missing.json")), /1 条文案缺少译文[^]*src\/page\.tsx:1: New upstream action/);
+  assert.equal(fs.existsSync(path.join(root, "missing.json")), false);
+
+  fs.writeFileSync(path.join(root, "zh-CN.json"), JSON.stringify({ ...dictionary, "New upstream action": "上游新操作" }));
+  apply(path.join(root, "report.json"));
+  assert.equal(fs.readFileSync(path.join(root, "src", "page.tsx"), "utf8"), 'export const Page = () => <button>{"上游新操作"}</button>;\n');
 });
 
 test("代码示例、URL 和属性访问保持原样", () => {

@@ -206,12 +206,13 @@ function apply(ts, scanned, catalogPath, output) {
     const details = violations.map(({ location, term, wording, translation }) => `${location}: 「${wording}」应保留为 ${term}：${translation}`);
     throw new Error(`译文违反术语规则 ${violations.length} 处：\n${details.join("\n")}`);
   }
-  const report = {
-    filesScanned: scanned.length, filesTranslated: affectedFiles, stringsTranslated: translated,
-    missing: [...missing].map(([text, examples]) => ({ text, examples })),
-  };
+  if (missing.size > 0) {
+    const details = [...missing].map(([text, examples]) => `${examples.join(", ")}: ${text}`);
+    throw new Error(`${missing.size} 条文案缺少译文，请加入 zh-CN.json：\n${details.join("\n")}`);
+  }
+  const report = { filesScanned: scanned.length, filesTranslated: affectedFiles, stringsTranslated: translated };
   fs.writeFileSync(output, JSON.stringify(report, null, 2) + "\n");
-  console.log(`已翻译 ${translated} 处文案，涉及 ${affectedFiles} 个文件；新增待翻译文案 ${missing.size} 条，详见 ${output}`);
+  console.log(`已翻译 ${translated} 处文案，涉及 ${affectedFiles} 个文件，详见 ${output}`);
 }
 
 export function run(command, argv) {

@@ -57,7 +57,7 @@ HTTP_PROXY=http://host.docker.internal:7897 \
 
 `terminology.json` 列出保留英文的术语，包括 Token、Prompt、Embedding、Completion、Reasoning、Agent 等。构建时检查译文，出现这些术语的中文译法即报错，不会自动改写。服务商名称、模型 ID、API 字段、表单取值、URL、代码示例和用户实际数据保持原值。后端动态内容与远程文章沿用上游内容
 
-构建生成 `translation-report.json`，其中 `missing` 列出上游新增或改写的文案及源文件位置。将译文添加到 `zh-CN.json` 后重新构建。报告属于本地生成文件，由 Git 忽略
+前端出现词库中没有的文案时构建直接报错，列出上游新增或改写的文案及源文件位置。将译文添加到 `zh-CN.json` 后重新构建。构建成功后生成的 `translation-report.json` 记录扫描和翻译的数量，属于本地生成文件，由 Git 忽略
 
 同步上游后删除词库中不再使用的条目，TypeScript 版本与前端 `package.json` 保持一致
 
