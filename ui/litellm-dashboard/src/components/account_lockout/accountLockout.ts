@@ -23,6 +23,11 @@ export const accountLock = (metadata: unknown, now: Date): AccountLock | null =>
 export const withoutLock = <T extends Record<string, unknown>>(
   metadata: T,
 ): Omit<T, "login_locked_at" | "login_locked_until" | "login_failed_attempts"> => {
-  const { login_locked_at: _lockedAt, login_locked_until: _until, login_failed_attempts: _attempts, ...rest } = metadata;
+  const {
+    login_locked_at: _lockedAt,
+    login_locked_until: _until,
+    login_failed_attempts: _attempts,
+    ...rest
+  } = metadata;
   return rest;
 };

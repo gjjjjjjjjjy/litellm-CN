@@ -206,7 +206,13 @@ describe("UsersTable", () => {
 
   it("marks an account locked after failed sign-ins", () => {
     render(
-      <Harness data={[makeUser({ metadata: { login_failed_attempts: 10, login_locked_at: "2026-10-23T06:00:00Z" } } as Partial<UserInfo>)]} />,
+      <Harness
+        data={[
+          makeUser({
+            metadata: { login_failed_attempts: 10, login_locked_at: "2026-10-23T06:00:00Z" },
+          } as Partial<UserInfo>),
+        ]}
+      />,
     );
     expect(screen.getByTestId("user-status-user-1")).toHaveTextContent(/^Locked$/);
   });
@@ -214,7 +220,9 @@ describe("UsersTable", () => {
   it("marks an account temporarily locked while the lock runs", () => {
     const until = new Date(Date.now() + 10 * 60_000).toISOString();
     render(
-      <Harness data={[makeUser({ metadata: { login_failed_attempts: 3, login_locked_until: until } } as Partial<UserInfo>)]} />,
+      <Harness
+        data={[makeUser({ metadata: { login_failed_attempts: 3, login_locked_until: until } } as Partial<UserInfo>)]}
+      />,
     );
     expect(screen.getByTestId("user-status-user-1")).toHaveTextContent("Temporarily locked");
   });

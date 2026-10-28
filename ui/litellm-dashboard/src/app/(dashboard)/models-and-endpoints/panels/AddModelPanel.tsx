@@ -44,7 +44,12 @@ export default function AddModelPanel() {
     if (!isValid) {
       return false;
     }
-    return handleAddModelSubmit(mountedValues(), accessToken, { resetFields: () => form.reset(INITIAL_VALUES) }, refresh);
+    return handleAddModelSubmit(
+      mountedValues(),
+      accessToken,
+      { resetFields: () => form.reset(INITIAL_VALUES) },
+      refresh,
+    );
   };
 
   return (

@@ -32,7 +32,11 @@ describe("LitellmModelNameField", () => {
   it("asks for a typed model name for OpenAI-compatible endpoints chosen by their provider key", () => {
     render(
       <MountedFormHost>
-        <LiteLLMModelNameField selectedProvider="OpenAI_Compatible" providerModels={["gpt-4o"]} getPlaceholder={() => "my-model"} />
+        <LiteLLMModelNameField
+          selectedProvider="OpenAI_Compatible"
+          providerModels={["gpt-4o"]}
+          getPlaceholder={() => "my-model"}
+        />
       </MountedFormHost>,
     );
     expect(screen.getByPlaceholderText("my-model")).toBeInTheDocument();
@@ -43,7 +47,11 @@ describe("LitellmModelNameField", () => {
     const user = userEvent.setup();
     render(
       <MountedFormHost>
-        <LiteLLMModelNameField selectedProvider={Providers.OpenAI} providerModels={["gpt-4o"]} getPlaceholder={getPlaceholder} />
+        <LiteLLMModelNameField
+          selectedProvider={Providers.OpenAI}
+          providerModels={["gpt-4o"]}
+          getPlaceholder={getPlaceholder}
+        />
       </MountedFormHost>,
     );
 

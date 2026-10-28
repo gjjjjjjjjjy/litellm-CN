@@ -26,7 +26,11 @@ const formatTime = (value: string | null | undefined): string =>
   value === null || value === undefined ? "-" : new Date(value).toLocaleString();
 
 const nodeColumns: ColumnDef<QosHealthNode>[] = [
-  { id: "model_name", header: "Model", cell: ({ row }) => <span className="font-medium">{row.original.model_name}</span> },
+  {
+    id: "model_name",
+    header: "Model",
+    cell: ({ row }) => <span className="font-medium">{row.original.model_name}</span>,
+  },
   {
     id: "node",
     header: "Node",

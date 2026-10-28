@@ -9,8 +9,8 @@ import hashlib
 import os
 from collections.abc import Mapping
 from contextlib import ExitStack
-from typing import TYPE_CHECKING, Final
 from datetime import datetime, timedelta, timezone
+from typing import TYPE_CHECKING, Final
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
@@ -484,7 +484,7 @@ def test_authenticate_user_non_ascii_direct_comparison():
     assert result is True
 
     # And correctly returns False for different passwords
-    result = secrets.compare_digest(password.encode("utf-8"), "different£pass".encode("utf-8"))
+    result = secrets.compare_digest(password.encode("utf-8"), "different£pass".encode())
     assert result is False
 
 

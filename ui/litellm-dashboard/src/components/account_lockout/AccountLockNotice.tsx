@@ -31,7 +31,13 @@ const lockText = (lock: AccountLock): { readonly title: string; readonly descrip
   }
 };
 
-export default function AccountLockNotice({ accessToken, userId, metadata, canUnlock, onUnlocked }: AccountLockNoticeProps) {
+export default function AccountLockNotice({
+  accessToken,
+  userId,
+  metadata,
+  canUnlock,
+  onUnlocked,
+}: AccountLockNoticeProps) {
   const lock = accountLock(metadata, new Date());
   if (lock === null) return null;
   const { title, description } = lockText(lock);

@@ -384,7 +384,11 @@ describe("AllModelsTable", () => {
 
     it("joins 24h metrics to the row with the matching deployment id and shows a dash for the rest", () => {
       render(
-        <AllModelsTable {...baseProps} data={twoModels} qosMetrics={new Map([["model-1", qosDeployment("model-1")]])} />,
+        <AllModelsTable
+          {...baseProps}
+          data={twoModels}
+          qosMetrics={new Map([["model-1", qosDeployment("model-1")]])}
+        />,
       );
 
       expect(screen.getByRole("columnheader", { name: "Success rate (24h)" })).toBeInTheDocument();

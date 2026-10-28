@@ -18,7 +18,13 @@ describe("AccountLockNotice", () => {
 
   it("renders nothing for an account that is not locked", () => {
     const { container } = render(
-      <AccountLockNotice accessToken="token" userId="user-1" metadata={{ login_failed_attempts: 2 }} canUnlock onUnlocked={vi.fn()} />,
+      <AccountLockNotice
+        accessToken="token"
+        userId="user-1"
+        metadata={{ login_failed_attempts: 2 }}
+        canUnlock
+        onUnlocked={vi.fn()}
+      />,
     );
     expect(container).toBeEmptyDOMElement();
   });
@@ -26,12 +32,17 @@ describe("AccountLockNotice", () => {
   it("lets a proxy admin unlock the account", async () => {
     const user = userEvent.setup();
     const onUnlocked = vi.fn();
-    render(<AccountLockNotice accessToken="token" userId="user-1" metadata={locked} canUnlock onUnlocked={onUnlocked} />);
+    render(
+      <AccountLockNotice accessToken="token" userId="user-1" metadata={locked} canUnlock onUnlocked={onUnlocked} />,
+    );
 
     expect(screen.getByText("This account is locked")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Unlock account" }));
 
-    expect(apiClient.post).toHaveBeenCalledWith("/account_lockout/unlock", { accessToken: "token", body: { user_id: "user-1" } });
+    expect(apiClient.post).toHaveBeenCalledWith("/account_lockout/unlock", {
+      accessToken: "token",
+      body: { user_id: "user-1" },
+    });
     expect(onUnlocked).toHaveBeenCalledOnce();
   });
 
@@ -49,7 +60,10 @@ describe("AccountLockNotice", () => {
 
     expect(screen.getByText("This account is temporarily locked")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Unlock account" }));
-    expect(apiClient.post).toHaveBeenCalledWith("/account_lockout/unlock", { accessToken: "token", body: { user_id: "user-1" } });
+    expect(apiClient.post).toHaveBeenCalledWith("/account_lockout/unlock", {
+      accessToken: "token",
+      body: { user_id: "user-1" },
+    });
   });
 
   it("renders nothing once a temporary lock has expired", () => {
@@ -66,7 +80,15 @@ describe("AccountLockNotice", () => {
   });
 
   it("shows the lock without an unlock button to users who cannot unlock", () => {
-    render(<AccountLockNotice accessToken="token" userId="user-1" metadata={locked} canUnlock={false} onUnlocked={vi.fn()} />);
+    render(
+      <AccountLockNotice
+        accessToken="token"
+        userId="user-1"
+        metadata={locked}
+        canUnlock={false}
+        onUnlocked={vi.fn()}
+      />,
+    );
     expect(screen.getByText("This account is locked")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Unlock account" })).not.toBeInTheDocument();
   });

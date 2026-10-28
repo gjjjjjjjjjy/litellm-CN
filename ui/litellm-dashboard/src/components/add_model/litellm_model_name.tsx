@@ -110,9 +110,7 @@ const LiteLLMModelNameField: React.FC<LiteLLMModelNameFieldProps> = ({
               id={control.id}
               value={(control.value as string | undefined) ?? ""}
               onBlur={control.onBlur}
-              placeholder={
-                provider === Providers.Azure ? "Enter Azure deployment name" : "Enter custom model name"
-              }
+              placeholder={provider === Providers.Azure ? "Enter Azure deployment name" : "Enter custom model name"}
               onChange={control.onChange}
             />
           )}

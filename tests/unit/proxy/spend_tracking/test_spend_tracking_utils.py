@@ -13,14 +13,23 @@ from typing_extensions import NotRequired, ReadOnly, TypedDict
 
 import litellm
 import litellm.constants as litellm_constants
-import litellm.proxy.spend_tracking.spend_tracking_utils as spend_tracking_utils
-from litellm.constants import LITELLM_TRUNCATED_PAYLOAD_FIELD, LITELLM_TRUNCATION_DB_SAFEGUARD_NOTE, LITTELM_CLI_SERVICE_ACCOUNT_NAME, LITTELM_INTERNAL_HEALTH_SERVICE_ACCOUNT_NAME, MAX_SPEND_LOG_MODEL_NAME_LENGTH, REDACTED_BY_LITELM_STRING, SESSION_ID_OMITTED_METADATA_KEY, UNKNOWN_MODEL_SPEND_LOG_MODEL
+from litellm.constants import (
+    LITELLM_TRUNCATED_PAYLOAD_FIELD,
+    LITELLM_TRUNCATION_DB_SAFEGUARD_NOTE,
+    LITTELM_CLI_SERVICE_ACCOUNT_NAME,
+    LITTELM_INTERNAL_HEALTH_SERVICE_ACCOUNT_NAME,
+    MAX_SPEND_LOG_MODEL_NAME_LENGTH,
+    REDACTED_BY_LITELM_STRING,
+    SESSION_ID_OMITTED_METADATA_KEY,
+    UNKNOWN_MODEL_SPEND_LOG_MODEL,
+)
 from litellm.litellm_core_utils.litellm_logging import StandardLoggingPayloadSetup
-from litellm.llms.base_llm.ocr.transformation import OCRResponse, OCRUsageInfo
 from litellm.litellm_core_utils.safe_json_dumps import safe_dumps
+from litellm.llms.base_llm.ocr.transformation import OCRResponse, OCRUsageInfo
 from litellm.proxy._types import SpendLogsMetadataFields, SpendLogsPayload, UserAPIKeyAuth
 from litellm.proxy.litellm_pre_call_utils import LiteLLMProxyRequestSetup
 from litellm.proxy.route_llm_request import ProxyModelNotFoundError
+from litellm.proxy.spend_tracking import spend_tracking_utils
 from litellm.proxy.spend_tracking.spend_tracking_utils import (
     _extract_usage_for_ocr_call,
     _get_messages_for_spend_logs_payload,
@@ -30,16 +39,16 @@ from litellm.proxy.spend_tracking.spend_tracking_utils import (
     _get_session_id_for_spend_log,
     _get_spend_logs_metadata,
     _get_vector_store_request_for_spend_logs_payload,
-    is_master_key,
     _redact_logged_api_key,
     _redact_prompt_leaks_in_error_string,
-    sanitize_error_information_for_spend_logs,
     _sanitize_guardrail_information_for_spend_logs,
     _sanitize_request_body_for_spend_logs_payload,
     _scrub_raw_model_from_error_information,
     configured_spend_logs_metadata_fields,
     get_logging_payload,
     get_spend_logs_id,
+    is_master_key,
+    sanitize_error_information_for_spend_logs,
     should_store_prompts_and_responses_in_spend_logs,
     spend_log_row_with_retained_metadata,
 )
@@ -547,8 +556,8 @@ def test_large_request_no_truncation_threshold():
     and that the new truncation logic keeps beginning (35%) and end (65%) of the string
     """
     from litellm.constants import (
-        MAX_STRING_LENGTH_PROMPT_IN_DB,
         LITELLM_TRUNCATED_PAYLOAD_FIELD,
+        MAX_STRING_LENGTH_PROMPT_IN_DB,
     )
 
     # Create a large string that exceeds the threshold
@@ -615,6 +624,7 @@ def test_configurable_string_length_env_var(monkeypatch):
 
     # Import after setting env var to ensure it picks up the new value
     import importlib
+
     import litellm.constants
     import litellm.proxy.spend_tracking.spend_tracking_utils
 
@@ -622,8 +632,8 @@ def test_configurable_string_length_env_var(monkeypatch):
     importlib.reload(litellm.proxy.spend_tracking.spend_tracking_utils)
 
     from litellm.constants import (
-        MAX_STRING_LENGTH_PROMPT_IN_DB,
         LITELLM_TRUNCATED_PAYLOAD_FIELD,
+        MAX_STRING_LENGTH_PROMPT_IN_DB,
     )
     from litellm.proxy.spend_tracking.spend_tracking_utils import (
         _sanitize_request_body_for_spend_logs_payload,
@@ -659,8 +669,8 @@ def test_truncation_preserves_beginning_and_end():
     Test that truncation preserves the beginning (35%) and end (65%) of content for better debugging
     """
     from litellm.constants import (
-        MAX_STRING_LENGTH_PROMPT_IN_DB,
         LITELLM_TRUNCATED_PAYLOAD_FIELD,
+        MAX_STRING_LENGTH_PROMPT_IN_DB,
     )
 
     # Create content with distinct beginning, middle, and end

@@ -40,8 +40,8 @@ export default function QosView({ accessToken }: { accessToken: string | null })
       <PageHeader>
         <PageHeaderTitle>Service Quality</PageHeaderTitle>
         <PageHeaderDescription>
-          Concurrency, success rate, TTFT, TPOT and latency per model and per node, measured from gateway traffic.
-          TTFT and TPOT come from streamed requests only; cache hits are excluded.
+          Concurrency, success rate, TTFT, TPOT and latency per model and per node, measured from gateway traffic. TTFT
+          and TPOT come from streamed requests only; cache hits are excluded.
         </PageHeaderDescription>
       </PageHeader>
 
