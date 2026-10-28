@@ -5,11 +5,12 @@ from types import ModuleType
 from typing import Final
 
 import pytest
-from fastapi import APIRouter, FastAPI
+from fastapi import APIRouter, FastAPI, HTTPException
 from fastapi.testclient import TestClient
 from pydantic import BaseModel
 
 from litellm.proxy._lazy_features import (
+    LAZY_FEATURES,
     LazyFeature,
     LazyFeatureMiddleware,
     attach_lazy_features,
@@ -250,3 +251,32 @@ def test_without_the_flag_the_warmup_route_registers_a_feature_and_returns_its_p
         assert body.paths["/alpha/list"]["get"].tags == ("alpha",)
         assert loaded_lazy_modules(app) == {features[0].module_path}
         assert "/alpha/list" in _paths(app) and "/beta/list" not in _paths(app)
+
+
+@pytest.mark.parametrize("disable_lazy_routes", ("false", "true"))
+@pytest.mark.parametrize(
+    ("name", "method", "path"),
+    (
+        ("containers", "GET", "/v1/containers/container-id"),
+        ("workflows", "GET", "/v1/workflows/runs"),
+        ("memory", "GET", "/v1/memory"),
+    ),
+)
+def test_optional_routes_keep_authentication_on_the_first_request(
+    monkeypatch: pytest.MonkeyPatch, disable_lazy_routes: str, name: str, method: str, path: str
+) -> None:
+    from litellm.proxy.auth.user_api_key_auth import user_api_key_auth
+
+    monkeypatch.setenv(FLAG, disable_lazy_routes)
+    feature: Final = next(item for item in LAZY_FEATURES if item.name == name)
+    app: Final = FastAPI()
+
+    async def require_test_credential() -> None:
+        raise HTTPException(status_code=401, detail="test credential required")
+
+    app.dependency_overrides[user_api_key_auth] = require_test_credential
+    attach_lazy_features(app, (feature,))
+    with TestClient(app) as client:
+        response: Final = client.request(method, path)
+    assert response.status_code == 401, response.text
+    assert response.json() == {"detail": "test credential required"}

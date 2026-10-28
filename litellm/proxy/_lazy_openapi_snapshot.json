@@ -9632,6 +9632,959 @@
       }
     }
   },
+  "containers": {
+    "components": {
+      "schemas": {
+        "HTTPValidationError": {
+          "properties": {
+            "detail": {
+              "items": {
+                "$ref": "#/components/schemas/ValidationError"
+              },
+              "title": "Detail",
+              "type": "array"
+            }
+          },
+          "title": "HTTPValidationError",
+          "type": "object"
+        },
+        "ValidationError": {
+          "properties": {
+            "ctx": {
+              "title": "Context",
+              "type": "object"
+            },
+            "input": {
+              "title": "Input"
+            },
+            "loc": {
+              "items": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "integer"
+                  }
+                ]
+              },
+              "title": "Location",
+              "type": "array"
+            },
+            "msg": {
+              "title": "Message",
+              "type": "string"
+            },
+            "type": {
+              "title": "Error Type",
+              "type": "string"
+            }
+          },
+          "required": [
+            "loc",
+            "msg",
+            "type"
+          ],
+          "title": "ValidationError",
+          "type": "object"
+        }
+      }
+    },
+    "paths": {
+      "/containers": {
+        "get": {
+          "description": "Container list endpoint for retrieving a list of containers.\n\nFollows the OpenAI Containers API spec:\nhttps://platform.openai.com/docs/api-reference/containers\n\nExample:\n```bash\ncurl -X GET \"http://localhost:4000/v1/containers?limit=20&order=desc\"         -H \"Authorization: Bearer $LITELLM_MASTER_KEY\"\n```\n\nOr specify provider via header or query param:\n```bash\ncurl -X GET \"http://localhost:4000/v1/containers?custom_llm_provider=azure\"         -H \"Authorization: Bearer $LITELLM_MASTER_KEY\"\n```",
+          "operationId": "list_containers_containers_get",
+          "parameters": [
+            {
+              "in": "query",
+              "name": "after",
+              "required": false,
+              "schema": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "After"
+              }
+            },
+            {
+              "in": "query",
+              "name": "limit",
+              "required": false,
+              "schema": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Limit"
+              }
+            },
+            {
+              "in": "query",
+              "name": "order",
+              "required": false,
+              "schema": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Order"
+              }
+            }
+          ],
+          "responses": {
+            "200": {
+              "content": {
+                "application/json": {
+                  "schema": {}
+                }
+              },
+              "description": "Successful Response"
+            },
+            "422": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/HTTPValidationError"
+                  }
+                }
+              },
+              "description": "Validation Error"
+            }
+          },
+          "security": [
+            {
+              "APIKeyHeader": []
+            }
+          ],
+          "summary": "List Containers",
+          "tags": [
+            "containers"
+          ]
+        },
+        "post": {
+          "description": "Container creation endpoint for creating new containers.\n\nFollows the OpenAI Containers API spec:\nhttps://platform.openai.com/docs/api-reference/containers\n\nExample:\n```bash\ncurl -X POST \"http://localhost:4000/v1/containers\"         -H \"Authorization: Bearer $LITELLM_MASTER_KEY\"         -H \"Content-Type: application/json\"         -d '{\n        \"name\": \"My Container\",\n        \"expires_after\": {\n            \"anchor\": \"last_active_at\",\n            \"minutes\": 20\n        }\n    }'\n```\n\nOr specify provider via header:\n```bash\ncurl -X POST \"http://localhost:4000/v1/containers\"         -H \"Authorization: Bearer $LITELLM_MASTER_KEY\"         -H \"custom-llm-provider: azure\"         -H \"Content-Type: application/json\"         -d '{\n        \"name\": \"My Container\"\n    }'\n```",
+          "operationId": "create_container_containers_post",
+          "responses": {
+            "200": {
+              "content": {
+                "application/json": {
+                  "schema": {}
+                }
+              },
+              "description": "Successful Response"
+            }
+          },
+          "security": [
+            {
+              "APIKeyHeader": []
+            }
+          ],
+          "summary": "Create Container",
+          "tags": [
+            "containers"
+          ]
+        }
+      },
+      "/containers/{container_id}": {
+        "delete": {
+          "description": "Container delete endpoint for deleting a specific container.\n\nFollows the OpenAI Containers API spec:\nhttps://platform.openai.com/docs/api-reference/containers\n\nExample:\n```bash\ncurl -X DELETE \"http://localhost:4000/v1/containers/cntr_123\"         -H \"Authorization: Bearer $LITELLM_MASTER_KEY\"\n```\n\nOr specify provider via header:\n```bash\ncurl -X DELETE \"http://localhost:4000/v1/containers/cntr_123\"         -H \"Authorization: Bearer $LITELLM_MASTER_KEY\"         -H \"custom-llm-provider: azure\"\n```",
+          "operationId": "delete_container_containers__container_id__delete",
+          "parameters": [
+            {
+              "in": "path",
+              "name": "container_id",
+              "required": true,
+              "schema": {
+                "title": "Container Id",
+                "type": "string"
+              }
+            }
+          ],
+          "responses": {
+            "200": {
+              "content": {
+                "application/json": {
+                  "schema": {}
+                }
+              },
+              "description": "Successful Response"
+            },
+            "422": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/HTTPValidationError"
+                  }
+                }
+              },
+              "description": "Validation Error"
+            }
+          },
+          "security": [
+            {
+              "APIKeyHeader": []
+            }
+          ],
+          "summary": "Delete Container",
+          "tags": [
+            "containers"
+          ]
+        },
+        "get": {
+          "description": "Container retrieve endpoint for getting details of a specific container.\n\nFollows the OpenAI Containers API spec:\nhttps://platform.openai.com/docs/api-reference/containers\n\nExample:\n```bash\ncurl -X GET \"http://localhost:4000/v1/containers/cntr_123\"         -H \"Authorization: Bearer $LITELLM_MASTER_KEY\"\n```\n\nOr specify provider via header:\n```bash\ncurl -X GET \"http://localhost:4000/v1/containers/cntr_123\"         -H \"Authorization: Bearer $LITELLM_MASTER_KEY\"         -H \"custom-llm-provider: azure\"\n```",
+          "operationId": "retrieve_container_containers__container_id__get",
+          "parameters": [
+            {
+              "in": "path",
+              "name": "container_id",
+              "required": true,
+              "schema": {
+                "title": "Container Id",
+                "type": "string"
+              }
+            }
+          ],
+          "responses": {
+            "200": {
+              "content": {
+                "application/json": {
+                  "schema": {}
+                }
+              },
+              "description": "Successful Response"
+            },
+            "422": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/HTTPValidationError"
+                  }
+                }
+              },
+              "description": "Validation Error"
+            }
+          },
+          "security": [
+            {
+              "APIKeyHeader": []
+            }
+          ],
+          "summary": "Retrieve Container",
+          "tags": [
+            "containers"
+          ]
+        }
+      },
+      "/containers/{container_id}/files": {
+        "get": {
+          "operationId": "handler_container_id_containers__container_id__files_get",
+          "parameters": [
+            {
+              "in": "path",
+              "name": "container_id",
+              "required": true,
+              "schema": {
+                "title": "Container Id",
+                "type": "string"
+              }
+            }
+          ],
+          "responses": {
+            "200": {
+              "content": {
+                "application/json": {
+                  "schema": {}
+                }
+              },
+              "description": "Successful Response"
+            },
+            "422": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/HTTPValidationError"
+                  }
+                }
+              },
+              "description": "Validation Error"
+            }
+          },
+          "security": [
+            {
+              "APIKeyHeader": []
+            }
+          ],
+          "summary": "Handler Container Id",
+          "tags": [
+            "containers"
+          ]
+        },
+        "post": {
+          "operationId": "handler_multipart_upload_containers__container_id__files_post",
+          "parameters": [
+            {
+              "in": "path",
+              "name": "container_id",
+              "required": true,
+              "schema": {
+                "title": "Container Id",
+                "type": "string"
+              }
+            }
+          ],
+          "responses": {
+            "200": {
+              "content": {
+                "application/json": {
+                  "schema": {}
+                }
+              },
+              "description": "Successful Response"
+            },
+            "422": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/HTTPValidationError"
+                  }
+                }
+              },
+              "description": "Validation Error"
+            }
+          },
+          "security": [
+            {
+              "APIKeyHeader": []
+            }
+          ],
+          "summary": "Handler Multipart Upload",
+          "tags": [
+            "containers"
+          ]
+        }
+      },
+      "/containers/{container_id}/files/{file_id}": {
+        "delete": {
+          "operationId": "handler_container_file_containers__container_id__files__file_id__delete",
+          "parameters": [
+            {
+              "in": "path",
+              "name": "container_id",
+              "required": true,
+              "schema": {
+                "title": "Container Id",
+                "type": "string"
+              }
+            },
+            {
+              "in": "path",
+              "name": "file_id",
+              "required": true,
+              "schema": {
+                "title": "File Id",
+                "type": "string"
+              }
+            }
+          ],
+          "responses": {
+            "200": {
+              "content": {
+                "application/json": {
+                  "schema": {}
+                }
+              },
+              "description": "Successful Response"
+            },
+            "422": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/HTTPValidationError"
+                  }
+                }
+              },
+              "description": "Validation Error"
+            }
+          },
+          "security": [
+            {
+              "APIKeyHeader": []
+            }
+          ],
+          "summary": "Handler Container File",
+          "tags": [
+            "containers"
+          ]
+        },
+        "get": {
+          "operationId": "handler_container_file_containers__container_id__files__file_id__get",
+          "parameters": [
+            {
+              "in": "path",
+              "name": "container_id",
+              "required": true,
+              "schema": {
+                "title": "Container Id",
+                "type": "string"
+              }
+            },
+            {
+              "in": "path",
+              "name": "file_id",
+              "required": true,
+              "schema": {
+                "title": "File Id",
+                "type": "string"
+              }
+            }
+          ],
+          "responses": {
+            "200": {
+              "content": {
+                "application/json": {
+                  "schema": {}
+                }
+              },
+              "description": "Successful Response"
+            },
+            "422": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/HTTPValidationError"
+                  }
+                }
+              },
+              "description": "Validation Error"
+            }
+          },
+          "security": [
+            {
+              "APIKeyHeader": []
+            }
+          ],
+          "summary": "Handler Container File",
+          "tags": [
+            "containers"
+          ]
+        }
+      },
+      "/containers/{container_id}/files/{file_id}/content": {
+        "get": {
+          "operationId": "handler_binary_content_containers__container_id__files__file_id__content_get",
+          "parameters": [
+            {
+              "in": "path",
+              "name": "container_id",
+              "required": true,
+              "schema": {
+                "title": "Container Id",
+                "type": "string"
+              }
+            },
+            {
+              "in": "path",
+              "name": "file_id",
+              "required": true,
+              "schema": {
+                "title": "File Id",
+                "type": "string"
+              }
+            }
+          ],
+          "responses": {
+            "200": {
+              "content": {
+                "application/json": {
+                  "schema": {}
+                }
+              },
+              "description": "Successful Response"
+            },
+            "422": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/HTTPValidationError"
+                  }
+                }
+              },
+              "description": "Validation Error"
+            }
+          },
+          "security": [
+            {
+              "APIKeyHeader": []
+            }
+          ],
+          "summary": "Handler Binary Content",
+          "tags": [
+            "containers"
+          ]
+        }
+      },
+      "/v1/containers": {
+        "get": {
+          "description": "Container list endpoint for retrieving a list of containers.\n\nFollows the OpenAI Containers API spec:\nhttps://platform.openai.com/docs/api-reference/containers\n\nExample:\n```bash\ncurl -X GET \"http://localhost:4000/v1/containers?limit=20&order=desc\"         -H \"Authorization: Bearer $LITELLM_MASTER_KEY\"\n```\n\nOr specify provider via header or query param:\n```bash\ncurl -X GET \"http://localhost:4000/v1/containers?custom_llm_provider=azure\"         -H \"Authorization: Bearer $LITELLM_MASTER_KEY\"\n```",
+          "operationId": "list_containers_v1_containers_get",
+          "parameters": [
+            {
+              "in": "query",
+              "name": "after",
+              "required": false,
+              "schema": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "After"
+              }
+            },
+            {
+              "in": "query",
+              "name": "limit",
+              "required": false,
+              "schema": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Limit"
+              }
+            },
+            {
+              "in": "query",
+              "name": "order",
+              "required": false,
+              "schema": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Order"
+              }
+            }
+          ],
+          "responses": {
+            "200": {
+              "content": {
+                "application/json": {
+                  "schema": {}
+                }
+              },
+              "description": "Successful Response"
+            },
+            "422": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/HTTPValidationError"
+                  }
+                }
+              },
+              "description": "Validation Error"
+            }
+          },
+          "security": [
+            {
+              "APIKeyHeader": []
+            }
+          ],
+          "summary": "List Containers",
+          "tags": [
+            "containers"
+          ]
+        },
+        "post": {
+          "description": "Container creation endpoint for creating new containers.\n\nFollows the OpenAI Containers API spec:\nhttps://platform.openai.com/docs/api-reference/containers\n\nExample:\n```bash\ncurl -X POST \"http://localhost:4000/v1/containers\"         -H \"Authorization: Bearer $LITELLM_MASTER_KEY\"         -H \"Content-Type: application/json\"         -d '{\n        \"name\": \"My Container\",\n        \"expires_after\": {\n            \"anchor\": \"last_active_at\",\n            \"minutes\": 20\n        }\n    }'\n```\n\nOr specify provider via header:\n```bash\ncurl -X POST \"http://localhost:4000/v1/containers\"         -H \"Authorization: Bearer $LITELLM_MASTER_KEY\"         -H \"custom-llm-provider: azure\"         -H \"Content-Type: application/json\"         -d '{\n        \"name\": \"My Container\"\n    }'\n```",
+          "operationId": "create_container_v1_containers_post",
+          "responses": {
+            "200": {
+              "content": {
+                "application/json": {
+                  "schema": {}
+                }
+              },
+              "description": "Successful Response"
+            }
+          },
+          "security": [
+            {
+              "APIKeyHeader": []
+            }
+          ],
+          "summary": "Create Container",
+          "tags": [
+            "containers"
+          ]
+        }
+      },
+      "/v1/containers/{container_id}": {
+        "delete": {
+          "description": "Container delete endpoint for deleting a specific container.\n\nFollows the OpenAI Containers API spec:\nhttps://platform.openai.com/docs/api-reference/containers\n\nExample:\n```bash\ncurl -X DELETE \"http://localhost:4000/v1/containers/cntr_123\"         -H \"Authorization: Bearer $LITELLM_MASTER_KEY\"\n```\n\nOr specify provider via header:\n```bash\ncurl -X DELETE \"http://localhost:4000/v1/containers/cntr_123\"         -H \"Authorization: Bearer $LITELLM_MASTER_KEY\"         -H \"custom-llm-provider: azure\"\n```",
+          "operationId": "delete_container_v1_containers__container_id__delete",
+          "parameters": [
+            {
+              "in": "path",
+              "name": "container_id",
+              "required": true,
+              "schema": {
+                "title": "Container Id",
+                "type": "string"
+              }
+            }
+          ],
+          "responses": {
+            "200": {
+              "content": {
+                "application/json": {
+                  "schema": {}
+                }
+              },
+              "description": "Successful Response"
+            },
+            "422": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/HTTPValidationError"
+                  }
+                }
+              },
+              "description": "Validation Error"
+            }
+          },
+          "security": [
+            {
+              "APIKeyHeader": []
+            }
+          ],
+          "summary": "Delete Container",
+          "tags": [
+            "containers"
+          ]
+        },
+        "get": {
+          "description": "Container retrieve endpoint for getting details of a specific container.\n\nFollows the OpenAI Containers API spec:\nhttps://platform.openai.com/docs/api-reference/containers\n\nExample:\n```bash\ncurl -X GET \"http://localhost:4000/v1/containers/cntr_123\"         -H \"Authorization: Bearer $LITELLM_MASTER_KEY\"\n```\n\nOr specify provider via header:\n```bash\ncurl -X GET \"http://localhost:4000/v1/containers/cntr_123\"         -H \"Authorization: Bearer $LITELLM_MASTER_KEY\"         -H \"custom-llm-provider: azure\"\n```",
+          "operationId": "retrieve_container_v1_containers__container_id__get",
+          "parameters": [
+            {
+              "in": "path",
+              "name": "container_id",
+              "required": true,
+              "schema": {
+                "title": "Container Id",
+                "type": "string"
+              }
+            }
+          ],
+          "responses": {
+            "200": {
+              "content": {
+                "application/json": {
+                  "schema": {}
+                }
+              },
+              "description": "Successful Response"
+            },
+            "422": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/HTTPValidationError"
+                  }
+                }
+              },
+              "description": "Validation Error"
+            }
+          },
+          "security": [
+            {
+              "APIKeyHeader": []
+            }
+          ],
+          "summary": "Retrieve Container",
+          "tags": [
+            "containers"
+          ]
+        }
+      },
+      "/v1/containers/{container_id}/files": {
+        "get": {
+          "operationId": "handler_container_id_v1_containers__container_id__files_get",
+          "parameters": [
+            {
+              "in": "path",
+              "name": "container_id",
+              "required": true,
+              "schema": {
+                "title": "Container Id",
+                "type": "string"
+              }
+            }
+          ],
+          "responses": {
+            "200": {
+              "content": {
+                "application/json": {
+                  "schema": {}
+                }
+              },
+              "description": "Successful Response"
+            },
+            "422": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/HTTPValidationError"
+                  }
+                }
+              },
+              "description": "Validation Error"
+            }
+          },
+          "security": [
+            {
+              "APIKeyHeader": []
+            }
+          ],
+          "summary": "Handler Container Id",
+          "tags": [
+            "containers"
+          ]
+        },
+        "post": {
+          "operationId": "handler_multipart_upload_v1_containers__container_id__files_post",
+          "parameters": [
+            {
+              "in": "path",
+              "name": "container_id",
+              "required": true,
+              "schema": {
+                "title": "Container Id",
+                "type": "string"
+              }
+            }
+          ],
+          "responses": {
+            "200": {
+              "content": {
+                "application/json": {
+                  "schema": {}
+                }
+              },
+              "description": "Successful Response"
+            },
+            "422": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/HTTPValidationError"
+                  }
+                }
+              },
+              "description": "Validation Error"
+            }
+          },
+          "security": [
+            {
+              "APIKeyHeader": []
+            }
+          ],
+          "summary": "Handler Multipart Upload",
+          "tags": [
+            "containers"
+          ]
+        }
+      },
+      "/v1/containers/{container_id}/files/{file_id}": {
+        "delete": {
+          "operationId": "handler_container_file_v1_containers__container_id__files__file_id__delete",
+          "parameters": [
+            {
+              "in": "path",
+              "name": "container_id",
+              "required": true,
+              "schema": {
+                "title": "Container Id",
+                "type": "string"
+              }
+            },
+            {
+              "in": "path",
+              "name": "file_id",
+              "required": true,
+              "schema": {
+                "title": "File Id",
+                "type": "string"
+              }
+            }
+          ],
+          "responses": {
+            "200": {
+              "content": {
+                "application/json": {
+                  "schema": {}
+                }
+              },
+              "description": "Successful Response"
+            },
+            "422": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/HTTPValidationError"
+                  }
+                }
+              },
+              "description": "Validation Error"
+            }
+          },
+          "security": [
+            {
+              "APIKeyHeader": []
+            }
+          ],
+          "summary": "Handler Container File",
+          "tags": [
+            "containers"
+          ]
+        },
+        "get": {
+          "operationId": "handler_container_file_v1_containers__container_id__files__file_id__get",
+          "parameters": [
+            {
+              "in": "path",
+              "name": "container_id",
+              "required": true,
+              "schema": {
+                "title": "Container Id",
+                "type": "string"
+              }
+            },
+            {
+              "in": "path",
+              "name": "file_id",
+              "required": true,
+              "schema": {
+                "title": "File Id",
+                "type": "string"
+              }
+            }
+          ],
+          "responses": {
+            "200": {
+              "content": {
+                "application/json": {
+                  "schema": {}
+                }
+              },
+              "description": "Successful Response"
+            },
+            "422": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/HTTPValidationError"
+                  }
+                }
+              },
+              "description": "Validation Error"
+            }
+          },
+          "security": [
+            {
+              "APIKeyHeader": []
+            }
+          ],
+          "summary": "Handler Container File",
+          "tags": [
+            "containers"
+          ]
+        }
+      },
+      "/v1/containers/{container_id}/files/{file_id}/content": {
+        "get": {
+          "operationId": "handler_binary_content_v1_containers__container_id__files__file_id__content_get",
+          "parameters": [
+            {
+              "in": "path",
+              "name": "container_id",
+              "required": true,
+              "schema": {
+                "title": "Container Id",
+                "type": "string"
+              }
+            },
+            {
+              "in": "path",
+              "name": "file_id",
+              "required": true,
+              "schema": {
+                "title": "File Id",
+                "type": "string"
+              }
+            }
+          ],
+          "responses": {
+            "200": {
+              "content": {
+                "application/json": {
+                  "schema": {}
+                }
+              },
+              "description": "Successful Response"
+            },
+            "422": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/HTTPValidationError"
+                  }
+                }
+              },
+              "description": "Validation Error"
+            }
+          },
+          "security": [
+            {
+              "APIKeyHeader": []
+            }
+          ],
+          "summary": "Handler Binary Content",
+          "tags": [
+            "containers"
+          ]
+        }
+      }
+    }
+  },
   "decisions": {
     "components": {
       "schemas": {
@@ -45673,6 +46626,619 @@
       }
     }
   },
+  "memory": {
+    "components": {
+      "schemas": {
+        "HTTPValidationError": {
+          "properties": {
+            "detail": {
+              "items": {
+                "$ref": "#/components/schemas/ValidationError"
+              },
+              "title": "Detail",
+              "type": "array"
+            }
+          },
+          "title": "HTTPValidationError",
+          "type": "object"
+        },
+        "LiteLLM_MemoryRow": {
+          "properties": {
+            "created_at": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Created At"
+            },
+            "created_by": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Created By"
+            },
+            "key": {
+              "title": "Key",
+              "type": "string"
+            },
+            "memory_id": {
+              "title": "Memory Id",
+              "type": "string"
+            },
+            "metadata": {
+              "anyOf": [
+                {},
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Metadata"
+            },
+            "team_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Team Id"
+            },
+            "updated_at": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Updated At"
+            },
+            "updated_by": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Updated By"
+            },
+            "user_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "User Id"
+            },
+            "value": {
+              "title": "Value",
+              "type": "string"
+            }
+          },
+          "required": [
+            "memory_id",
+            "key",
+            "value"
+          ],
+          "title": "LiteLLM_MemoryRow",
+          "type": "object"
+        },
+        "MemoryCreateRequest": {
+          "properties": {
+            "key": {
+              "description": "Memory key (acts as the namespace in the URL).",
+              "title": "Key",
+              "type": "string"
+            },
+            "metadata": {
+              "anyOf": [
+                {},
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Optional JSON metadata (tags, structured fields).",
+              "title": "Metadata"
+            },
+            "team_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Scope to this team. Defaults to the caller's team_id.",
+              "title": "Team Id"
+            },
+            "user_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Scope to this user. Defaults to the caller's user_id.",
+              "title": "User Id"
+            },
+            "value": {
+              "description": "Memory content. Typically markdown/text for LLM context.",
+              "title": "Value",
+              "type": "string"
+            }
+          },
+          "required": [
+            "key",
+            "value"
+          ],
+          "title": "MemoryCreateRequest",
+          "type": "object"
+        },
+        "MemoryDeleteResponse": {
+          "properties": {
+            "deleted": {
+              "title": "Deleted",
+              "type": "boolean"
+            },
+            "key": {
+              "title": "Key",
+              "type": "string"
+            }
+          },
+          "required": [
+            "key",
+            "deleted"
+          ],
+          "title": "MemoryDeleteResponse",
+          "type": "object"
+        },
+        "MemoryListResponse": {
+          "properties": {
+            "memories": {
+              "items": {
+                "$ref": "#/components/schemas/LiteLLM_MemoryRow"
+              },
+              "title": "Memories",
+              "type": "array"
+            },
+            "total": {
+              "title": "Total",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "memories",
+            "total"
+          ],
+          "title": "MemoryListResponse",
+          "type": "object"
+        },
+        "MemoryUpdateRequest": {
+          "properties": {
+            "metadata": {
+              "anyOf": [
+                {},
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Metadata"
+            },
+            "team_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Team Id"
+            },
+            "user_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "User Id"
+            },
+            "value": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Value"
+            }
+          },
+          "title": "MemoryUpdateRequest",
+          "type": "object"
+        },
+        "ValidationError": {
+          "properties": {
+            "ctx": {
+              "title": "Context",
+              "type": "object"
+            },
+            "input": {
+              "title": "Input"
+            },
+            "loc": {
+              "items": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "integer"
+                  }
+                ]
+              },
+              "title": "Location",
+              "type": "array"
+            },
+            "msg": {
+              "title": "Message",
+              "type": "string"
+            },
+            "type": {
+              "title": "Error Type",
+              "type": "string"
+            }
+          },
+          "required": [
+            "loc",
+            "msg",
+            "type"
+          ],
+          "title": "ValidationError",
+          "type": "object"
+        }
+      }
+    },
+    "paths": {
+      "/v1/memory": {
+        "get": {
+          "description": "List memory entries visible to the caller.",
+          "operationId": "list_memory_v1_memory_get",
+          "parameters": [
+            {
+              "description": "Filter by exact key match.",
+              "in": "query",
+              "name": "key",
+              "required": false,
+              "schema": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "Filter by exact key match.",
+                "title": "Key"
+              }
+            },
+            {
+              "description": "Filter by key prefix (Redis-style namespace scan). Mutually exclusive with `key`; if both are provided, `key_prefix` wins.",
+              "in": "query",
+              "name": "key_prefix",
+              "required": false,
+              "schema": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "Filter by key prefix (Redis-style namespace scan). Mutually exclusive with `key`; if both are provided, `key_prefix` wins.",
+                "title": "Key Prefix"
+              }
+            },
+            {
+              "description": "Match entries whose key starts with this value or whose memory_id equals it. Takes precedence over `key_prefix` and `key` when provided.",
+              "in": "query",
+              "name": "search",
+              "required": false,
+              "schema": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "Match entries whose key starts with this value or whose memory_id equals it. Takes precedence over `key_prefix` and `key` when provided.",
+                "title": "Search"
+              }
+            },
+            {
+              "in": "query",
+              "name": "page",
+              "required": false,
+              "schema": {
+                "default": 1,
+                "minimum": 1,
+                "title": "Page",
+                "type": "integer"
+              }
+            },
+            {
+              "in": "query",
+              "name": "page_size",
+              "required": false,
+              "schema": {
+                "default": 50,
+                "maximum": 500,
+                "minimum": 1,
+                "title": "Page Size",
+                "type": "integer"
+              }
+            }
+          ],
+          "responses": {
+            "200": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/MemoryListResponse"
+                  }
+                }
+              },
+              "description": "Successful Response"
+            },
+            "422": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/HTTPValidationError"
+                  }
+                }
+              },
+              "description": "Validation Error"
+            }
+          },
+          "security": [
+            {
+              "APIKeyHeader": []
+            }
+          ],
+          "summary": "List Memory",
+          "tags": [
+            "memory"
+          ]
+        },
+        "post": {
+          "description": "Create a new memory entry for the caller (or, for admins, any scope).",
+          "operationId": "create_memory_v1_memory_post",
+          "requestBody": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemoryCreateRequest"
+                }
+              }
+            },
+            "required": true
+          },
+          "responses": {
+            "200": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/LiteLLM_MemoryRow"
+                  }
+                }
+              },
+              "description": "Successful Response"
+            },
+            "422": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/HTTPValidationError"
+                  }
+                }
+              },
+              "description": "Validation Error"
+            }
+          },
+          "security": [
+            {
+              "APIKeyHeader": []
+            }
+          ],
+          "summary": "Create Memory",
+          "tags": [
+            "memory"
+          ]
+        }
+      },
+      "/v1/memory/{key}": {
+        "delete": {
+          "description": "Delete a memory entry by key, scoped to the caller.",
+          "operationId": "delete_memory_v1_memory__key__delete",
+          "parameters": [
+            {
+              "in": "path",
+              "name": "key",
+              "required": true,
+              "schema": {
+                "title": "Key",
+                "type": "string"
+              }
+            }
+          ],
+          "responses": {
+            "200": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/MemoryDeleteResponse"
+                  }
+                }
+              },
+              "description": "Successful Response"
+            },
+            "422": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/HTTPValidationError"
+                  }
+                }
+              },
+              "description": "Validation Error"
+            }
+          },
+          "security": [
+            {
+              "APIKeyHeader": []
+            }
+          ],
+          "summary": "Delete Memory",
+          "tags": [
+            "memory"
+          ]
+        },
+        "get": {
+          "description": "Get a single memory entry by key, scoped to the caller.",
+          "operationId": "get_memory_v1_memory__key__get",
+          "parameters": [
+            {
+              "in": "path",
+              "name": "key",
+              "required": true,
+              "schema": {
+                "title": "Key",
+                "type": "string"
+              }
+            }
+          ],
+          "responses": {
+            "200": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/LiteLLM_MemoryRow"
+                  }
+                }
+              },
+              "description": "Successful Response"
+            },
+            "422": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/HTTPValidationError"
+                  }
+                }
+              },
+              "description": "Validation Error"
+            }
+          },
+          "security": [
+            {
+              "APIKeyHeader": []
+            }
+          ],
+          "summary": "Get Memory",
+          "tags": [
+            "memory"
+          ]
+        },
+        "put": {
+          "description": "Upsert a memory entry by key within the caller's scope.\n\nIf no row exists for (key, caller.user_id, caller.team_id), create one.\nIf one exists, update the value/metadata fields that were provided.",
+          "operationId": "upsert_memory_v1_memory__key__put",
+          "parameters": [
+            {
+              "in": "path",
+              "name": "key",
+              "required": true,
+              "schema": {
+                "title": "Key",
+                "type": "string"
+              }
+            }
+          ],
+          "requestBody": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemoryUpdateRequest"
+                }
+              }
+            },
+            "required": true
+          },
+          "responses": {
+            "200": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/LiteLLM_MemoryRow"
+                  }
+                }
+              },
+              "description": "Successful Response"
+            },
+            "422": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/HTTPValidationError"
+                  }
+                }
+              },
+              "description": "Validation Error"
+            }
+          },
+          "security": [
+            {
+              "APIKeyHeader": []
+            }
+          ],
+          "summary": "Upsert Memory",
+          "tags": [
+            "memory"
+          ]
+        }
+      }
+    }
+  },
   "model_insights": {
     "components": {
       "schemas": {
@@ -64015,6 +65581,659 @@
           "summary": "Vector Store Search",
           "tags": [
             "vector_stores"
+          ]
+        }
+      }
+    }
+  },
+  "workflows": {
+    "components": {
+      "schemas": {
+        "HTTPValidationError": {
+          "properties": {
+            "detail": {
+              "items": {
+                "$ref": "#/components/schemas/ValidationError"
+              },
+              "title": "Detail",
+              "type": "array"
+            }
+          },
+          "title": "HTTPValidationError",
+          "type": "object"
+        },
+        "ValidationError": {
+          "properties": {
+            "ctx": {
+              "title": "Context",
+              "type": "object"
+            },
+            "input": {
+              "title": "Input"
+            },
+            "loc": {
+              "items": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "integer"
+                  }
+                ]
+              },
+              "title": "Location",
+              "type": "array"
+            },
+            "msg": {
+              "title": "Message",
+              "type": "string"
+            },
+            "type": {
+              "title": "Error Type",
+              "type": "string"
+            }
+          },
+          "required": [
+            "loc",
+            "msg",
+            "type"
+          ],
+          "title": "ValidationError",
+          "type": "object"
+        },
+        "WorkflowEventCreateRequest": {
+          "properties": {
+            "data": {
+              "anyOf": [
+                {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Data"
+            },
+            "event_type": {
+              "title": "Event Type",
+              "type": "string"
+            },
+            "step_name": {
+              "title": "Step Name",
+              "type": "string"
+            }
+          },
+          "required": [
+            "event_type",
+            "step_name"
+          ],
+          "title": "WorkflowEventCreateRequest",
+          "type": "object"
+        },
+        "WorkflowMessageCreateRequest": {
+          "properties": {
+            "content": {
+              "title": "Content",
+              "type": "string"
+            },
+            "role": {
+              "title": "Role",
+              "type": "string"
+            },
+            "session_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Session Id"
+            }
+          },
+          "required": [
+            "role",
+            "content"
+          ],
+          "title": "WorkflowMessageCreateRequest",
+          "type": "object"
+        },
+        "WorkflowRunCreateRequest": {
+          "properties": {
+            "input": {
+              "anyOf": [
+                {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Input"
+            },
+            "metadata": {
+              "anyOf": [
+                {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Metadata"
+            },
+            "workflow_type": {
+              "title": "Workflow Type",
+              "type": "string"
+            }
+          },
+          "required": [
+            "workflow_type"
+          ],
+          "title": "WorkflowRunCreateRequest",
+          "type": "object"
+        },
+        "WorkflowRunUpdateRequest": {
+          "properties": {
+            "metadata": {
+              "anyOf": [
+                {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Metadata"
+            },
+            "output": {
+              "anyOf": [
+                {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Output"
+            },
+            "status": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "pending",
+                    "running",
+                    "paused",
+                    "completed",
+                    "failed"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          "title": "WorkflowRunUpdateRequest",
+          "type": "object"
+        }
+      }
+    },
+    "paths": {
+      "/v1/workflows/runs": {
+        "get": {
+          "description": "List workflow runs. Filter by workflow_type and/or status.\n\nNon-admin callers only see runs created by their own API key.",
+          "operationId": "list_workflow_runs_v1_workflows_runs_get",
+          "parameters": [
+            {
+              "in": "query",
+              "name": "workflow_type",
+              "required": false,
+              "schema": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Workflow Type"
+              }
+            },
+            {
+              "in": "query",
+              "name": "status",
+              "required": false,
+              "schema": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Status"
+              }
+            },
+            {
+              "in": "query",
+              "name": "limit",
+              "required": false,
+              "schema": {
+                "default": 50,
+                "maximum": 250,
+                "minimum": 1,
+                "title": "Limit",
+                "type": "integer"
+              }
+            }
+          ],
+          "responses": {
+            "200": {
+              "content": {
+                "application/json": {
+                  "schema": {}
+                }
+              },
+              "description": "Successful Response"
+            },
+            "422": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/HTTPValidationError"
+                  }
+                }
+              },
+              "description": "Validation Error"
+            }
+          },
+          "security": [
+            {
+              "APIKeyHeader": []
+            }
+          ],
+          "summary": "List Workflow Runs",
+          "tags": [
+            "workflows"
+          ]
+        },
+        "post": {
+          "description": "Create a new workflow run. Returns run_id and session_id.\n\nThe caller's API key token is stored as created_by so that non-admin keys\ncan only see and modify their own runs.",
+          "operationId": "create_workflow_run_v1_workflows_runs_post",
+          "requestBody": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkflowRunCreateRequest"
+                }
+              }
+            },
+            "required": true
+          },
+          "responses": {
+            "200": {
+              "content": {
+                "application/json": {
+                  "schema": {}
+                }
+              },
+              "description": "Successful Response"
+            },
+            "422": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/HTTPValidationError"
+                  }
+                }
+              },
+              "description": "Validation Error"
+            }
+          },
+          "security": [
+            {
+              "APIKeyHeader": []
+            }
+          ],
+          "summary": "Create Workflow Run",
+          "tags": [
+            "workflows"
+          ]
+        }
+      },
+      "/v1/workflows/runs/{run_id}": {
+        "get": {
+          "description": "Get a workflow run with its most recent event.",
+          "operationId": "get_workflow_run_v1_workflows_runs__run_id__get",
+          "parameters": [
+            {
+              "in": "path",
+              "name": "run_id",
+              "required": true,
+              "schema": {
+                "title": "Run Id",
+                "type": "string"
+              }
+            }
+          ],
+          "responses": {
+            "200": {
+              "content": {
+                "application/json": {
+                  "schema": {}
+                }
+              },
+              "description": "Successful Response"
+            },
+            "422": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/HTTPValidationError"
+                  }
+                }
+              },
+              "description": "Validation Error"
+            }
+          },
+          "security": [
+            {
+              "APIKeyHeader": []
+            }
+          ],
+          "summary": "Get Workflow Run",
+          "tags": [
+            "workflows"
+          ]
+        },
+        "patch": {
+          "description": "Update status, metadata, or output on a workflow run.",
+          "operationId": "update_workflow_run_v1_workflows_runs__run_id__patch",
+          "parameters": [
+            {
+              "in": "path",
+              "name": "run_id",
+              "required": true,
+              "schema": {
+                "title": "Run Id",
+                "type": "string"
+              }
+            }
+          ],
+          "requestBody": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkflowRunUpdateRequest"
+                }
+              }
+            },
+            "required": true
+          },
+          "responses": {
+            "200": {
+              "content": {
+                "application/json": {
+                  "schema": {}
+                }
+              },
+              "description": "Successful Response"
+            },
+            "422": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/HTTPValidationError"
+                  }
+                }
+              },
+              "description": "Validation Error"
+            }
+          },
+          "security": [
+            {
+              "APIKeyHeader": []
+            }
+          ],
+          "summary": "Update Workflow Run",
+          "tags": [
+            "workflows"
+          ]
+        }
+      },
+      "/v1/workflows/runs/{run_id}/events": {
+        "get": {
+          "description": "Fetch event log for a run, ordered by sequence_number. Default limit 100, max 500.",
+          "operationId": "list_workflow_events_v1_workflows_runs__run_id__events_get",
+          "parameters": [
+            {
+              "in": "path",
+              "name": "run_id",
+              "required": true,
+              "schema": {
+                "title": "Run Id",
+                "type": "string"
+              }
+            },
+            {
+              "in": "query",
+              "name": "limit",
+              "required": false,
+              "schema": {
+                "default": 100,
+                "maximum": 500,
+                "minimum": 1,
+                "title": "Limit",
+                "type": "integer"
+              }
+            }
+          ],
+          "responses": {
+            "200": {
+              "content": {
+                "application/json": {
+                  "schema": {}
+                }
+              },
+              "description": "Successful Response"
+            },
+            "422": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/HTTPValidationError"
+                  }
+                }
+              },
+              "description": "Validation Error"
+            }
+          },
+          "security": [
+            {
+              "APIKeyHeader": []
+            }
+          ],
+          "summary": "List Workflow Events",
+          "tags": [
+            "workflows"
+          ]
+        },
+        "post": {
+          "description": "Append an event to the run's event log. Also updates run.status if event_type maps to a status.\n\nSequence numbers use optimistic concurrency: on a unique-constraint collision\n(concurrent append), retries up to _MAX_SEQUENCE_RETRIES times with a fresh MAX+1.\nThe event+status update is atomic in a single DB transaction.",
+          "operationId": "append_workflow_event_v1_workflows_runs__run_id__events_post",
+          "parameters": [
+            {
+              "in": "path",
+              "name": "run_id",
+              "required": true,
+              "schema": {
+                "title": "Run Id",
+                "type": "string"
+              }
+            }
+          ],
+          "requestBody": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkflowEventCreateRequest"
+                }
+              }
+            },
+            "required": true
+          },
+          "responses": {
+            "200": {
+              "content": {
+                "application/json": {
+                  "schema": {}
+                }
+              },
+              "description": "Successful Response"
+            },
+            "422": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/HTTPValidationError"
+                  }
+                }
+              },
+              "description": "Validation Error"
+            }
+          },
+          "security": [
+            {
+              "APIKeyHeader": []
+            }
+          ],
+          "summary": "Append Workflow Event",
+          "tags": [
+            "workflows"
+          ]
+        }
+      },
+      "/v1/workflows/runs/{run_id}/messages": {
+        "get": {
+          "description": "Fetch conversation history for a run, ordered by sequence_number. Default limit 100, max 500.",
+          "operationId": "list_workflow_messages_v1_workflows_runs__run_id__messages_get",
+          "parameters": [
+            {
+              "in": "path",
+              "name": "run_id",
+              "required": true,
+              "schema": {
+                "title": "Run Id",
+                "type": "string"
+              }
+            },
+            {
+              "in": "query",
+              "name": "limit",
+              "required": false,
+              "schema": {
+                "default": 100,
+                "maximum": 500,
+                "minimum": 1,
+                "title": "Limit",
+                "type": "integer"
+              }
+            }
+          ],
+          "responses": {
+            "200": {
+              "content": {
+                "application/json": {
+                  "schema": {}
+                }
+              },
+              "description": "Successful Response"
+            },
+            "422": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/HTTPValidationError"
+                  }
+                }
+              },
+              "description": "Validation Error"
+            }
+          },
+          "security": [
+            {
+              "APIKeyHeader": []
+            }
+          ],
+          "summary": "List Workflow Messages",
+          "tags": [
+            "workflows"
+          ]
+        },
+        "post": {
+          "description": "Append a conversation message. Stores full content (not truncated).\n\nUses optimistic concurrency for sequence numbers.",
+          "operationId": "append_workflow_message_v1_workflows_runs__run_id__messages_post",
+          "parameters": [
+            {
+              "in": "path",
+              "name": "run_id",
+              "required": true,
+              "schema": {
+                "title": "Run Id",
+                "type": "string"
+              }
+            }
+          ],
+          "requestBody": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkflowMessageCreateRequest"
+                }
+              }
+            },
+            "required": true
+          },
+          "responses": {
+            "200": {
+              "content": {
+                "application/json": {
+                  "schema": {}
+                }
+              },
+              "description": "Successful Response"
+            },
+            "422": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/HTTPValidationError"
+                  }
+                }
+              },
+              "description": "Validation Error"
+            }
+          },
+          "security": [
+            {
+              "APIKeyHeader": []
+            }
+          ],
+          "summary": "Append Workflow Message",
+          "tags": [
+            "workflows"
           ]
         }
       }

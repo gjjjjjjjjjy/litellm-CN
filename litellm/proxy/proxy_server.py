@@ -554,7 +554,6 @@ from litellm.proxy.config_resolvers.settings_rules import (
 from litellm.proxy.config_resolvers.settings_rules import (
     JsonValue as SettingsJsonValue,
 )
-from litellm.proxy.container_endpoints.endpoints import router as container_router
 from litellm.proxy.credential_endpoints.endpoints import router as credential_router
 from litellm.proxy.db.create_views import SupportsRawQueries
 from litellm.proxy.db.db_transaction_queue.pod_lock_manager import PodLockManager
@@ -740,9 +739,6 @@ from litellm.proxy.management_endpoints.ui_sso import router as ui_sso_router
 from litellm.proxy.management_endpoints.user_agent_analytics_endpoints import (
     router as user_agent_analytics_router,
 )
-from litellm.proxy.management_endpoints.workflow_management_endpoints import (
-    router as workflow_management_router,
-)
 from litellm.proxy.management_helpers.audit_logs import (
     create_audit_log_for_update,
     create_object_audit_log,
@@ -752,7 +748,6 @@ from litellm.proxy.management_helpers.team_metadata_validation import (
     TEAM_METADATA_VALIDATOR_REGISTRY,
     parse_team_metadata_schema,
 )
-from litellm.proxy.memory.memory_endpoints import router as memory_router
 from litellm.proxy.middleware.billable_request_metrics_middleware import (
     BillableRequestMetricsMiddleware,
     BillingRecorder,
@@ -20675,7 +20670,7 @@ app.include_router(rerank_router)
 app.include_router(ocr_router)
 app.include_router(rag_router)
 app.include_router(video_router)
-app.include_router(container_router)
+reserve_lazy_slot(app, "containers")
 app.include_router(search_router)
 app.include_router(tracing_endpoints.router)
 app.include_router(image_router)
@@ -20713,8 +20708,8 @@ app.include_router(model_management_router)
 app.include_router(model_access_group_management_router)
 app.include_router(auto_router_management_router)
 app.include_router(tag_management_router)
-app.include_router(workflow_management_router)
-app.include_router(memory_router)
+reserve_lazy_slot(app, "workflows")
+reserve_lazy_slot(app, "memory")
 app.include_router(lens_dataset_router)
 app.include_router(lens_feedback_router)
 app.include_router(lens_router)

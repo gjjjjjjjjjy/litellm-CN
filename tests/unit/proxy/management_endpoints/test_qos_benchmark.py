@@ -1,7 +1,7 @@
 import asyncio
 import json
 import re
-from collections.abc import Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
 from datetime import datetime
 from typing import Final, Literal
 
@@ -150,6 +150,50 @@ async def test_saves_the_exact_question_and_keeps_reasoning_separate_from_the_an
     assert check.exchange.question == question
     assert check.exchange.answer == _MARKER.findall(question)[0] + "\n<answer>\n第二行"
     assert (check.exchange.reasoning, check.exchange.error, check.verdict) == ("think first", None, "passed")
+
+
+class _FragmentedSSE(httpx.AsyncByteStream):
+    def __init__(self, payload: str) -> None:
+        self.payload: Final = payload.encode("utf-8")
+
+    async def __aiter__(self) -> AsyncIterator[bytes]:
+        for offset in range(0, len(self.payload), 7):
+            yield self.payload[offset : offset + 7]
+
+
+@pytest.mark.parametrize("errors", ((), ("",), ("first\nline", "", "last")))
+@pytest.mark.asyncio
+async def test_fragmented_streams_keep_all_answer_reasoning_and_error_text(errors: tuple[str, ...]) -> None:
+    upstream: Final = _RecordingUpstream()
+    answer_parts: Final = tuple(f"第{index}段<answer>\n" for index in range(256))
+    reasoning_parts: Final = tuple(f"Reasoning {index}\n" for index in range(256))
+
+    async def handle(request: httpx.Request) -> httpx.Response:
+        upstream.requests.append(request)
+        marker: Final = _MARKER.findall(json.loads(request.content)["messages"][0]["content"])[0]
+        chunks: Final = tuple(
+            {"choices": [{"delta": {"content": answer, "reasoning_content": reasoning}}]}
+            for answer, reasoning in zip(answer_parts, reasoning_parts, strict=True)
+        )
+        events: Final = "".join(f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n" for chunk in chunks)
+        error_events: Final = "".join(f"data: {json.dumps({'error': {'message': error}})}\n\n" for error in errors)
+        return httpx.Response(
+            200,
+            stream=_FragmentedSSE(
+                _sse(marker).removesuffix("data: [DONE]\n\n") + events + error_events + "data: [DONE]\n\n"
+            ),
+        )
+
+    recorder: Final = await _run(
+        upstream, _plan(concurrency=(1,), requests_per_worker=1, save_responses=True), None, handle=handle
+    )
+    (check,) = recorder.checks
+    assert check.exchange is not None
+    marker: Final = _MARKER.findall(check.exchange.question)[0]
+    assert check.exchange.answer == marker + "".join(answer_parts)
+    assert check.exchange.reasoning == "".join(reasoning_parts)
+    assert check.exchange.error == ("\n".join(errors) if errors else None)
+    assert check.verdict == (None if errors else "passed")
 
 
 @pytest.mark.asyncio

@@ -4,6 +4,7 @@ import secrets
 import uuid
 from collections.abc import Callable, Mapping
 from datetime import datetime
+from io import StringIO
 from itertools import product
 from typing import Final, TypeAlias
 
@@ -14,6 +15,7 @@ from litellm._logging import verbose_proxy_logger
 from litellm.proxy.management_endpoints.qos_response_check import (
     ResponseCheck,
     ResponseCheckRecorder,
+    ResponseText,
     chunk_parts,
     marked_prompt,
     new_marker,
@@ -74,15 +76,21 @@ async def _send(
             error: Final = f"HTTP {response.status_code}: {response.text}"
             verbose_proxy_logger.warning("QoS benchmark request failed with HTTP %s", response.status_code)
             return ResponseCheck(call_id=call_id, verdict=None, exchange=saved_exchange(question, None, None, error))
-        parts: Final = tuple([chunk_parts(line) async for line in response.aiter_lines()])
-        answer: Final = "".join(part.answer for part in parts)
-        reasoning: Final = "".join(part.reasoning for part in parts)
-        stream_errors: Final = tuple(part.error for part in parts if part.error is not None)
-        stream_error: Final = "\n".join(stream_errors) if stream_errors else None
+        with StringIO() as answer, StringIO() as reasoning, StringIO() as errors:
+            async for part in (chunk_parts(line) async for line in response.aiter_lines()):
+                answer.write(part.answer)
+                reasoning.write(part.reasoning)
+                if part.error is not None:
+                    errors.write(part.error + "\n")
+            text: Final = ResponseText(
+                answer=answer.getvalue(),
+                reasoning=reasoning.getvalue(),
+                error=errors.getvalue()[:-1] if errors.tell() > 0 else None,
+            )
         return ResponseCheck(
             call_id=call_id,
-            verdict=verdict(marker, reasoning + answer) if stream_error is None else None,
-            exchange=saved_exchange(question, answer, reasoning, stream_error),
+            verdict=verdict(marker, text.reasoning + text.answer) if text.error is None else None,
+            exchange=saved_exchange(question, text.answer, text.reasoning, text.error),
         )
 
 
