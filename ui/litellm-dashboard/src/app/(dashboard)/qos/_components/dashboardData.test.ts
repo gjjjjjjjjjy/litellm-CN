@@ -109,6 +109,15 @@ describe("headlines", () => {
     expect(byKey.requests.change).toBeNull();
     expect(byKey.ttft.change).toBeNull();
   });
+
+  it("distinguishes an unavailable output rate from zero output over a measured period", () => {
+    const noHistory = { ...overall(0, null, 0), output_tokens_per_second: null };
+    const unavailable = headlines(noHistory, noHistory).find((headline) => headline.key === "throughput");
+    const measured = headlines(overall(0, null, 0), noHistory).find((headline) => headline.key === "throughput");
+    expect(unavailable?.value).toBe("-");
+    expect(unavailable?.change).toBeNull();
+    expect(measured?.value).toBe("0.00");
+  });
 });
 
 describe("compareBars", () => {

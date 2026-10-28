@@ -1,8 +1,14 @@
-import { screen, waitFor, within } from "@testing-library/react";
+import { act, render, renderHook, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { focusManager, onlineManager, QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import QosView from "./QosView";
+import QosOverview from "./QosOverview";
+import { useQosSummary } from "@/app/(dashboard)/hooks/qos/useQosSummary";
+import { useQosTrends } from "@/app/(dashboard)/hooks/qos/useQosTrends";
+import { useQosHealth } from "@/app/(dashboard)/hooks/qos/useQosHealth";
+import type { QosRange } from "./qosData";
 import { apiClient } from "@/components/networking";
 import { renderWithProviders, testQueryClient } from "../../../../../tests/test-utils";
 
@@ -162,5 +168,82 @@ describe("QosView", () => {
     vi.mocked(apiClient.get).mockRejectedValue(new Error("Only proxy admins can view service quality metrics"));
     renderWithProviders(<QosView accessToken="token" />);
     expect(await screen.findByText("Only proxy admins can view service quality metrics")).toBeInTheDocument();
+  });
+
+  it("refreshes all three data sources on demand and shows the all-history refresh policy", async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: Infinity } } });
+    const user = userEvent.setup();
+    const callsFor = (path: string) => vi.mocked(apiClient.get).mock.calls.filter(([called]) => called === path);
+    const paths = ["/qos/summary", "/qos/trends", "/qos/health"];
+    const view = render(
+      <QueryClientProvider client={client}>
+        <QosOverview accessToken="token" />
+      </QueryClientProvider>,
+    );
+    try {
+      await within(await screen.findByRole("table")).findByText("qwen3-max");
+      await user.click(screen.getByLabelText("Time range"));
+      await user.click(await screen.findByRole("option", { name: "All", exact: true }));
+      await waitFor(() => expect(callsFor("/qos/summary")).toHaveLength(2));
+      expect(screen.getByRole("switch", { name: "All history refreshes manually" })).toHaveAttribute(
+        "aria-disabled",
+        "true",
+      );
+      expect(screen.getByRole("switch")).not.toBeChecked();
+
+      await user.click(screen.getByRole("button", { name: "Refresh" }));
+      await waitFor(() => expect(callsFor("/qos/summary")).toHaveLength(3));
+      for (const path of paths) expect(callsFor(path)).toHaveLength(3);
+
+      await user.click(screen.getByLabelText("Time range"));
+      await user.click(await screen.findByRole("option", { name: "Last hour" }));
+      expect(screen.getByRole("switch")).toBeChecked();
+      await user.click(screen.getByRole("switch", { name: "Auto refresh every minute" }));
+      expect(screen.getByRole("switch")).not.toBeChecked();
+    } finally {
+      view.unmount();
+      client.clear();
+    }
+  });
+
+  it("keeps all-history queries fresh across timers, focus and reconnect, then resumes bounded polling", async () => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: Infinity } } });
+    const hook = renderHook(
+      ({ range }: { range: QosRange }) => {
+        const trendQuery = { range, tag: "", groupBy: "model", refreshMs: 60_000 } as const;
+        useQosSummary("token", range, "", 60_000);
+        useQosTrends("token", trendQuery);
+        useQosHealth("token", range, 60_000);
+      },
+      {
+        initialProps: { range: "all" },
+        wrapper: ({ children }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>,
+      },
+    );
+    try {
+      await waitFor(() => expect(vi.mocked(apiClient.get)).toHaveBeenCalledTimes(3));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(180_000);
+        focusManager.setFocused(false);
+        focusManager.setFocused(true);
+        onlineManager.setOnline(false);
+        onlineManager.setOnline(true);
+      });
+      expect(vi.mocked(apiClient.get)).toHaveBeenCalledTimes(3);
+
+      hook.rerender({ range: "1h" });
+      await waitFor(() => expect(vi.mocked(apiClient.get)).toHaveBeenCalledTimes(6));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(60_000);
+      });
+      expect(vi.mocked(apiClient.get)).toHaveBeenCalledTimes(9);
+    } finally {
+      hook.unmount();
+      client.clear();
+      focusManager.setFocused(undefined);
+      onlineManager.setOnline(true);
+      vi.useRealTimers();
+    }
   });
 });

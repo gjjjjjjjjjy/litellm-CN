@@ -29,6 +29,12 @@ export const QOS_RANGES: readonly { readonly value: QosRange; readonly label: st
 
 export const isQosRange = (value: string): value is QosRange => QOS_RANGES.some((range) => range.value === value);
 
+export const qosRefreshOptions = (
+  range: QosRange,
+  refreshMs: number | false,
+): { readonly refetchInterval: number | false; readonly staleTime?: number } =>
+  range === "all" ? { refetchInterval: false, staleTime: Infinity } : { refetchInterval: refreshMs };
+
 export const qosWindow = (
   range: QosRange,
   now: Date,
@@ -53,7 +59,10 @@ export const formatPercentiles = (percentiles: QosPercentiles): string =>
 
 export const formatRatio = (value: number | null): string => (value === null ? "-" : `${(value * 100).toFixed(1)}%`);
 
-export const formatRate = (value: number): string => (value >= 100 ? value.toFixed(0) : value.toFixed(2));
+export const formatRate = (value: number | null): string => {
+  if (value === null) return "-";
+  return value >= 100 ? value.toFixed(0) : value.toFixed(2);
+};
 
 export const deploymentsFor = (summary: QosSummary, modelGroup: string): QosDeploymentMetrics[] =>
   summary.deployments.filter((deployment) => deployment.model_group === modelGroup);

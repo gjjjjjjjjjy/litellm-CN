@@ -236,7 +236,7 @@ class QosOverall(LiteLLMBaseModel):
     requests: int
     failed_requests: int
     output_tokens: int
-    output_tokens_per_second: float
+    output_tokens_per_second: float | None
     ttft_ms: QosPercentiles
     tpot_ms: QosPercentiles
     response_checks: QosResponseChecks

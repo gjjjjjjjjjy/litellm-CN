@@ -1,10 +1,10 @@
 import { useQuery, type UseQueryResult } from "@tanstack/react-query";
 import { apiClient } from "@/components/networking";
 import type { QosTrends, TrendGrouping } from "@/app/(dashboard)/qos/_components/dashboardData";
-import { qosWindow, type QosRange } from "@/app/(dashboard)/qos/_components/qosData";
+import { qosRefreshOptions, qosWindow, type QosRange } from "@/app/(dashboard)/qos/_components/qosData";
 import { createQueryKeys } from "../common/queryKeysFactory";
 
-const trendKeys = createQueryKeys("qosTrends");
+export const trendKeys = createQueryKeys("qosTrends");
 
 export interface QosTrendsQuery {
   readonly range: QosRange;
@@ -25,7 +25,7 @@ export const useQosTrends = (
         query: { ...qosWindow(range, new Date()), tag: tag === "" ? undefined : tag, group_by: groupBy },
       }),
     enabled: Boolean(accessToken),
-    refetchInterval: refreshMs,
+    ...qosRefreshOptions(range, refreshMs),
     retry: false,
   };
   return useQuery<QosTrends>(options);

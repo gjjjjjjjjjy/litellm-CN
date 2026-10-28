@@ -86,7 +86,7 @@ def test_a_deployment_series_names_its_vendor() -> None:
     ]
 
 
-def test_throughput_spreads_output_over_the_whole_window() -> None:
+def test_throughput_uses_the_measured_window_and_exposes_zero_duration() -> None:
     row: Final = OverallRow.model_validate(
         {
             "requests": 120,
@@ -109,3 +109,6 @@ def test_throughput_spreads_output_over_the_whole_window() -> None:
     assert result.output_tokens_per_second == pytest.approx(36000 / 3600)
     assert result.response_checks.crosstalk == 2
     assert (result.ttft_ms.p95, result.tpot_ms.p50) == (900.0, None)
+
+    with pytest.raises(ZeroDivisionError):
+        overall(row, timedelta())

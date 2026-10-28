@@ -424,7 +424,8 @@ class TestAllHistory:
     ) -> None:
         prisma: Final = MagicMock()
         current: Final = _EMPTY_OVERALL if history_start is None else _OVERALL
-        result_rows: Final = [[current], [_EMPTY_OVERALL], []] if path == "/qos/trends" else [[], []]
+        trend_rows: Final = [] if history_start is None else [[current], []]
+        result_rows: Final = trend_rows if path == "/qos/trends" else [[], []]
         prisma.db.query_raw = AsyncMock(side_effect=[[{"start_time": history_start}], *result_rows])
 
         with (
@@ -441,16 +442,20 @@ class TestAllHistory:
         assert (body["start_time"], body["end_time"]) == (start.isoformat() + "Z", NOW.isoformat() + "Z")
         calls: Final = tuple(call.args for call in prisma.db.query_raw.await_args_list)
         assert calls[0] == (HISTORY_START_SQL, NOW)
-        assert calls[1][1:3] == (start, NOW)
         if path == "/qos/trends":
-            assert calls[2] == (OVERALL_SQL, start, start, None)
-            assert calls[3][1:3] == (start, NOW)
             assert (NOW - start).total_seconds() / body["bucket_seconds"] <= TREND_POINTS
             assert body["previous"]["requests"] == 0
+            assert body["previous"]["output_tokens_per_second"] is None
             if history_start is None:
+                assert len(calls) == 1
                 assert body["current"]["requests"] == 0
-                assert body["current"]["output_tokens_per_second"] == 0
+                assert body["current"]["output_tokens_per_second"] is None
+                assert body["series"] == []
+            else:
+                assert calls[1] == (OVERALL_SQL, start, NOW, None)
+                assert calls[2][1:3] == (start, NOW)
         else:
+            assert calls[1][1:3] == (start, NOW)
             assert calls[2][1:3] == (start, NOW)
 
     @pytest.mark.parametrize("path", ("/qos/summary", "/qos/health", "/qos/trends"))

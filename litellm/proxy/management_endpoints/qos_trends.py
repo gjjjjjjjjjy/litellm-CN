@@ -148,8 +148,18 @@ class TrendRow(_Latencies):
     output_tokens: int
 
 
-OVERALL_ROWS: Final = TypeAdapter(list[OverallRow])
+OVERALL_ROWS: Final = TypeAdapter(tuple[OverallRow])
 TREND_ROWS: Final = TypeAdapter(list[TrendRow])
+
+EMPTY_HISTORY_OVERALL: Final = QosOverall(
+    requests=0,
+    failed_requests=0,
+    output_tokens=0,
+    output_tokens_per_second=None,
+    ttft_ms=QosPercentiles(p50=None, p95=None, p99=None),
+    tpot_ms=QosPercentiles(p50=None, p95=None, p99=None),
+    response_checks=QosResponseChecks(checked=0, crosstalk=0, marker_missing=0),
+)
 
 
 def bucket_seconds(window: timedelta) -> int:
@@ -165,7 +175,7 @@ def overall(row: OverallRow, window: timedelta) -> QosOverall:
         requests=row.requests,
         failed_requests=row.failed_requests,
         output_tokens=row.output_tokens,
-        output_tokens_per_second=row.output_tokens / window.total_seconds() if window.total_seconds() > 0 else 0.0,
+        output_tokens_per_second=row.output_tokens / window.total_seconds(),
         ttft_ms=row.ttft(),
         tpot_ms=row.tpot(),
         response_checks=QosResponseChecks(

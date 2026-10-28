@@ -1,9 +1,14 @@
 import { useQuery, type UseQueryResult } from "@tanstack/react-query";
 import { apiClient } from "@/components/networking";
-import { qosWindow, type QosRange, type QosSummary } from "@/app/(dashboard)/qos/_components/qosData";
+import {
+  qosRefreshOptions,
+  qosWindow,
+  type QosRange,
+  type QosSummary,
+} from "@/app/(dashboard)/qos/_components/qosData";
 import { createQueryKeys } from "../common/queryKeysFactory";
 
-const qosKeys = createQueryKeys("qos");
+export const qosKeys = createQueryKeys("qos");
 
 export const useQosSummary = (
   accessToken: string | null,
@@ -19,7 +24,7 @@ export const useQosSummary = (
         query: { ...qosWindow(range, new Date()), tag: tag === "" ? undefined : tag },
       }),
     enabled: Boolean(accessToken),
-    refetchInterval: refreshMs,
+    ...qosRefreshOptions(range, refreshMs),
     retry: false,
   };
   return useQuery<QosSummary>(options);

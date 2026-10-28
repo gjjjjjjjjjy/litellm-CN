@@ -43458,7 +43458,7 @@ export interface components {
             /** Output Tokens */
             output_tokens: number;
             /** Output Tokens Per Second */
-            output_tokens_per_second: number;
+            output_tokens_per_second: number | null;
             /** Requests */
             requests: number;
             response_checks: components["schemas"]["QosResponseChecks"];

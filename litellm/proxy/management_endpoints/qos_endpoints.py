@@ -49,6 +49,7 @@ from litellm.proxy.management_endpoints.qos_summary import (
     utc_now,
 )
 from litellm.proxy.management_endpoints.qos_trends import (
+    EMPTY_HISTORY_OVERALL,
     OVERALL_ROWS,
     OVERALL_SQL,
     TREND_ROWS,
@@ -295,9 +296,24 @@ async def get_qos_trends(
     start, end = await _metrics_window(prisma_client, start_time, end_time, all_time)
     window: Final = end - start
     bucket: Final = bucket_seconds(window)
+    if all_time and start == end:
+        return QosTrendsResponse(
+            start_time=start,
+            end_time=end,
+            bucket_seconds=bucket,
+            group_by=group_by,
+            current=EMPTY_HISTORY_OVERALL,
+            previous=EMPTY_HISTORY_OVERALL,
+            series=(),
+        )
     (current,) = OVERALL_ROWS.validate_python(await prisma_client.db.query_raw(OVERALL_SQL, start, end, tag))
-    (previous,) = OVERALL_ROWS.validate_python(
-        await prisma_client.db.query_raw(OVERALL_SQL, start if all_time else start - window, start, tag)
+    previous: Final = (
+        EMPTY_HISTORY_OVERALL
+        if all_time
+        else overall(
+            OVERALL_ROWS.validate_python(await prisma_client.db.query_raw(OVERALL_SQL, start - window, start, tag))[0],
+            window,
+        )
     )
     rows: Final = TREND_ROWS.validate_python(
         await prisma_client.db.query_raw(
@@ -310,7 +326,7 @@ async def get_qos_trends(
         bucket_seconds=bucket,
         group_by=group_by,
         current=overall(current, window),
-        previous=overall(previous, window),
+        previous=previous,
         series=trend_series(rows),
     )
 

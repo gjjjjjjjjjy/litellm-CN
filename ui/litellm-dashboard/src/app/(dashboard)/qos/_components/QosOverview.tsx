@@ -2,8 +2,11 @@
 
 import React from "react";
 import { RefreshCw } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
 
-import { useQosSummary } from "@/app/(dashboard)/hooks/qos/useQosSummary";
+import { qosKeys, useQosSummary } from "@/app/(dashboard)/hooks/qos/useQosSummary";
+import { healthKeys } from "@/app/(dashboard)/hooks/qos/useQosHealth";
+import { trendKeys } from "@/app/(dashboard)/hooks/qos/useQosTrends";
 import { DataTable } from "@/components/shared/DataTable";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -18,11 +21,13 @@ import QosDashboard from "./QosDashboard";
 const AUTO_REFRESH_MS = 60_000;
 
 export default function QosOverview({ accessToken }: { accessToken: string | null }) {
+  const queryClient = useQueryClient();
   const [range, setRange] = React.useState<QosRange>("1h");
   const [tagInput, setTagInput] = React.useState("");
   const [tag, setTag] = React.useState("");
   const [autoRefresh, setAutoRefresh] = React.useState(true);
-  const refreshMs = autoRefresh ? AUTO_REFRESH_MS : false;
+  const automatic = range !== "all" && autoRefresh;
+  const refreshMs = automatic ? AUTO_REFRESH_MS : false;
   const summaryQuery = useQosSummary(accessToken, range, tag, refreshMs);
   const summary = summaryQuery.data;
   const loading = summaryQuery.isFetching;
@@ -32,7 +37,11 @@ export default function QosOverview({ accessToken }: { accessToken: string | nul
     event.preventDefault();
     const nextTag = tagInput.trim();
     if (nextTag === tag) {
-      void summaryQuery.refetch();
+      void Promise.all([
+        queryClient.refetchQueries({ queryKey: qosKeys.lists(), type: "active" }),
+        queryClient.refetchQueries({ queryKey: trendKeys.lists(), type: "active" }),
+        queryClient.refetchQueries({ queryKey: healthKeys.lists(), type: "active" }),
+      ]);
       return;
     }
     setTag(nextTag);
@@ -81,8 +90,13 @@ export default function QosOverview({ accessToken }: { accessToken: string | nul
           Refresh
         </Button>
         <label htmlFor="qos-auto-refresh" className="flex h-9 items-center gap-2 text-sm text-muted-foreground">
-          <Switch id="qos-auto-refresh" checked={autoRefresh} onCheckedChange={setAutoRefresh} />
-          Auto refresh every minute
+          <Switch
+            id="qos-auto-refresh"
+            checked={automatic}
+            disabled={range === "all"}
+            onCheckedChange={setAutoRefresh}
+          />
+          {range === "all" ? "All history refreshes manually" : "Auto refresh every minute"}
         </label>
       </form>
 
