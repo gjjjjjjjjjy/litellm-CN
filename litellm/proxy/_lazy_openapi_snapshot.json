@@ -53681,6 +53681,60 @@
           "title": "QosAnnouncementsResponse",
           "type": "object"
         },
+        "QosAudioMetrics": {
+          "properties": {
+            "audio_seconds": {
+              "description": "Audio produced (speech) or transcribed (transcription) by served calls",
+              "title": "Audio Seconds",
+              "type": "number"
+            },
+            "failed_requests": {
+              "title": "Failed Requests",
+              "type": "integer"
+            },
+            "input_chars": {
+              "description": "Spoken characters sent to speech models, punctuation and spaces excluded",
+              "title": "Input Chars",
+              "type": "integer"
+            },
+            "latency_ms": {
+              "$ref": "#/components/schemas/QosPercentiles",
+              "description": "End-to-end time of served calls"
+            },
+            "modality": {
+              "enum": [
+                "speech",
+                "transcription"
+              ],
+              "title": "Modality",
+              "type": "string"
+            },
+            "model_group": {
+              "title": "Model Group",
+              "type": "string"
+            },
+            "real_time_factor": {
+              "$ref": "#/components/schemas/QosPercentiles",
+              "description": "Latency over audio length; below 1 is faster than real time"
+            },
+            "requests": {
+              "title": "Requests",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "model_group",
+            "modality",
+            "requests",
+            "failed_requests",
+            "audio_seconds",
+            "input_chars",
+            "latency_ms",
+            "real_time_factor"
+          ],
+          "title": "QosAudioMetrics",
+          "type": "object"
+        },
         "QosBenchmarkDeleted": {
           "properties": {
             "deleted_requests": {
@@ -54580,6 +54634,42 @@
           "title": "QosInterference",
           "type": "object"
         },
+        "QosMediaResponse": {
+          "properties": {
+            "audio": {
+              "items": {
+                "$ref": "#/components/schemas/QosAudioMetrics"
+              },
+              "title": "Audio",
+              "type": "array"
+            },
+            "end_time": {
+              "format": "date-time",
+              "title": "End Time",
+              "type": "string"
+            },
+            "start_time": {
+              "format": "date-time",
+              "title": "Start Time",
+              "type": "string"
+            },
+            "video": {
+              "items": {
+                "$ref": "#/components/schemas/QosVideoMetrics"
+              },
+              "title": "Video",
+              "type": "array"
+            }
+          },
+          "required": [
+            "start_time",
+            "end_time",
+            "audio",
+            "video"
+          ],
+          "title": "QosMediaResponse",
+          "type": "object"
+        },
         "QosModelAddedEvent": {
           "properties": {
             "at": {
@@ -55202,6 +55292,67 @@
           "title": "QosTrendsResponse",
           "type": "object"
         },
+        "QosVideoMetrics": {
+          "properties": {
+            "cancelled": {
+              "title": "Cancelled",
+              "type": "integer"
+            },
+            "failed": {
+              "title": "Failed",
+              "type": "integer"
+            },
+            "failed_submissions": {
+              "title": "Failed Submissions",
+              "type": "integer"
+            },
+            "model_group": {
+              "title": "Model Group",
+              "type": "string"
+            },
+            "queue_ms": {
+              "$ref": "#/components/schemas/QosPercentiles",
+              "description": "From the task being created to the provider starting it"
+            },
+            "run_ms": {
+              "$ref": "#/components/schemas/QosPercentiles",
+              "description": "From the provider starting a task to it succeeding"
+            },
+            "submitted": {
+              "title": "Submitted",
+              "type": "integer"
+            },
+            "succeeded": {
+              "title": "Succeeded",
+              "type": "integer"
+            },
+            "task_price": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Sum of the prices the provider reported for finished tasks",
+              "title": "Task Price"
+            }
+          },
+          "required": [
+            "model_group",
+            "submitted",
+            "failed_submissions",
+            "succeeded",
+            "failed",
+            "cancelled",
+            "queue_ms",
+            "run_ms",
+            "task_price"
+          ],
+          "title": "QosVideoMetrics",
+          "type": "object"
+        },
         "ValidationError": {
           "properties": {
             "ctx": {
@@ -55808,6 +55959,83 @@
             }
           ],
           "summary": "Get Qos News",
+          "tags": [
+            "qos"
+          ]
+        }
+      },
+      "/qos/media": {
+        "get": {
+          "description": "Speech and transcription latency against audio length, and how video tasks end, queue and run.",
+          "operationId": "get_qos_media_qos_media_get",
+          "parameters": [
+            {
+              "description": "ISO 8601, defaults to 24 hours before end_time",
+              "in": "query",
+              "name": "start_time",
+              "required": false,
+              "schema": {
+                "anyOf": [
+                  {
+                    "format": "date-time",
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "ISO 8601, defaults to 24 hours before end_time",
+                "title": "Start Time"
+              }
+            },
+            {
+              "description": "ISO 8601, defaults to now",
+              "in": "query",
+              "name": "end_time",
+              "required": false,
+              "schema": {
+                "anyOf": [
+                  {
+                    "format": "date-time",
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "ISO 8601, defaults to now",
+                "title": "End Time"
+              }
+            }
+          ],
+          "responses": {
+            "200": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/QosMediaResponse"
+                  }
+                }
+              },
+              "description": "Successful Response"
+            },
+            "422": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/HTTPValidationError"
+                  }
+                }
+              },
+              "description": "Validation Error"
+            }
+          },
+          "security": [
+            {
+              "APIKeyHeader": []
+            }
+          ],
+          "summary": "Get Qos Media",
           "tags": [
             "qos"
           ]

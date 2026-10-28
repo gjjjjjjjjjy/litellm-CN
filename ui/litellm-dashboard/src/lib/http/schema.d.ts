@@ -14321,6 +14321,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/qos/media": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Qos Media
+         * @description Speech and transcription latency against audio length, and how video tasks end, queue and run.
+         */
+        get: operations["get_qos_media_qos_media_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/qos/summary": {
         parameters: {
             query?: never;
@@ -43045,6 +43065,34 @@ export interface components {
             /** Announcements */
             announcements: components["schemas"]["QosAnnouncement"][];
         };
+        /** QosAudioMetrics */
+        QosAudioMetrics: {
+            /**
+             * Audio Seconds
+             * @description Audio produced (speech) or transcribed (transcription) by served calls
+             */
+            audio_seconds: number;
+            /** Failed Requests */
+            failed_requests: number;
+            /**
+             * Input Chars
+             * @description Spoken characters sent to speech models, punctuation and spaces excluded
+             */
+            input_chars: number;
+            /** @description End-to-end time of served calls */
+            latency_ms: components["schemas"]["QosPercentiles"];
+            /**
+             * Modality
+             * @enum {string}
+             */
+            modality: "speech" | "transcription";
+            /** Model Group */
+            model_group: string;
+            /** @description Latency over audio length; below 1 is faster than real time */
+            real_time_factor: components["schemas"]["QosPercentiles"];
+            /** Requests */
+            requests: number;
+        };
         /** QosBenchmarkDeleted */
         QosBenchmarkDeleted: {
             /** Deleted Requests */
@@ -43403,6 +43451,23 @@ export interface components {
             /** Same Endpoint */
             same_endpoint: number;
         };
+        /** QosMediaResponse */
+        QosMediaResponse: {
+            /** Audio */
+            audio: components["schemas"]["QosAudioMetrics"][];
+            /**
+             * End Time
+             * Format: date-time
+             */
+            end_time: string;
+            /**
+             * Start Time
+             * Format: date-time
+             */
+            start_time: string;
+            /** Video */
+            video: components["schemas"]["QosVideoMetrics"][];
+        };
         /** QosModelAddedEvent */
         QosModelAddedEvent: {
             /**
@@ -43653,6 +43718,30 @@ export interface components {
              * Format: date-time
              */
             start_time: string;
+        };
+        /** QosVideoMetrics */
+        QosVideoMetrics: {
+            /** Cancelled */
+            cancelled: number;
+            /** Failed */
+            failed: number;
+            /** Failed Submissions */
+            failed_submissions: number;
+            /** Model Group */
+            model_group: string;
+            /** @description From the task being created to the provider starting it */
+            queue_ms: components["schemas"]["QosPercentiles"];
+            /** @description From the provider starting a task to it succeeding */
+            run_ms: components["schemas"]["QosPercentiles"];
+            /** Submitted */
+            submitted: number;
+            /** Succeeded */
+            succeeded: number;
+            /**
+             * Task Price
+             * @description Sum of the prices the provider reported for finished tasks
+             */
+            task_price: number | null;
         };
         /**
          * RankingOptions
@@ -72775,6 +72864,40 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["QosNewsResponse"];
+                };
+            };
+        };
+    };
+    get_qos_media_qos_media_get: {
+        parameters: {
+            query?: {
+                /** @description ISO 8601, defaults to 24 hours before end_time */
+                start_time?: string | null;
+                /** @description ISO 8601, defaults to now */
+                end_time?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QosMediaResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
