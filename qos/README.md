@@ -84,13 +84,18 @@ export LITELLM_API_KEY=sk-...
 
 ## 回答质量评测
 
-使用标准数据集评测模型回答，数据集在首次运行时从 ModelScope 下载
+使用标准数据集评测模型回答，数据集在首次运行时从 ModelScope 下载。模型名可以填部署 ID，只测这一个节点
 
 ```bash
-./qos/run-eval.sh qwen3-max gsm8k ceval
+export QOS_EVAL_GENERATION='{"temperature": 1.0, "top_p": 0.95, "max_tokens": 32768}'
+./qos/run-eval.sh GLM-5.3 gpqa_diamond ifeval aime26 general_fc
 ```
 
-每个子集默认取 50 条，可用 `QOS_EVAL_LIMIT` 调整。数据集名称见 evalscope 文档，报告保存在 `qos/results/eval-*/reports/`
+`QOS_EVAL_GENERATION` 是必填的采样参数，按模型官方推荐值填写，同一模型的各轮评测要用同一组参数才能比较。evalscope 默认 temperature 为 0 且不限制输出长度，不适合推理模型，上例是 GLM-5 系列模型卡的推理评测设置。脚本固定发送流式请求，并给每个请求加上 `eval-` 开头的请求标签，在「服务质量」页面填入该标签即可只看这一轮评测的网关记录
+
+每个子集默认取 50 条，可用 `QOS_EVAL_LIMIT` 调整。每题默认做 1 次，可用 `QOS_EVAL_REPEATS` 调整。并发默认为 4，可用 `QOS_EVAL_CONCURRENCY` 调整。数据集名称见 evalscope 文档，报告保存在 `qos/results/eval-*/reports/`
+
+推理模型单题可能输出几分钟。网关的 `request_timeout` 如果短于服务商返回第一个数据块的时间，请求会在收到任何输出前超时，评测前要确认全局或部署的超时足够长
 
 ## 注意事项
 
