@@ -197,6 +197,8 @@ litellm-proxy = "litellm.proxy.client.cli:litellm_proxy_cli"
 [dependency-groups]
 dev = [
     "numpy>=1.26.0,<3.0",
+    "Pillow==12.3.0; python_version == '3.10'",
+    "Pillow==13.0.0; python_version >= '3.11'",
     "diff-cover==9.7.2",
     "hypothesis==6.165.10",
     "reportlab==5.0.1",
