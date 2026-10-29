@@ -4625,6 +4625,8 @@ async def test_wrapper_async_logs_converted_chat_stream_with_standard_logging_ob
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     capture: Final = _install_converted_stream_callbacks(monkeypatch)
+    input_rate: Final = 0.001
+    output_rate: Final = 0.002
 
     response: Final = await litellm.acompletion(
         model="gpt-5.6",
@@ -4632,6 +4634,8 @@ async def test_wrapper_async_logs_converted_chat_stream_with_standard_logging_ob
         stream=True,
         mock_response="converted stream body",
         num_retries=0,
+        input_cost_per_token=input_rate,
+        output_cost_per_token=output_rate,
     )
     assert isinstance(response, CustomStreamWrapper)
     chunks: Final = [chunk async for chunk in response]
@@ -4640,7 +4644,12 @@ async def test_wrapper_async_logs_converted_chat_stream_with_standard_logging_ob
     success_kwargs: Final = await _wait_for_success_kwargs(capture)
     standard_logging_object: Final = success_kwargs["standard_logging_object"]
     assert isinstance(standard_logging_object, dict)
-    assert standard_logging_object["response_cost"] > 0
+    expected_cost: Final = (
+        standard_logging_object["prompt_tokens"] * input_rate
+        + standard_logging_object["completion_tokens"] * output_rate
+    )
+    assert expected_cost > 0
+    assert standard_logging_object["response_cost"] == pytest.approx(expected_cost)
     assert standard_logging_object["stream"] is True
     assert success_kwargs["stream"] is True
 
@@ -4864,6 +4873,8 @@ async def test_wrapper_async_logs_converted_responses_stream_with_standard_loggi
     from litellm.responses.streaming_iterator import BaseResponsesAPIStreamingIterator
 
     capture: Final = _install_converted_stream_callbacks(monkeypatch)
+    input_rate: Final = 0.001
+    output_rate: Final = 0.002
     monkeypatch.setattr(litellm, "disable_aiohttp_transport", True)
     litellm.in_memory_llm_clients_cache.flush_cache()
     respx.post("https://api.openai.com/v1/responses").respond(
@@ -4887,7 +4898,13 @@ async def test_wrapper_async_logs_converted_responses_stream_with_standard_loggi
     )
 
     response: Final = await litellm.aresponses(
-        model="openai/gpt-5.6", input="hi", stream=True, api_key="sk-test", num_retries=0
+        model="openai/gpt-5.6",
+        input="hi",
+        stream=True,
+        api_key="sk-test",
+        num_retries=0,
+        input_cost_per_token=input_rate,
+        output_cost_per_token=output_rate,
     )
     assert isinstance(response, BaseResponsesAPIStreamingIterator)
     events: Final = [event async for event in response]
@@ -4896,7 +4913,7 @@ async def test_wrapper_async_logs_converted_responses_stream_with_standard_loggi
     success_kwargs: Final = await _wait_for_success_kwargs(capture)
     standard_logging_object: Final = success_kwargs["standard_logging_object"]
     assert isinstance(standard_logging_object, dict)
-    assert standard_logging_object["response_cost"] > 0
+    assert standard_logging_object["response_cost"] == pytest.approx(3 * input_rate + 4 * output_rate)
     assert standard_logging_object["stream"] is True
     assert success_kwargs["stream"] is True
 
@@ -9370,7 +9387,6 @@ def my_pre_call_rule(input: str):
     return True
 
 
-
 def test_get_optional_params_keeps_a_tool_config_cache_point_out_of_the_openai_extra_body():
     """LIT-9880: the hook hands a tool_config point on for the provider step, and OpenAI has no
     step that consumes it, so it must not ride along in extra_body and 400 at OpenAI."""
@@ -9399,6 +9415,7 @@ def test_get_optional_params_forwards_a_tool_config_cache_point_to_a_downstream_
     )
 
     assert optional_params["extra_body"] == {"kept": True, "cache_control_injection_points": [point]}
+
 
 @pytest.mark.parametrize(
     "key", ("openai.test-converse", "bedrock/openai.test-converse", "bedrock/converse/openai.test-converse")

@@ -10,7 +10,7 @@ resolution-markers = [
 ]
 
 [options]
-exclude-newer = "2026-10-26T09:42:16.473653Z"
+exclude-newer = "2026-10-20T22:36:55.634978Z"
 exclude-newer-span = "P3D"
 
 [options.exclude-newer-package]
@@ -4744,8 +4744,6 @@ dev = [
     { name = "opentelemetry-instrumentation-fastapi" },
     { name = "opentelemetry-sdk" },
     { name = "parameterized" },
-    { name = "pillow", version = "12.3.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
-    { name = "pillow", version = "13.0.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
     { name = "psycopg" },
     { name = "psycopg-binary" },
     { name = "pytest" },
@@ -4966,8 +4964,6 @@ dev = [
     { name = "opentelemetry-instrumentation-fastapi", specifier = "==0.66b1" },
     { name = "opentelemetry-sdk", specifier = "==1.45.1" },
     { name = "parameterized", specifier = "==0.9.0" },
-    { name = "pillow", marker = "python_full_version == '3.10.*'", specifier = "==12.3.0" },
-    { name = "pillow", marker = "python_full_version >= '3.11'", specifier = "==13.0.0" },
     { name = "psycopg", specifier = "==3.3.3" },
     { name = "psycopg-binary", specifier = "==3.3.3" },
     { name = "pytest", specifier = "==9.0.3" },
