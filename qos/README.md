@@ -34,6 +34,22 @@
 
 这些数据记在每个请求的 SpendLogs `metadata.qos_media` 里。代理层直接拒绝的失败请求没有调用类型，按部署配置的 `model_info.mode`（`audio_speech`、`audio_transcription`、`video_generation`）归类，所以音频、视频模型要设好 `mode`
 
+### 视频定时探测
+
+视频模型没有后台健康检查，`qos/media_probe.py` 经网关为每个视频模型生成一条视频并轮询到结束，提交、最终状态、排队时间、生成时间和价格都会计入「音视频」标签页。部署的 `model_info` 中设置了 `qos_probe` 的视频模型才参与探测
+
+```json
+{"qos_probe": {"prompt": "颜色缓慢流动的渐变", "image": true, "params": {"num_frames": 25}}}
+```
+
+`prompt` 默认为一句文生视频提示词。`image` 为 true 时以图生视频提交，测试图由脚本生成。`params` 原样作为请求字段，例如时长 `seconds`、分辨率 `width` 和 `height`
+
+```bash
+LITELLM_API_KEY=sk-... python qos/media_probe.py --base-url http://<网关地址> --every 10800
+```
+
+`--every` 为运行间隔（秒），按整点对齐，网关重启不会额外运行；不加时只运行一次。`--dry-run` 只列出参与探测的模型和参数。脚本只依赖 httpx 和 pydantic，可直接用网关镜像运行。每次探测按服务商标价计费，间隔要按预算设置
+
 ## 准备
 
 构建压测镜像，只需执行一次
