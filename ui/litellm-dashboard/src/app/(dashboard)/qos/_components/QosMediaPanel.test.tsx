@@ -107,6 +107,24 @@ describe("QosMediaPanel", () => {
     ]);
   });
 
+  it("keeps how each table is measured hidden until its question mark is clicked", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<QosMediaPanel accessToken="token" />);
+    await screen.findByText("IndexTTS-2");
+
+    expect(screen.queryByText(/Below 1 is faster than real time/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/nobody checked after they finished/)).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "How speech synthesis and transcription are measured" }));
+    const audioHelp = await screen.findByRole("dialog");
+    expect(within(audioHelp).getByText("Real-time factor")).toBeInTheDocument();
+    expect(within(audioHelp).getByText(/Below 1 is faster than real time/)).toBeInTheDocument();
+    expect(within(audioHelp).queryByText("No result yet")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "How video generation is measured" }));
+    expect(await screen.findByText(/nobody checked after they finished/)).toBeInTheDocument();
+  });
+
   it("asks /qos/media for the last 24 hours by default", async () => {
     renderWithProviders(<QosMediaPanel accessToken="token" />);
     await screen.findByText("IndexTTS-2");

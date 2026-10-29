@@ -2,12 +2,13 @@
 
 import React from "react";
 import type { ColumnDef } from "@tanstack/react-table";
-import { RefreshCw } from "lucide-react";
+import { CircleHelp, RefreshCw } from "lucide-react";
 
 import { useQosMedia } from "@/app/(dashboard)/hooks/qos/useQosMedia";
 import { DataTable } from "@/components/shared/DataTable";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import { Popover, PopoverContent, PopoverTitle, PopoverTrigger } from "@/components/ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { extractErrorMessage } from "@/utils/errorUtils";
 import {
@@ -66,6 +67,89 @@ const videoColumns: ColumnDef<QosVideoMetrics>[] = [
   { id: "task_price", header: "Provider price", cell: ({ row }) => formatPrice(row.original.task_price) },
 ];
 
+interface MetricDefinition {
+  readonly label: string;
+  readonly description: string;
+}
+
+const AUDIO_DEFINITIONS: readonly MetricDefinition[] = [
+  {
+    label: "Requests",
+    description: "Speech synthesis or transcription requests that started in the time range, failed ones included.",
+  },
+  { label: "Success rate", description: "Requests that did not fail, divided by all requests." },
+  {
+    label: "Audio length",
+    description:
+      "Total audio of the successful requests. Speech synthesis reads it from the header of the returned WAV or MP3 file; transcription uses the length of the uploaded audio.",
+  },
+  {
+    label: "Spoken characters",
+    description:
+      "Characters of the input text without punctuation, spaces or control characters, summed over successful speech synthesis requests.",
+  },
+  { label: "Latency", description: "End time minus start time of each successful request." },
+  {
+    label: "Real-time factor",
+    description:
+      "Latency divided by the audio length of each successful request. Below 1 is faster than real time: 0.2 means 10 seconds of audio took 2 seconds.",
+  },
+];
+
+const VIDEO_DEFINITIONS: readonly MetricDefinition[] = [
+  {
+    label: "Submitted",
+    description: "Video generation requests that started in the time range, each creating at most one provider task.",
+  },
+  {
+    label: "Failed submissions",
+    description: "Submissions the gateway or the provider rejected, so no task was created.",
+  },
+  {
+    label: "Succeeded, failed, cancelled",
+    description:
+      "How each task ended, as seen by a status check up to one day after the time range. A task counts once however often its status was checked.",
+  },
+  {
+    label: "No result yet",
+    description:
+      "Submitted tasks whose end no status check has seen: still running, or nobody checked after they finished.",
+  },
+  { label: "Queue time", description: "From the provider creating the task to starting it, per its task record." },
+  {
+    label: "Generation time",
+    description: "From the provider starting the task to finishing it, succeeded tasks only.",
+  },
+  {
+    label: "Provider price",
+    description: "Sum of the prices in the provider's task records, in the provider's currency.",
+  },
+];
+
+function MetricHelp({ title, definitions }: { title: string; definitions: readonly MetricDefinition[] }) {
+  return (
+    <Popover>
+      <PopoverTrigger aria-label={title} className="text-muted-foreground hover:text-foreground">
+        <CircleHelp className="size-4" />
+      </PopoverTrigger>
+      <PopoverContent align="start" className="w-96 gap-3 p-3">
+        <PopoverTitle>{title}</PopoverTitle>
+        <p className="text-muted-foreground">
+          P50 is the median and P95 the value 95% stay at or below, over the selected time range.
+        </p>
+        <dl className="flex flex-col gap-2">
+          {definitions.map((definition) => (
+            <div key={definition.label}>
+              <dt className="font-medium">{definition.label}</dt>
+              <dd className="text-muted-foreground">{definition.description}</dd>
+            </div>
+          ))}
+        </dl>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 export default function QosMediaPanel({ accessToken }: { accessToken: string | null }) {
   const [range, setRange] = React.useState<QosRange>("24h");
   const mediaQuery = useQosMedia(accessToken, range, false);
@@ -111,12 +195,10 @@ export default function QosMediaPanel({ accessToken }: { accessToken: string | n
       )}
 
       <section className="flex flex-col gap-2">
-        <h3 className="text-base font-semibold">Speech synthesis and transcription</h3>
-        <p className="text-sm text-muted-foreground">
-          Latency of successful requests and its ratio to the audio length, the real-time factor; below 1 is faster than
-          real time. Audio length is read from the returned audio for speech synthesis and from the uploaded audio for
-          transcription.
-        </p>
+        <div className="flex items-center gap-1.5">
+          <h3 className="text-base font-semibold">Speech synthesis and transcription</h3>
+          <MetricHelp title="How speech synthesis and transcription are measured" definitions={AUDIO_DEFINITIONS} />
+        </div>
         <DataTable
           data={media === undefined ? [] : [...media.audio]}
           columns={audioColumns}
@@ -127,12 +209,10 @@ export default function QosMediaPanel({ accessToken }: { accessToken: string | n
       </section>
 
       <section className="flex flex-col gap-2">
-        <h3 className="text-base font-semibold">Video generation</h3>
-        <p className="text-sm text-muted-foreground">
-          Counted once per task, however often its status was checked. Queue time runs from the provider creating the
-          task to starting it and generation time from starting to finishing, for succeeded tasks only. A task has no
-          result yet until a status check sees it end. The provider price is the total its task records report.
-        </p>
+        <div className="flex items-center gap-1.5">
+          <h3 className="text-base font-semibold">Video generation</h3>
+          <MetricHelp title="How video generation is measured" definitions={VIDEO_DEFINITIONS} />
+        </div>
         <DataTable
           data={media === undefined ? [] : [...media.video]}
           columns={videoColumns}
