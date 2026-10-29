@@ -55084,6 +55084,78 @@
           "title": "QosResponseChecks",
           "type": "object"
         },
+        "QosReviewVideo": {
+          "properties": {
+            "completed_at": {
+              "format": "date-time",
+              "title": "Completed At",
+              "type": "string"
+            },
+            "created_at": {
+              "format": "date-time",
+              "title": "Created At",
+              "type": "string"
+            },
+            "model_group": {
+              "title": "Model Group",
+              "type": "string"
+            },
+            "my_review": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/QosVideoReview"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "overall": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Average overall rating of this video",
+              "title": "Overall"
+            },
+            "prompt": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The prompt of a scheduled probe video; other prompts are not stored",
+              "title": "Prompt"
+            },
+            "reviews": {
+              "title": "Reviews",
+              "type": "integer"
+            },
+            "video_id": {
+              "title": "Video Id",
+              "type": "string"
+            }
+          },
+          "required": [
+            "video_id",
+            "model_group",
+            "created_at",
+            "completed_at",
+            "prompt",
+            "reviews",
+            "overall",
+            "my_review"
+          ],
+          "title": "QosReviewVideo",
+          "type": "object"
+        },
         "QosSummaryResponse": {
           "properties": {
             "deployments": {
@@ -55385,6 +55457,330 @@
             "task_price"
           ],
           "title": "QosVideoMetrics",
+          "type": "object"
+        },
+        "QosVideoReview": {
+          "additionalProperties": false,
+          "properties": {
+            "alignment": {
+              "anyOf": [
+                {
+                  "maximum": 5.0,
+                  "minimum": 1.0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Alignment"
+            },
+            "audio": {
+              "anyOf": [
+                {
+                  "maximum": 5.0,
+                  "minimum": 1.0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Audio"
+            },
+            "comment": {
+              "anyOf": [
+                {
+                  "maxLength": 500,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Comment"
+            },
+            "motion": {
+              "anyOf": [
+                {
+                  "maximum": 5.0,
+                  "minimum": 1.0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Motion"
+            },
+            "overall": {
+              "maximum": 5.0,
+              "minimum": 1.0,
+              "title": "Overall",
+              "type": "integer"
+            },
+            "physics": {
+              "anyOf": [
+                {
+                  "maximum": 5.0,
+                  "minimum": 1.0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Physics"
+            },
+            "reviewed_at": {
+              "format": "date-time",
+              "title": "Reviewed At",
+              "type": "string"
+            },
+            "visual": {
+              "anyOf": [
+                {
+                  "maximum": 5.0,
+                  "minimum": 1.0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Visual"
+            }
+          },
+          "required": [
+            "overall",
+            "reviewed_at"
+          ],
+          "title": "QosVideoReview",
+          "type": "object"
+        },
+        "QosVideoReviewInput": {
+          "additionalProperties": false,
+          "description": "One reviewer's ratings of a generated video, 1 (bad) to 5 (good); only the overall rating is required.",
+          "properties": {
+            "alignment": {
+              "anyOf": [
+                {
+                  "maximum": 5.0,
+                  "minimum": 1.0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Alignment"
+            },
+            "audio": {
+              "anyOf": [
+                {
+                  "maximum": 5.0,
+                  "minimum": 1.0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Audio"
+            },
+            "comment": {
+              "anyOf": [
+                {
+                  "maxLength": 500,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Comment"
+            },
+            "motion": {
+              "anyOf": [
+                {
+                  "maximum": 5.0,
+                  "minimum": 1.0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Motion"
+            },
+            "overall": {
+              "maximum": 5.0,
+              "minimum": 1.0,
+              "title": "Overall",
+              "type": "integer"
+            },
+            "physics": {
+              "anyOf": [
+                {
+                  "maximum": 5.0,
+                  "minimum": 1.0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Physics"
+            },
+            "visual": {
+              "anyOf": [
+                {
+                  "maximum": 5.0,
+                  "minimum": 1.0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Visual"
+            }
+          },
+          "required": [
+            "overall"
+          ],
+          "title": "QosVideoReviewInput",
+          "type": "object"
+        },
+        "QosVideoReviewSummary": {
+          "properties": {
+            "alignment": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Alignment"
+            },
+            "audio": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Audio"
+            },
+            "model_group": {
+              "title": "Model Group",
+              "type": "string"
+            },
+            "motion": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Motion"
+            },
+            "overall": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Overall"
+            },
+            "physics": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Physics"
+            },
+            "reviews": {
+              "title": "Reviews",
+              "type": "integer"
+            },
+            "videos": {
+              "title": "Videos",
+              "type": "integer"
+            },
+            "visual": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Visual"
+            }
+          },
+          "required": [
+            "model_group",
+            "videos",
+            "reviews",
+            "overall",
+            "visual",
+            "motion",
+            "alignment",
+            "physics",
+            "audio"
+          ],
+          "title": "QosVideoReviewSummary",
+          "type": "object"
+        },
+        "QosVideoReviewsResponse": {
+          "properties": {
+            "end_time": {
+              "format": "date-time",
+              "title": "End Time",
+              "type": "string"
+            },
+            "start_time": {
+              "format": "date-time",
+              "title": "Start Time",
+              "type": "string"
+            },
+            "summary": {
+              "items": {
+                "$ref": "#/components/schemas/QosVideoReviewSummary"
+              },
+              "title": "Summary",
+              "type": "array"
+            },
+            "videos": {
+              "items": {
+                "$ref": "#/components/schemas/QosReviewVideo"
+              },
+              "title": "Videos",
+              "type": "array"
+            }
+          },
+          "required": [
+            "start_time",
+            "end_time",
+            "summary",
+            "videos"
+          ],
+          "title": "QosVideoReviewsResponse",
           "type": "object"
         },
         "ValidationError": {
@@ -56382,6 +56778,200 @@
             }
           ],
           "summary": "Get Qos Trends",
+          "tags": [
+            "qos"
+          ]
+        }
+      },
+      "/qos/videos": {
+        "get": {
+          "description": "Finished videos to watch and rate, newest first, and each model's average ratings.",
+          "operationId": "get_qos_videos_qos_videos_get",
+          "parameters": [
+            {
+              "description": "ISO 8601, defaults to 24 hours before end_time",
+              "in": "query",
+              "name": "start_time",
+              "required": false,
+              "schema": {
+                "anyOf": [
+                  {
+                    "format": "date-time",
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "ISO 8601, defaults to 24 hours before end_time",
+                "title": "Start Time"
+              }
+            },
+            {
+              "description": "ISO 8601, defaults to now",
+              "in": "query",
+              "name": "end_time",
+              "required": false,
+              "schema": {
+                "anyOf": [
+                  {
+                    "format": "date-time",
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "ISO 8601, defaults to now",
+                "title": "End Time"
+              }
+            },
+            {
+              "description": "Include all retained history; cannot be combined with start_time",
+              "in": "query",
+              "name": "all_time",
+              "required": false,
+              "schema": {
+                "default": false,
+                "description": "Include all retained history; cannot be combined with start_time",
+                "title": "All Time",
+                "type": "boolean"
+              }
+            }
+          ],
+          "responses": {
+            "200": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/QosVideoReviewsResponse"
+                  }
+                }
+              },
+              "description": "Successful Response"
+            },
+            "422": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/HTTPValidationError"
+                  }
+                }
+              },
+              "description": "Validation Error"
+            }
+          },
+          "security": [
+            {
+              "APIKeyHeader": []
+            }
+          ],
+          "summary": "Get Qos Videos",
+          "tags": [
+            "qos"
+          ]
+        }
+      },
+      "/qos/videos/content": {
+        "get": {
+          "description": "The MP4 of a finished video, fetched with the gateway's own credentials for the model that made it.",
+          "operationId": "get_qos_video_content_qos_videos_content_get",
+          "parameters": [
+            {
+              "description": "The id the gateway returned for the video",
+              "in": "query",
+              "name": "video_id",
+              "required": true,
+              "schema": {
+                "description": "The id the gateway returned for the video",
+                "minLength": 1,
+                "title": "Video Id",
+                "type": "string"
+              }
+            }
+          ],
+          "responses": {
+            "200": {
+              "description": "Successful Response"
+            },
+            "422": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/HTTPValidationError"
+                  }
+                }
+              },
+              "description": "Validation Error"
+            }
+          },
+          "security": [
+            {
+              "APIKeyHeader": []
+            }
+          ],
+          "summary": "Get Qos Video Content",
+          "tags": [
+            "qos"
+          ]
+        }
+      },
+      "/qos/videos/review": {
+        "put": {
+          "description": "Save the caller's ratings of a video, replacing the ratings they gave it before.",
+          "operationId": "put_qos_video_review_qos_videos_review_put",
+          "parameters": [
+            {
+              "description": "The id the gateway returned for the video",
+              "in": "query",
+              "name": "video_id",
+              "required": true,
+              "schema": {
+                "description": "The id the gateway returned for the video",
+                "minLength": 1,
+                "title": "Video Id",
+                "type": "string"
+              }
+            }
+          ],
+          "requestBody": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QosVideoReviewInput"
+                }
+              }
+            },
+            "required": true
+          },
+          "responses": {
+            "200": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/QosVideoReview"
+                  }
+                }
+              },
+              "description": "Successful Response"
+            },
+            "422": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/HTTPValidationError"
+                  }
+                }
+              },
+              "description": "Validation Error"
+            }
+          },
+          "security": [
+            {
+              "APIKeyHeader": []
+            }
+          ],
+          "summary": "Put Qos Video Review",
           "tags": [
             "qos"
           ]

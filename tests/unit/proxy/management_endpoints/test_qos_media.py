@@ -5,7 +5,12 @@ from typing import Final
 import httpx
 import pytest
 
-from litellm.proxy.management_endpoints.qos_media import qos_media, spoken_chars
+from litellm.proxy.management_endpoints.qos_media import (
+    PROBE_PROMPT_LIMIT,
+    QOS_MEDIA_PROBE_TAG,
+    qos_media,
+    spoken_chars,
+)
 from litellm.types.llms.openai import HttpxBinaryResponseContent
 from litellm.types.qos import PROVIDER_TASK_HIDDEN_PARAM
 from litellm.types.utils import TranscriptionResponse
@@ -91,6 +96,37 @@ def test_a_video_task_records_queue_and_run_time_and_its_price(call_type: str) -
         "task_price": 0.9,
         "task_currency": "CNY",
     }
+
+
+def _queued_video() -> VideoObject:
+    video: Final = VideoObject(id="video_1", object="video", status="queued")
+    video.hidden_params = {PROVIDER_TASK_HIDDEN_PARAM: {"task_id": "TASK-1", "status": "waiting"}}
+    return video
+
+
+def test_a_probe_video_keeps_its_prompt_cut_to_the_limit_for_reviewers() -> None:
+    media: Final = qos_media(
+        "avideo_generation",
+        "猫" * (PROBE_PROMPT_LIMIT + 100),
+        _queued_video(),
+        ["User-Agent: httpx", QOS_MEDIA_PROBE_TAG],
+    )
+
+    assert media == {"task_id": "TASK-1", "task_status": "waiting", "prompt": "猫" * PROBE_PROMPT_LIMIT}
+
+
+@pytest.mark.parametrize(
+    ("call_type", "tags"),
+    [
+        ("avideo_generation", ["User-Agent: curl/8.7.1"]),
+        ("avideo_generation", None),
+        ("avideo_status", [QOS_MEDIA_PROBE_TAG]),
+    ],
+)
+def test_prompts_other_than_a_probes_video_creation_are_not_stored(call_type: str, tags: list[str] | None) -> None:
+    media: Final = qos_media(call_type, "a private prompt", _queued_video(), tags)
+
+    assert media == {"task_id": "TASK-1", "task_status": "waiting"}
 
 
 def test_a_video_from_a_provider_without_task_details_records_nothing() -> None:

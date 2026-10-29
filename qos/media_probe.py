@@ -21,6 +21,7 @@ import httpx
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 
 DEFAULT_PROMPT: Final = "一只猫在阳光下的草地上慢慢走"
+PROBE_TAG: Final = "qos-media-probe"
 POLL_SECONDS: Final = 15
 MAX_WAIT_SECONDS: Final = 3600
 TERMINAL_STATUSES: Final = frozenset({"completed", "failed"})
@@ -155,7 +156,7 @@ def main() -> None:
     args: Final = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
     logging.getLogger("httpx").setLevel(logging.WARNING)
-    headers: Final = {"Authorization": f"Bearer {os.environ['LITELLM_API_KEY']}"}
+    headers: Final = {"Authorization": f"Bearer {os.environ['LITELLM_API_KEY']}", "x-litellm-tags": PROBE_TAG}
     with httpx.Client(base_url=args.base_url, headers=headers, timeout=120) as client:
         if args.every <= 0:
             run_once(client, args.dry_run)

@@ -10,7 +10,7 @@ from collections.abc import Mapping
 from datetime import datetime
 from typing import Final
 
-from pydantic import JsonValue, TypeAdapter
+from pydantic import JsonValue, TypeAdapter, ValidationError
 
 from litellm.types.llms.openai import HttpxBinaryResponseContent
 from litellm.types.qos import PROVIDER_TASK_HIDDEN_PARAM, QosMedia, QosProviderTask
@@ -34,9 +34,12 @@ VIDEO_CREATE_CALL_TYPES: Final = frozenset(
 )
 VIDEO_STATUS_CALL_TYPES: Final = frozenset({"video_status", "avideo_status", "video_retrieve", "avideo_retrieve"})
 VIDEO_TASK_CALL_TYPES: Final = VIDEO_CREATE_CALL_TYPES | VIDEO_STATUS_CALL_TYPES
+QOS_MEDIA_PROBE_TAG: Final = "qos-media-probe"
+PROBE_PROMPT_LIMIT: Final = 500
 _UNSPOKEN_CATEGORIES: Final = ("P", "Z", "C")
 _MP3_SYNC: Final = (b"ID3", b"\xff\xfb", b"\xff\xf3", b"\xff\xf2", b"\xff\xfa")
 _HIDDEN_PARAMS: Final = TypeAdapter(dict[str, object])
+_TAG_LIST: Final = TypeAdapter(list[object])
 
 
 def spoken_chars(text: str) -> int:
@@ -115,7 +118,32 @@ def _media(call_type: object, request_input: object, response: object) -> QosMed
     return None
 
 
-def qos_media(call_type: object, request_input: object, response: object) -> Mapping[str, JsonValue] | None:
-    """The `qos_media` entry of a request's spend log metadata, or None for calls it does not describe."""
+def tag_list(tags: object) -> tuple[object, ...] | None:
+    """A request's tags when its metadata holds a list of them, or None for anything else."""
+    try:
+        return tuple(_TAG_LIST.validate_python(tags, strict=True))
+    except ValidationError:
+        return None
+
+
+def _probe_prompt(call_type: object, request_input: object, tags: object) -> str | None:
+    tagged: Final = isinstance(tags, list | tuple) and QOS_MEDIA_PROBE_TAG in tags
+    if call_type in VIDEO_CREATE_CALL_TYPES and tagged and isinstance(request_input, str):
+        return request_input[:PROBE_PROMPT_LIMIT]
+    return None
+
+
+def qos_media(
+    call_type: object, request_input: object, response: object, tags: object = None
+) -> Mapping[str, JsonValue] | None:
+    """The `qos_media` entry of a request's spend log metadata, or None for calls it does not describe.
+
+    Only a video created by the scheduled probe (tagged `qos-media-probe`) keeps its prompt, for reviewers to judge
+    how well the video follows it; other prompts are not stored.
+    """
     media: Final = _media(call_type, request_input, response)
-    return None if media is None else media.model_dump(mode="json", exclude_none=True)
+    if media is None:
+        return None
+    prompt: Final = _probe_prompt(call_type, request_input, tags)
+    described: Final = media if prompt is None else media.model_copy(update={"prompt": prompt})
+    return described.model_dump(mode="json", exclude_none=True)

@@ -14415,6 +14415,66 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/qos/videos": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Qos Videos
+         * @description Finished videos to watch and rate, newest first, and each model's average ratings.
+         */
+        get: operations["get_qos_videos_qos_videos_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/qos/videos/content": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Qos Video Content
+         * @description The MP4 of a finished video, fetched with the gateway's own credentials for the model that made it.
+         */
+        get: operations["get_qos_video_content_qos_videos_content_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/qos/videos/review": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Put Qos Video Review
+         * @description Save the caller's ratings of a video, replacing the ratings they gave it before.
+         */
+        put: operations["put_qos_video_review_qos_videos_review_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/queue/chat/completions": {
         parameters: {
             query?: never;
@@ -43642,6 +43702,36 @@ export interface components {
             /** Marker Missing */
             marker_missing: number;
         };
+        /** QosReviewVideo */
+        QosReviewVideo: {
+            /**
+             * Completed At
+             * Format: date-time
+             */
+            completed_at: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Model Group */
+            model_group: string;
+            my_review: components["schemas"]["QosVideoReview"] | null;
+            /**
+             * Overall
+             * @description Average overall rating of this video
+             */
+            overall: number | null;
+            /**
+             * Prompt
+             * @description The prompt of a scheduled probe video; other prompts are not stored
+             */
+            prompt: string | null;
+            /** Reviews */
+            reviews: number;
+            /** Video Id */
+            video_id: string;
+        };
         /** QosSummaryResponse */
         QosSummaryResponse: {
             /** Deployments */
@@ -43765,6 +43855,86 @@ export interface components {
              * @description Sum of the prices the provider reported for finished tasks
              */
             task_price: number | null;
+        };
+        /** QosVideoReview */
+        QosVideoReview: {
+            /** Alignment */
+            alignment?: number | null;
+            /** Audio */
+            audio?: number | null;
+            /** Comment */
+            comment?: string | null;
+            /** Motion */
+            motion?: number | null;
+            /** Overall */
+            overall: number;
+            /** Physics */
+            physics?: number | null;
+            /**
+             * Reviewed At
+             * Format: date-time
+             */
+            reviewed_at: string;
+            /** Visual */
+            visual?: number | null;
+        };
+        /**
+         * QosVideoReviewInput
+         * @description One reviewer's ratings of a generated video, 1 (bad) to 5 (good); only the overall rating is required.
+         */
+        QosVideoReviewInput: {
+            /** Alignment */
+            alignment?: number | null;
+            /** Audio */
+            audio?: number | null;
+            /** Comment */
+            comment?: string | null;
+            /** Motion */
+            motion?: number | null;
+            /** Overall */
+            overall: number;
+            /** Physics */
+            physics?: number | null;
+            /** Visual */
+            visual?: number | null;
+        };
+        /** QosVideoReviewSummary */
+        QosVideoReviewSummary: {
+            /** Alignment */
+            alignment: number | null;
+            /** Audio */
+            audio: number | null;
+            /** Model Group */
+            model_group: string;
+            /** Motion */
+            motion: number | null;
+            /** Overall */
+            overall: number | null;
+            /** Physics */
+            physics: number | null;
+            /** Reviews */
+            reviews: number;
+            /** Videos */
+            videos: number;
+            /** Visual */
+            visual: number | null;
+        };
+        /** QosVideoReviewsResponse */
+        QosVideoReviewsResponse: {
+            /**
+             * End Time
+             * Format: date-time
+             */
+            end_time: string;
+            /**
+             * Start Time
+             * Format: date-time
+             */
+            start_time: string;
+            /** Summary */
+            summary: components["schemas"]["QosVideoReviewSummary"][];
+            /** Videos */
+            videos: components["schemas"]["QosReviewVideo"][];
         };
         /**
          * RankingOptions
@@ -73034,6 +73204,108 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["QosTrendsResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_qos_videos_qos_videos_get: {
+        parameters: {
+            query?: {
+                /** @description ISO 8601, defaults to 24 hours before end_time */
+                start_time?: string | null;
+                /** @description ISO 8601, defaults to now */
+                end_time?: string | null;
+                /** @description Include all retained history; cannot be combined with start_time */
+                all_time?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QosVideoReviewsResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_qos_video_content_qos_videos_content_get: {
+        parameters: {
+            query: {
+                /** @description The id the gateway returned for the video */
+                video_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    put_qos_video_review_qos_videos_review_put: {
+        parameters: {
+            query: {
+                /** @description The id the gateway returned for the video */
+                video_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["QosVideoReviewInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QosVideoReview"];
                 };
             };
             /** @description Validation Error */

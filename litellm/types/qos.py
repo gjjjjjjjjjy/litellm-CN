@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from typing import Annotated, Final, Literal
+from typing import Annotated, Final, Literal, TypeAlias
 
 from pydantic import AfterValidator, ConfigDict, Field, model_validator
 from typing_extensions import Self
@@ -55,6 +55,7 @@ class QosMedia(LiteLLMBaseModel):
     run_ms: float | None = None
     task_price: float | None = None
     task_currency: str | None = None
+    prompt: str | None = None
 
 
 class QosResponseChecks(LiteLLMBaseModel):
@@ -139,6 +140,65 @@ class QosMediaResponse(LiteLLMBaseModel):
     end_time: UtcDatetime
     audio: tuple[QosAudioMetrics, ...]
     video: tuple[QosVideoMetrics, ...]
+
+
+ReviewScore: TypeAlias = Annotated[int, Field(ge=1, le=5)]
+
+
+class QosVideoReviewInput(LiteLLMBaseModel):
+    """One reviewer's ratings of a generated video, 1 (bad) to 5 (good); only the overall rating is required."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    overall: ReviewScore
+    visual: ReviewScore | None = None
+    motion: ReviewScore | None = None
+    alignment: ReviewScore | None = None
+    physics: ReviewScore | None = None
+    audio: ReviewScore | None = None
+    comment: Annotated[str, Field(max_length=500)] | None = None
+
+
+class QosVideoReview(QosVideoReviewInput):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    reviewed_at: UtcDatetime
+
+
+class QosReviewVideo(LiteLLMBaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    video_id: str
+    model_group: str
+    created_at: UtcDatetime
+    completed_at: UtcDatetime
+    prompt: str | None = Field(description="The prompt of a scheduled probe video; other prompts are not stored")
+    reviews: int
+    overall: float | None = Field(description="Average overall rating of this video")
+    my_review: QosVideoReview | None
+
+
+class QosVideoReviewSummary(LiteLLMBaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    model_group: str
+    videos: int
+    reviews: int
+    overall: float | None
+    visual: float | None
+    motion: float | None
+    alignment: float | None
+    physics: float | None
+    audio: float | None
+
+
+class QosVideoReviewsResponse(LiteLLMBaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    start_time: UtcDatetime
+    end_time: UtcDatetime
+    summary: tuple[QosVideoReviewSummary, ...]
+    videos: tuple[QosReviewVideo, ...]
 
 
 QOS_BENCHMARK_MAX_REQUESTS: Final = 5000

@@ -31,6 +31,7 @@ from litellm.litellm_core_utils.safe_json_dumps import safe_dumps
 from litellm.llms.base_llm.ocr.transformation import OCRResponse, OCRUsageInfo
 from litellm.proxy._types import SpendLogsMetadataFields, SpendLogsPayload, UserAPIKeyAuth
 from litellm.proxy.litellm_pre_call_utils import LiteLLMProxyRequestSetup
+from litellm.proxy.management_endpoints.qos_media import QOS_MEDIA_PROBE_TAG
 from litellm.proxy.route_llm_request import ProxyModelNotFoundError
 from litellm.proxy.spend_tracking import spend_tracking_utils
 from litellm.proxy.spend_tracking.spend_tracking_utils import (
@@ -57,6 +58,7 @@ from litellm.proxy.spend_tracking.spend_tracking_utils import (
 )
 from litellm.proxy.utils import hash_token
 from litellm.types.llms.openai import HttpxBinaryResponseContent
+from litellm.types.qos import PROVIDER_TASK_HIDDEN_PARAM
 from litellm.types.router import GenericLiteLLMParams
 from litellm.types.utils import (
     StandardLoggingHiddenParams,
@@ -65,6 +67,7 @@ from litellm.types.utils import (
     StandardLoggingPayload,
     StandardLoggingPayloadErrorInformation,
 )
+from litellm.types.videos.main import VideoObject
 
 
 def _get_additional_usage_values_for_usage(usage: litellm.Usage) -> dict:
@@ -149,14 +152,15 @@ def test_get_logging_payload_only_keeps_a_first_token_time_for_streamed_calls(st
     assert payload["completionStartTime"] == (first_token_time if stream else end_time)
 
 
-def _logged_qos_media(call_type: str, response_obj: object) -> object:
+def _logged_qos_media(call_type: str, response_obj: object, tags: tuple[str, ...] = ()) -> object:
     now: Final = datetime.datetime.now(timezone.utc)
+    metadata: Final = {"user_api_key": "test-key", "qos_media": {"audio_seconds": 999}, "tags": list(tags)}
     payload: Final = get_logging_payload(
         kwargs={
             "model": "moark/IndexTTS-2",
             "call_type": call_type,
             "input": "你好",
-            "litellm_params": {"metadata": {"user_api_key": "test-key", "qos_media": {"audio_seconds": 999}}},
+            "litellm_params": {"metadata": metadata},
         },
         response_obj=response_obj,
         start_time=now,
@@ -191,6 +195,18 @@ def test_video_status_polls_get_one_spend_log_row_per_state_so_the_finished_stat
     assert poll_ids == ["video_abc_in_progress", "video_abc_in_progress", "video_abc_completed"]
     assert get_spend_logs_id("avideo_generation", {"id": "video_abc", "status": "queued"}, {}) == "video_abc"
     assert get_spend_logs_id("avideo_status", {}, {"litellm_call_id": "call-1"}) == "call-1", "a failed poll"
+
+
+def test_get_logging_payload_keeps_the_prompt_only_of_a_video_the_scheduled_probe_created() -> None:
+    video: Final = VideoObject(id="video_abc", object="video", status="queued")
+    video.hidden_params = {PROVIDER_TASK_HIDDEN_PARAM: {"task_id": "TASK-1", "status": "waiting"}}
+
+    assert _logged_qos_media("avideo_generation", video, (QOS_MEDIA_PROBE_TAG,)) == {
+        "task_id": "TASK-1",
+        "task_status": "waiting",
+        "prompt": "你好",
+    }
+    assert _logged_qos_media("avideo_generation", video) == {"task_id": "TASK-1", "task_status": "waiting"}
 
 
 def test_get_logging_payload_drops_a_client_supplied_qos_media_on_calls_it_does_not_measure() -> None:
@@ -662,9 +678,7 @@ def test_small_request_no_truncation():
 
     # Verify the content was NOT truncated
     assert sanitized["messages"][0]["content"] == small_content
-    assert (
-        len(sanitized["messages"][0]["content"]) == MAX_STRING_LENGTH_PROMPT_IN_DB - 100
-    )
+    assert len(sanitized["messages"][0]["content"]) == MAX_STRING_LENGTH_PROMPT_IN_DB - 100
 
 
 def test_configurable_string_length_env_var(monkeypatch):

@@ -5,12 +5,19 @@ from datetime import datetime, timedelta
 from functools import partial
 from typing import TYPE_CHECKING, Annotated, Final
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from pydantic import ConfigDict, TypeAdapter
 
+import litellm
+from litellm.constants import LITELLM_PROXY_ADMIN_NAME
 from litellm.proxy._types import CommonProxyErrors, UserAPIKeyAuth
 from litellm.proxy.auth.user_api_key_auth import user_api_key_auth
-from litellm.proxy.management_endpoints.qos_access import require_admin, require_content_reader, require_reader
+from litellm.proxy.management_endpoints.qos_access import (
+    require_admin,
+    require_content_reader,
+    require_reader,
+    require_video_reviewer,
+)
 from litellm.proxy.management_endpoints.qos_benchmark import QOS_RUN_PREFIX, concurrency_of, new_run_id, start_benchmark
 from litellm.proxy.management_endpoints.qos_deployments import (
     deployment_model_groups,
@@ -79,6 +86,16 @@ from litellm.proxy.management_endpoints.qos_trends import (
     overall,
     trend_series,
 )
+from litellm.proxy.management_endpoints.qos_video_reviews import (
+    RECORD_VIDEO_REVIEW_SQL,
+    RECORDED_REVIEW_ROWS,
+    REVIEW_SUMMARY_ROWS,
+    REVIEW_SUMMARY_SQL,
+    REVIEW_VIDEO_ROWS,
+    REVIEW_VIDEOS_SQL,
+    DeploymentCredentials,
+    review_video,
+)
 from litellm.types.llms.base import LiteLLMBaseModel
 from litellm.types.qos import (
     QosBenchmarkDeleted,
@@ -95,7 +112,11 @@ from litellm.types.qos import (
     QosTargetModel,
     QosTargetsResponse,
     QosTrendsResponse,
+    QosVideoReview,
+    QosVideoReviewInput,
+    QosVideoReviewsResponse,
 )
+from litellm.types.videos.utils import decode_video_id_with_provider
 
 if TYPE_CHECKING:
     from litellm.proxy.utils import PrismaClient
@@ -417,6 +438,104 @@ async def get_qos_media(
         audio=tuple(audio_metrics(row) for row in audio_rows),
         video=tuple(video_metrics(row) for row in video_rows),
     )
+
+
+def _reviewer(user_api_key_dict: UserAPIKeyAuth) -> str:
+    return user_api_key_dict.user_id or LITELLM_PROXY_ADMIN_NAME
+
+
+@router.get(
+    "/qos/videos",
+    tags=["qos"],
+    dependencies=[Depends(user_api_key_auth)],
+    response_model=QosVideoReviewsResponse,
+)
+async def get_qos_videos(
+    user_api_key_dict: Annotated[UserAPIKeyAuth, Depends(user_api_key_auth)],
+    start_time: Annotated[datetime | None, Query(description="ISO 8601, defaults to 24 hours before end_time")] = None,
+    end_time: Annotated[datetime | None, Query(description="ISO 8601, defaults to now")] = None,
+    all_time: Annotated[
+        bool, Query(description="Include all retained history; cannot be combined with start_time")
+    ] = False,
+) -> QosVideoReviewsResponse:
+    """Finished videos to watch and rate, newest first, and each model's average ratings."""
+    from litellm.proxy.proxy_server import prisma_client
+
+    require_video_reviewer(user_api_key_dict)
+    if prisma_client is None:
+        raise HTTPException(status_code=500, detail=CommonProxyErrors.db_not_connected_error.value)
+    start, end = await _metrics_window(prisma_client, start_time, end_time, all_time)
+    summary: Final = REVIEW_SUMMARY_ROWS.validate_python(
+        await query_rows(prisma_client, REVIEW_SUMMARY_SQL, start, end)
+    )
+    rows: Final = REVIEW_VIDEO_ROWS.validate_python(await query_rows(prisma_client, REVIEW_VIDEOS_SQL, start, end))
+    reviewer: Final = _reviewer(user_api_key_dict)
+    return QosVideoReviewsResponse(
+        start_time=start,
+        end_time=end,
+        summary=summary,
+        videos=tuple(review_video(row, reviewer) for row in rows),
+    )
+
+
+@router.get(
+    "/qos/videos/content",
+    tags=["qos"],
+    dependencies=[Depends(user_api_key_auth)],
+    response_class=Response,
+)
+async def get_qos_video_content(
+    video_id: Annotated[str, Query(min_length=1, description="The id the gateway returned for the video")],
+    user_api_key_dict: Annotated[UserAPIKeyAuth, Depends(user_api_key_auth)],
+) -> Response:
+    """The MP4 of a finished video, fetched with the gateway's own credentials for the model that made it."""
+    from litellm.proxy.proxy_server import llm_router
+
+    require_video_reviewer(user_api_key_dict)
+    decoded: Final = decode_video_id_with_provider(video_id)
+    model: Final = None if llm_router is None else llm_router.resolve_model_name_from_model_id(decoded.get("model_id"))
+    deployments: Final = None if llm_router is None or model is None else llm_router.get_model_list(model_name=model)
+    if not deployments:
+        raise HTTPException(status_code=404, detail="The model that generated this video is no longer configured")
+    credentials: Final = DeploymentCredentials.model_validate(deployments[0]["litellm_params"])
+    try:
+        content: Final = await litellm.avideo_content(
+            video_id=video_id,
+            custom_llm_provider=decoded.get("custom_llm_provider"),
+            api_key=credentials.api_key,
+            api_base=credentials.api_base,
+        )
+    except Exception as error:  # noqa: BLE001  # the provider's reason, such as an expired file, is what the reviewer needs
+        raise HTTPException(status_code=502, detail=f"Could not fetch the video: {error}") from error
+    return Response(content=content, media_type="video/mp4")
+
+
+@router.put(
+    "/qos/videos/review",
+    tags=["qos"],
+    dependencies=[Depends(user_api_key_auth)],
+    response_model=QosVideoReview,
+)
+async def put_qos_video_review(
+    video_id: Annotated[str, Query(min_length=1, description="The id the gateway returned for the video")],
+    review: QosVideoReviewInput,
+    user_api_key_dict: Annotated[UserAPIKeyAuth, Depends(user_api_key_auth)],
+) -> QosVideoReview:
+    """Save the caller's ratings of a video, replacing the ratings they gave it before."""
+    from litellm.proxy.proxy_server import prisma_client
+
+    require_video_reviewer(user_api_key_dict)
+    if prisma_client is None:
+        raise HTTPException(status_code=500, detail=CommonProxyErrors.db_not_connected_error.value)
+    saved: Final = QosVideoReview.model_validate({**review.model_dump(), "reviewed_at": utc_now()})
+    recorded: Final = RECORDED_REVIEW_ROWS.validate_python(
+        await query_rows(
+            prisma_client, RECORD_VIDEO_REVIEW_SQL, video_id, _reviewer(user_api_key_dict), saved.model_dump_json()
+        )
+    )
+    if not recorded:
+        raise HTTPException(status_code=404, detail="No video with this id was generated through the gateway")
+    return saved
 
 
 @router.get(

@@ -53,7 +53,7 @@ from litellm.proxy._types import (
     SpendLogsPayload,
     SpendLogsRouterMetadata,
 )
-from litellm.proxy.management_endpoints.qos_media import VIDEO_STATUS_CALL_TYPES, qos_media
+from litellm.proxy.management_endpoints.qos_media import VIDEO_STATUS_CALL_TYPES, qos_media, tag_list
 from litellm.proxy.route_llm_request import ProxyModelNotFoundError
 from litellm.proxy.spend_tracking.spend_log_error_logger import spend_log_error
 from litellm.proxy.utils import PrismaClient, hash_token
@@ -539,7 +539,8 @@ def get_logging_payload(
     )
     call_type: Final = kwargs.get("call_type")
     cache_hit: Final = kwargs.get("cache_hit", False)
-    media: Final = qos_media(call_type, kwargs.get("input"), original_response)
+    tags: Final = tag_list(metadata.get("tags"))
+    media: Final = qos_media(call_type, kwargs.get("input"), original_response, tags)
 
     # Convert response_obj to dict first
     if isinstance(response_obj, dict):
@@ -604,7 +605,7 @@ def get_logging_payload(
             or ""
         )
         end_user_id = end_user_id or standard_logging_payload["metadata"].get("user_api_key_end_user_id")
-    request_tags = safe_dumps(metadata.get("tags", [])) if isinstance(metadata.get("tags", []), list) else "[]"
+    request_tags = "[]" if tags is None else safe_dumps(list(tags))
     if (
         standard_logging_payload is not None and standard_logging_payload.get("request_tags") is not None
     ):  # use 'tags' from standard logging payload instead

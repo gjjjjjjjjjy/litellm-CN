@@ -9,6 +9,7 @@ import {
   formatMs,
   formatPercentiles,
   formatPrice,
+  formatScore,
   isQosRange,
   nodeLabel,
   parseConcurrency,
@@ -20,6 +21,8 @@ import {
   interferenceLabel,
   otherTraffic,
   responseCheckBadge,
+  reviewInput,
+  reviewScores,
   targetChoiceValue,
   videosWithoutResult,
   type QosDeploymentMetrics,
@@ -307,5 +310,34 @@ describe("audio and video metrics", () => {
     };
     expect(videosWithoutResult(counts)).toBe(1);
     expect(videosWithoutResult({ ...counts, submitted: 6 })).toBe(0);
+  });
+});
+
+describe("video review helpers", () => {
+  it("turns a saved review into the chosen scores and leaves unrated dimensions out", () => {
+    const review = {
+      overall: 4,
+      visual: null,
+      motion: 2,
+      alignment: null,
+      physics: null,
+      audio: 5,
+      comment: "jittery hands",
+      reviewed_at: "2026-10-29T08:00:00Z",
+    };
+    expect(reviewScores(review)).toEqual({ overall: 4, motion: 2, audio: 5 });
+    expect(reviewScores(null)).toEqual({});
+  });
+
+  it("builds a review to save only once Overall is rated, trimming the comment and dropping an empty one", () => {
+    expect(reviewInput({ motion: 3 }, "blurry")).toBeNull();
+    expect(reviewInput({ overall: 2, motion: 3 }, "  blurry  ")).toEqual({ overall: 2, motion: 3, comment: "blurry" });
+    expect(reviewInput({ overall: 5 }, "   ")).toEqual({ overall: 5, comment: null });
+  });
+
+  it("shows an average rating with one decimal and a missing one as a dash", () => {
+    expect(formatScore(3.456)).toBe("3.5");
+    expect(formatScore(null)).toBe("-");
+    expect(formatScore(undefined)).toBe("-");
   });
 });

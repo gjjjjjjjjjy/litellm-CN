@@ -96,10 +96,18 @@ const media = {
   video: [],
 };
 
+const videoReviews = {
+  start_time: "2026-10-22T11:00:00Z",
+  end_time: "2026-10-22T12:00:00Z",
+  summary: [],
+  videos: [],
+};
+
 const respondWith = (summaryBody: unknown) => async (path: string) => {
   if (path === "/qos/trends") return trends;
   if (path === "/qos/health") return health;
   if (path === "/qos/media") return media;
+  if (path === "/qos/videos") return videoReviews;
   return summaryBody;
 };
 
@@ -193,6 +201,18 @@ describe("QosView", () => {
     expect(await screen.findByText("IndexTTS-2")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Speech synthesis and transcription" })).toBeInTheDocument();
     expect(vi.mocked(apiClient.get).mock.calls.some(([path]) => path === "/qos/media")).toBe(true);
+  });
+
+  it("opens the video review tab and asks for videos to rate", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<QosView accessToken="token" />);
+    await within(await screen.findByRole("table")).findByText("qwen3-max");
+
+    await user.click(screen.getByRole("tab", { name: "Video review" }));
+
+    expect(await screen.findByRole("heading", { name: "Ratings per model" })).toBeInTheDocument();
+    expect(await screen.findByText("No finished videos in this time range")).toBeInTheDocument();
+    expect(vi.mocked(apiClient.get).mock.calls.some(([path]) => path === "/qos/videos")).toBe(true);
   });
 
   it("shows the server's error message when loading fails", async () => {

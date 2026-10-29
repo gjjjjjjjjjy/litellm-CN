@@ -29,7 +29,7 @@ if TYPE_CHECKING:
 _MODALITY_OF_MODE: Final = MappingProxyType(
     {"audio_speech": "speech", "audio_transcription": "transcription", "video_generation": "video"}
 )
-_LATEST_TASK_POLL: Final = "1 day"
+LATEST_TASK_POLL: Final = "1 day"
 
 
 def _media_field(field: str, sql_type: str) -> str:
@@ -109,7 +109,7 @@ finished AS (
         {_media_field("task_price", "float")} AS task_price
     FROM "LiteLLM_SpendLogs"
     WHERE "startTime" >= $1::timestamp
-        AND "startTime" < $2::timestamp + interval '{_LATEST_TASK_POLL}'
+        AND "startTime" < $2::timestamp + interval '{LATEST_TASK_POLL}'
         AND call_type IN ({sql_list(VIDEO_STATUS_CALL_TYPES)})
         AND metadata -> '{QOS_MEDIA_KEY}' ->> 'task_status' IN ('success', 'failure', 'cancelled')
     ORDER BY metadata -> '{QOS_MEDIA_KEY}' ->> 'task_id', "startTime" DESC

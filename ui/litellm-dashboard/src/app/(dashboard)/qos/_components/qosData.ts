@@ -273,3 +273,51 @@ export const formatPrice = (value: number | null): string => (value === null ? "
 
 export const videosWithoutResult = (metrics: QosVideoMetrics): number =>
   metrics.submitted - metrics.failed_submissions - metrics.succeeded - metrics.failed - metrics.cancelled;
+
+export type QosVideoReviewsResponse = components["schemas"]["QosVideoReviewsResponse"];
+export type QosReviewVideo = components["schemas"]["QosReviewVideo"];
+export type QosVideoReview = components["schemas"]["QosVideoReview"];
+export type QosVideoReviewInput = components["schemas"]["QosVideoReviewInput"];
+export type QosVideoReviewSummary = components["schemas"]["QosVideoReviewSummary"];
+
+export type ReviewDimension = "overall" | "visual" | "motion" | "alignment" | "physics" | "audio";
+
+export const REVIEW_DIMENSIONS: readonly ReviewDimension[] = [
+  "overall",
+  "visual",
+  "motion",
+  "alignment",
+  "physics",
+  "audio",
+];
+
+export const REVIEW_DIMENSION_LABELS: Readonly<Record<ReviewDimension, string>> = {
+  overall: "Overall",
+  visual: "Visual quality",
+  motion: "Motion",
+  alignment: "Prompt alignment",
+  physics: "Physics and common sense",
+  audio: "Sound",
+};
+
+export const formatScore = (value: number | null | undefined): string =>
+  value === null || value === undefined ? "-" : value.toFixed(1);
+
+export type ReviewScores = Readonly<Partial<Record<ReviewDimension, number>>>;
+
+export const reviewScores = (review: QosVideoReview | null | undefined): ReviewScores =>
+  review === null || review === undefined
+    ? {}
+    : Object.fromEntries(
+        REVIEW_DIMENSIONS.flatMap((dimension) => {
+          const score = review[dimension];
+          return score === null || score === undefined ? [] : [[dimension, score] as const];
+        }),
+      );
+
+export const reviewInput = (scores: ReviewScores, comment: string): QosVideoReviewInput | null => {
+  const overall = scores.overall;
+  if (overall === undefined) return null;
+  const trimmed = comment.trim();
+  return { ...scores, overall, comment: trimmed === "" ? null : trimmed };
+};
