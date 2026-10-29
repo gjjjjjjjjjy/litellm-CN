@@ -8,11 +8,12 @@ import { PageHeader, PageHeaderDescription, PageHeaderTitle } from "@/components
 import { useUrlTab } from "@/hooks/useUrlTab";
 import BenchmarksPanel from "./BenchmarksPanel";
 import QosHealthPanel from "./QosHealthPanel";
+import QosMediaPanel from "./QosMediaPanel";
 import QosOverview from "./QosOverview";
 import { QOS_BENCHMARK_MODEL_PARAM, type QosBenchmarkStarted } from "./qosData";
 import StartBenchmarkDialog from "./StartBenchmarkDialog";
 
-const QOS_TABS = ["overview", "benchmarks", "health"] as const;
+const QOS_TABS = ["overview", "benchmarks", "health", "media"] as const;
 type QosTab = (typeof QOS_TABS)[number];
 const isQosTab = (value: string): value is QosTab => QOS_TABS.some((tab) => tab === value);
 
@@ -55,12 +56,16 @@ export default function QosView({ accessToken }: { accessToken: string | null })
           <PageTabsTrigger value="overview">Overview</PageTabsTrigger>
           <PageTabsTrigger value="benchmarks">Benchmarks</PageTabsTrigger>
           <PageTabsTrigger value="health">Health checks</PageTabsTrigger>
+          <PageTabsTrigger value="media">Audio and video</PageTabsTrigger>
         </PageTabsList>
         <PageTabsContent value="overview">
           <QosOverview accessToken={accessToken} />
         </PageTabsContent>
         <PageTabsContent value="health">
           <QosHealthPanel accessToken={accessToken} />
+        </PageTabsContent>
+        <PageTabsContent value="media">
+          <QosMediaPanel accessToken={accessToken} />
         </PageTabsContent>
         <PageTabsContent value="benchmarks">
           <BenchmarksPanel

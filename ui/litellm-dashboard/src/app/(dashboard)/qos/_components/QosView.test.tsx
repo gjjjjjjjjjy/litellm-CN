@@ -78,9 +78,28 @@ const trends = {
 
 const health = { start_time: "2026-10-22T11:00:00Z", end_time: "2026-10-22T12:00:00Z", nodes: [], probes: [] };
 
+const media = {
+  start_time: "2026-10-22T11:00:00Z",
+  end_time: "2026-10-22T12:00:00Z",
+  audio: [
+    {
+      model_group: "IndexTTS-2",
+      modality: "speech",
+      requests: 2,
+      failed_requests: 0,
+      audio_seconds: 7.4,
+      input_chars: 34,
+      latency_ms: { p50: 8400, p95: 8700, p99: 8700 },
+      real_time_factor: { p50: 2.3, p95: 2.4, p99: 2.4 },
+    },
+  ],
+  video: [],
+};
+
 const respondWith = (summaryBody: unknown) => async (path: string) => {
   if (path === "/qos/trends") return trends;
   if (path === "/qos/health") return health;
+  if (path === "/qos/media") return media;
   return summaryBody;
 };
 
@@ -162,6 +181,18 @@ describe("QosView", () => {
     const query = summaryCalls().at(-1)?.[1]?.query;
     expect(query?.all_time).toBeUndefined();
     expect(Date.parse(String(query?.end_time)) - Date.parse(String(query?.start_time))).toBe(7 * 24 * 60 * 60 * 1000);
+  });
+
+  it("opens the audio and video tab and shows the speech metrics from /qos/media", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<QosView accessToken="token" />);
+    await within(await screen.findByRole("table")).findByText("qwen3-max");
+
+    await user.click(screen.getByRole("tab", { name: "Audio and video" }));
+
+    expect(await screen.findByText("IndexTTS-2")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Speech synthesis and transcription" })).toBeInTheDocument();
+    expect(vi.mocked(apiClient.get).mock.calls.some(([path]) => path === "/qos/media")).toBe(true);
   });
 
   it("shows the server's error message when loading fails", async () => {

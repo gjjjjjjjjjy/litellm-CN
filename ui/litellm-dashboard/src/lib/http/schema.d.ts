@@ -72875,6 +72875,8 @@ export interface operations {
                 start_time?: string | null;
                 /** @description ISO 8601, defaults to now */
                 end_time?: string | null;
+                /** @description Include all retained history; cannot be combined with start_time */
+                all_time?: boolean;
             };
             header?: never;
             path?: never;

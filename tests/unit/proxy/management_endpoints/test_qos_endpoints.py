@@ -449,7 +449,7 @@ _EMPTY_OVERALL: Final = {
 
 
 class TestAllHistory:
-    @pytest.mark.parametrize("path", ("/qos/summary", "/qos/health", "/qos/trends"))
+    @pytest.mark.parametrize("path", ("/qos/summary", "/qos/health", "/qos/trends", "/qos/media"))
     @pytest.mark.parametrize(
         "history_start",
         (None, NOW - timedelta(days=730), (NOW - timedelta(days=730)).replace(tzinfo=timezone.utc)),
@@ -493,7 +493,7 @@ class TestAllHistory:
             assert calls[1][1:3] == (start, NOW)
             assert calls[2][1:3] == (start, NOW)
 
-    @pytest.mark.parametrize("path", ("/qos/summary", "/qos/health", "/qos/trends"))
+    @pytest.mark.parametrize("path", ("/qos/summary", "/qos/health", "/qos/trends", "/qos/media"))
     def test_all_history_rejects_a_conflicting_start_date(self, path: str) -> None:
         prisma: Final = MagicMock()
         prisma.db.query_raw = AsyncMock()
@@ -505,7 +505,7 @@ class TestAllHistory:
         assert response.json()["detail"] == "all_time and start_time cannot be combined"
         prisma.db.query_raw.assert_not_awaited()
 
-    @pytest.mark.parametrize("path", ("/qos/summary", "/qos/health", "/qos/trends"))
+    @pytest.mark.parametrize("path", ("/qos/summary", "/qos/health", "/qos/trends", "/qos/media"))
     def test_explicit_windows_keep_the_existing_maximum(self, path: str) -> None:
         prisma: Final = MagicMock()
         prisma.db.query_raw = AsyncMock()

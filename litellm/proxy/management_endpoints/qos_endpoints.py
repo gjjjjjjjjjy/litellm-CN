@@ -389,6 +389,9 @@ async def get_qos_media(
     user_api_key_dict: Annotated[UserAPIKeyAuth, Depends(user_api_key_auth)],
     start_time: Annotated[datetime | None, Query(description="ISO 8601, defaults to 24 hours before end_time")] = None,
     end_time: Annotated[datetime | None, Query(description="ISO 8601, defaults to now")] = None,
+    all_time: Annotated[
+        bool, Query(description="Include all retained history; cannot be combined with start_time")
+    ] = False,
 ) -> QosMediaResponse:
     """Speech and transcription latency against audio length, and how video tasks end, queue and run."""
     from litellm.proxy.proxy_server import llm_router, prisma_client
@@ -396,7 +399,7 @@ async def get_qos_media(
     require_reader(user_api_key_dict)
     if prisma_client is None:
         raise HTTPException(status_code=500, detail=CommonProxyErrors.db_not_connected_error.value)
-    start, end = resolve_window(start_time, end_time, utc_now())
+    start, end = await _metrics_window(prisma_client, start_time, end_time, all_time)
     modalities: Final = deployment_modalities(llm_router)
     groups: Final = deployment_model_groups(llm_router)
     audio_rows: Final = AUDIO_ROWS.validate_python(

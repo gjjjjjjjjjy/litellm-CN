@@ -46,7 +46,7 @@ export const qosWindow = (
         end_time: now.toISOString(),
       };
 
-export const successRate = (metrics: QosModelGroupMetrics): number | null =>
+export const successRate = (metrics: Pick<QosModelGroupMetrics, "requests" | "failed_requests">): number | null =>
   metrics.requests === 0 ? null : (metrics.requests - metrics.failed_requests) / metrics.requests;
 
 export const formatMs = (value: number | null | undefined): string => {
@@ -246,3 +246,30 @@ export const checkBenchmarkPlan = (input: BenchmarkFormInput): BenchmarkPlanChec
 export type QosHealthResponse = components["schemas"]["QosHealthResponse"];
 export type QosHealthNode = components["schemas"]["QosHealthNode"];
 export type QosHealthProbe = components["schemas"]["QosHealthProbe"];
+
+export type QosMediaResponse = components["schemas"]["QosMediaResponse"];
+export type QosAudioMetrics = components["schemas"]["QosAudioMetrics"];
+export type QosVideoMetrics = components["schemas"]["QosVideoMetrics"];
+
+export const AUDIO_MODALITY_LABELS: Readonly<Record<QosAudioMetrics["modality"], string>> = {
+  speech: "Speech synthesis",
+  transcription: "Transcription",
+};
+
+export const formatAudioLength = (seconds: number): string => {
+  if (seconds <= 0) return "-";
+  if (seconds < 60) return `${seconds.toFixed(1)} s`;
+  if (seconds < 3600) return `${(seconds / 60).toFixed(1)} min`;
+  return `${(seconds / 3600).toFixed(1)} h`;
+};
+
+const formatFactor = (value: number | null | undefined): string =>
+  value === null || value === undefined ? "-" : value.toFixed(2);
+
+export const formatFactorPercentiles = (percentiles: QosPercentiles): string =>
+  `${formatFactor(percentiles.p50)} / ${formatFactor(percentiles.p95)}`;
+
+export const formatPrice = (value: number | null): string => (value === null ? "-" : value.toFixed(2));
+
+export const videosWithoutResult = (metrics: QosVideoMetrics): number =>
+  metrics.submitted - metrics.failed_submissions - metrics.succeeded - metrics.failed - metrics.cancelled;

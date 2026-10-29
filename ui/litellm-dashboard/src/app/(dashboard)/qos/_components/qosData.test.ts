@@ -4,8 +4,11 @@ import {
   comparesProviders,
   deploymentIdsFor,
   deploymentsFor,
+  formatAudioLength,
+  formatFactorPercentiles,
   formatMs,
   formatPercentiles,
+  formatPrice,
   isQosRange,
   nodeLabel,
   parseConcurrency,
@@ -18,6 +21,7 @@ import {
   otherTraffic,
   responseCheckBadge,
   targetChoiceValue,
+  videosWithoutResult,
   type QosDeploymentMetrics,
   type QosSummary,
   type TargetChoice,
@@ -265,5 +269,43 @@ describe("cross-talk and interference", () => {
     const interference = { same_deployment: 4, same_endpoint: 2 };
     expect(otherTraffic(interference)).toBe(6);
     expect(interferenceLabel(interference)).toBe("4 on this deployment · 2 on its endpoint");
+  });
+});
+
+describe("audio and video metrics", () => {
+  it.each([
+    [0, "-"],
+    [3.69, "3.7 s"],
+    [59.94, "59.9 s"],
+    [90, "1.5 min"],
+    [5400, "1.5 h"],
+  ])("shows %s seconds of audio as %s", (seconds, shown) => {
+    expect(formatAudioLength(seconds)).toBe(shown);
+  });
+
+  it("shows the real-time factor without a unit and leaves missing percentiles blank", () => {
+    expect(formatFactorPercentiles({ p50: 2.6918, p95: 0.1986, p99: 4.2 })).toBe("2.69 / 0.20");
+    expect(formatFactorPercentiles({ p50: null, p95: null, p99: null })).toBe("- / -");
+  });
+
+  it("shows the provider price with two decimals and leaves a missing price blank", () => {
+    expect(formatPrice(1.5)).toBe("1.50");
+    expect(formatPrice(null)).toBe("-");
+  });
+
+  it("counts submitted video tasks that neither failed to submit nor reached an end", () => {
+    const counts = {
+      model_group: "LTX-2",
+      submitted: 7,
+      failed_submissions: 1,
+      succeeded: 3,
+      failed: 1,
+      cancelled: 1,
+      queue_ms: { p50: null, p95: null, p99: null },
+      run_ms: { p50: null, p95: null, p99: null },
+      task_price: null,
+    };
+    expect(videosWithoutResult(counts)).toBe(1);
+    expect(videosWithoutResult({ ...counts, submitted: 6 })).toBe(0);
   });
 });
