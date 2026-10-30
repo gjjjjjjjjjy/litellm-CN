@@ -1,12 +1,12 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, within } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { ThemeProvider } from "next-themes";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { PluginModeProvider } from "@/contexts/PluginModeContext";
 import { CommandPaletteProvider } from "@/components/CommandPalette/CommandPaletteProvider";
 import { DashboardHeader } from "./DashboardHeader";
 
-vi.mock("next/navigation", () => ({ usePathname: () => "/ui/logs" }));
+vi.mock("next/navigation", () => ({ usePathname: () => "/ui/logs", useRouter: () => ({ push: vi.fn() }) }));
 
 beforeEach(() => {
   localStorage.clear();
@@ -16,31 +16,8 @@ beforeEach(() => {
       const url = String(input);
       if (url.endsWith("/get/ui_settings")) return Response.json({ values: {} });
       if (url.endsWith("/litellm/.well-known/litellm-ui-config")) {
-        const config = {
-          server_root_path: "",
-          proxy_base_url: "",
-          is_control_plane: true,
-          workers: [
-            { worker_id: "primary", name: "Primary worker", url: "http://primary.test" },
-            { worker_id: "backup", name: "Backup worker", url: "http://backup.test" },
-          ],
-        };
+        const config = { server_root_path: "", proxy_base_url: "", is_control_plane: false, workers: [] };
         return Response.json(config);
-      }
-      if (url.endsWith("/api/plugins")) {
-        return Response.json([{ name: "metrics", display_name: "Metrics", url: "/metrics" }]);
-      }
-      if (url.endsWith("/public/litellm_blog_posts")) {
-        return Response.json({
-          posts: [
-            {
-              title: "Gateway update",
-              description: "Release notes",
-              date: "2026-01-01",
-              url: "https://example.com/update",
-            },
-          ],
-        });
       }
       return Response.json({}, { status: 404 });
     }),
@@ -50,63 +27,45 @@ beforeEach(() => {
 afterEach(() => {
   vi.unstubAllGlobals();
   localStorage.clear();
+  document.documentElement.classList.remove("dark");
 });
 
-async function openTools() {
-  const user = userEvent.setup();
+function renderHeader() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  render(
+  return render(
     <QueryClientProvider client={client}>
-      <PluginModeProvider accessToken="test-session">
+      <ThemeProvider attribute="class" defaultTheme="light" enableSystem={false}>
         <CommandPaletteProvider>
           <DashboardHeader />
         </CommandPaletteProvider>
-      </PluginModeProvider>
+      </ThemeProvider>
     </QueryClientProvider>,
   );
-  await user.click(screen.getByRole("button", { name: "More options" }));
-  const tools = await screen.findByRole("dialog", { name: "Gateway tools" });
-  return { user, tools };
 }
 
-describe("mobile header nested controls", () => {
-  it.each(["mouse", "touch"] as const)(
-    "selects a portalled gateway item with %s without dismissing More",
-    async (pointer) => {
-      const { user, tools } = await openTools();
-      await user.click(within(tools).getByRole("button", { name: "AI Gateway" }));
-      const item = await screen.findByRole("menuitem", { name: "Metrics" });
-      if (pointer === "touch") {
-        await user.pointer([
-          { keys: "[TouchA>]", target: item },
-          { keys: "[/TouchA]", target: item },
-        ]);
-      } else {
-        await user.click(item);
-      }
-      expect(within(tools).getByRole("button", { name: "Metrics" })).toBeVisible();
-      expect(screen.getByRole("dialog", { name: "Gateway tools" })).toBeVisible();
-    },
-  );
+describe("focused dashboard header", () => {
+  it("keeps theme switching available without loading gateway tools or product notifications", async () => {
+    const user = userEvent.setup();
+    renderHeader();
+    expect(screen.queryByRole("button", { name: "More options" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Notifications" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "LiteAdmin" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Blog" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Docs" })).not.toBeInTheDocument();
+    expect(fetch).not.toHaveBeenCalled();
 
-  it("lets a nested blog link receive the click before closing its menu", async () => {
-    const { user, tools } = await openTools();
-    await user.click(within(tools).getByRole("button", { name: "Blog" }));
-    const link = await screen.findByRole("link", { name: /Gateway update/ });
-    expect(link).toHaveAttribute("href", "https://example.com/update");
-    await user.click(link);
-    expect(screen.queryByRole("menu", { name: "Blog" })).not.toBeInTheDocument();
-    expect(screen.getByRole("dialog", { name: "Gateway tools" })).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Switch to dark mode (beta)" }));
+    expect(await screen.findByRole("button", { name: "Switch to light mode" })).toBeInTheDocument();
+    expect(document.documentElement).toHaveClass("dark");
+    expect(fetch).not.toHaveBeenCalled();
   });
 
-  it("allows filtering and selecting a worker from the nested combobox", async () => {
-    localStorage.setItem("litellm_selected_worker_id", "primary");
-    const { user, tools } = await openTools();
-    const worker = await within(tools).findByRole("combobox", { name: "Worker" });
-    await user.clear(worker);
-    await user.type(worker, "Backup");
-    await user.click(await screen.findByRole("option", { name: "Backup worker" }));
-    expect(localStorage.getItem("litellm_selected_worker_id")).toBeNull();
-    expect(screen.getByRole("dialog", { name: "Gateway tools" })).toBeVisible();
+  it("still opens page search from the compact header", async () => {
+    const user = userEvent.setup();
+    renderHeader();
+    await user.click(screen.getByRole("button", { name: "Search", exact: true }));
+    expect(await screen.findByRole("dialog", { name: "Command palette" })).toBeVisible();
+    expect(fetch).not.toHaveBeenCalledWith(expect.stringContaining("/public/litellm_blog_posts"), expect.anything());
+    expect(fetch).not.toHaveBeenCalledWith(expect.stringContaining("/api/plugins"), expect.anything());
   });
 });

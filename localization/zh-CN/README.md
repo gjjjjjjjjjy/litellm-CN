@@ -41,6 +41,8 @@ HTTP_PROXY=http://host.docker.internal:7897 \
 
 ## 精简菜单
 
+QosLLM 页头保留面包屑、页面搜索和主题切换，关闭“网关工具”、LiteAdmin 面板和 LiteLLM 产品推广通知。其他视图使用的旧导航栏按需加载，避免它们的依赖进入首页的初始加载。本地和服务器 Compose 均显式设置 `LITELLM_ENABLE_ADMIN_MCP=false`，关闭托管管理 MCP 服务
+
 `hidden-menus.json` 列出镜像中隐藏的菜单，键名对应 `ui/litellm-dashboard/src/components/leftnav.tsx` 中菜单项的 `key`。隐藏后侧边栏和 Ctrl K 搜索都不再显示，直接访问页面地址仍可打开。上游重命名或删除其中的菜单时构建直接报错，按报错更新列表即可。本地开发和测试不读取该列表，显示完整菜单
 
 ## 维护译文

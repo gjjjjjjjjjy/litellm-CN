@@ -3,7 +3,7 @@
 import React, { Suspense, useState, useRef, useEffect } from "react";
 import { Dialog as DialogPrimitive } from "@base-ui/react/dialog";
 import { DashboardHeader } from "@/components/DashboardHeader";
-import Navbar from "@/components/navbar";
+import dynamic from "next/dynamic";
 import LoadingScreen from "@/components/common_components/LoadingScreen";
 import { ThemeProvider } from "@/contexts/ThemeContext";
 import { useAuth } from "@/contexts/AuthContext";
@@ -14,7 +14,6 @@ import { NoRedisWarningBanner } from "@/components/NoRedisWarningBanner";
 import { EnvCredentialLoginWarningBanner } from "@/components/EnvCredentialLoginWarningBanner";
 import { LicenseExpiryBanner } from "@/components/LicenseExpiryBanner";
 import { UserBanner } from "@/components/UserBanner";
-import { LiteAdminFrame } from "@/components/liteadmin/LiteAdmin";
 import { UpgradeBanner } from "@/components/UpgradeBanner";
 import { routeSegmentForPathname, uiHref } from "@/utils/uiHref";
 import { PluginModeProvider, usePluginMode } from "@/contexts/PluginModeContext";
@@ -25,6 +24,8 @@ import { Button } from "@/components/ui/button";
 import { Menu } from "lucide-react";
 import { useMediaQuery } from "usehooks-ts";
 import { CommandPaletteProvider } from "@/components/CommandPalette/CommandPaletteProvider";
+
+const Navbar = dynamic(() => import("@/components/navbar"));
 
 const pluginApiClient = createApiClient({ getBaseUrl: () => getProxyBaseUrl() ?? "" });
 
@@ -175,31 +176,29 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
           <SidebarProvider sidebarCollapsed={false} onToggleCollapsed={() => setMobileNavigationKey(null)} />
         </SheetContent>
       </Sheet>
-      <LiteAdminFrame>
-        <CommandPaletteProvider>
-          <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
-            <DashboardHeader
-              navigationTrigger={
-                <SheetTrigger
-                  handle={mobileNavigationHandle}
-                  render={
-                    <Button variant="ghost" size="icon" className="size-11 md:hidden" aria-label="Open navigation" />
-                  }
-                >
-                  <Menu />
-                </SheetTrigger>
-              }
-            />
-            <DebugWarningBanner accessToken={accessToken} />
-            <NoRedisWarningBanner accessToken={accessToken} />
-            <EnvCredentialLoginWarningBanner accessToken={accessToken} />
-            <LicenseExpiryBanner accessToken={accessToken} />
-            <UserBanner accessToken={accessToken} />
-            <UpgradeBanner accessToken={accessToken} />
-            <main className="min-h-0 min-w-0 flex-1 overflow-y-auto">{children}</main>
-          </div>
-        </CommandPaletteProvider>
-      </LiteAdminFrame>
+      <CommandPaletteProvider>
+        <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+          <DashboardHeader
+            navigationTrigger={
+              <SheetTrigger
+                handle={mobileNavigationHandle}
+                render={
+                  <Button variant="ghost" size="icon" className="size-11 md:hidden" aria-label="Open navigation" />
+                }
+              >
+                <Menu />
+              </SheetTrigger>
+            }
+          />
+          <DebugWarningBanner accessToken={accessToken} />
+          <NoRedisWarningBanner accessToken={accessToken} />
+          <EnvCredentialLoginWarningBanner accessToken={accessToken} />
+          <LicenseExpiryBanner accessToken={accessToken} />
+          <UserBanner accessToken={accessToken} />
+          <UpgradeBanner accessToken={accessToken} />
+          <main className="min-h-0 min-w-0 flex-1 overflow-y-auto">{children}</main>
+        </div>
+      </CommandPaletteProvider>
     </div>
   );
 }

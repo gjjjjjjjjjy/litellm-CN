@@ -29,6 +29,7 @@ services:
       STORE_MODEL_IN_DB: "True"
       LITELLM_LOCAL_MODEL_COST_MAP: "True"
       LITELLM_TELEMETRY: "False"
+      LITELLM_ENABLE_ADMIN_MCP: "false"
       NO_DOCS: "True"
     volumes:
       - ./config.yaml:/app/config.yaml:ro
