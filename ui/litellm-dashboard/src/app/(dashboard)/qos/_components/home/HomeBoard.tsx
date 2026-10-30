@@ -289,9 +289,9 @@ export default function HomeBoard({
               className="size-9 shrink-0"
             />
             <div>
-              <h1 className="text-xl font-semibold tracking-tight">Service status</h1>
+              <h1 className="text-xl font-semibold tracking-tight">QOSLLM</h1>
               <p className="mt-1 text-xs text-muted-foreground">
-                Channel availability and response performance at a glance
+                View channel availability, latency, and recent status
               </p>
             </div>
           </div>
