@@ -539,8 +539,6 @@ def get_logging_payload(
     )
     call_type: Final = kwargs.get("call_type")
     cache_hit: Final = kwargs.get("cache_hit", False)
-    tags: Final = tag_list(metadata.get("tags"))
-    media: Final = qos_media(call_type, kwargs.get("input"), original_response, tags)
 
     # Convert response_obj to dict first
     if isinstance(response_obj, dict):
@@ -605,11 +603,13 @@ def get_logging_payload(
             or ""
         )
         end_user_id = end_user_id or standard_logging_payload["metadata"].get("user_api_key_end_user_id")
-    request_tags = "[]" if tags is None else safe_dumps(list(tags))
-    if (
-        standard_logging_payload is not None and standard_logging_payload.get("request_tags") is not None
-    ):  # use 'tags' from standard logging payload instead
-        request_tags = safe_dumps(standard_logging_payload["request_tags"])
+    tags: Final = tag_list(
+        standard_logging_payload["request_tags"]
+        if standard_logging_payload is not None and standard_logging_payload.get("request_tags") is not None
+        else metadata.get("tags")
+    )
+    request_tags: Final = "[]" if tags is None else safe_dumps(list(tags))
+    media: Final = qos_media(call_type, kwargs.get("input"), original_response, tags)
 
     _model_id: Final = metadata.get("model_info", {}).get("id", "") or _sl_attribution_fallback(
         standard_logging_payload, "model_id"

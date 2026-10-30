@@ -11,6 +11,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
+import respx
 from pydantic import TypeAdapter
 from typing_extensions import NotRequired, ReadOnly, TypedDict
 
@@ -26,7 +27,9 @@ from litellm.constants import (
     SESSION_ID_OMITTED_METADATA_KEY,
     UNKNOWN_MODEL_SPEND_LOG_MODEL,
 )
+from litellm.integrations.custom_logger import CustomLogger
 from litellm.litellm_core_utils.litellm_logging import StandardLoggingPayloadSetup
+from litellm.litellm_core_utils.logging_worker import GLOBAL_LOGGING_WORKER
 from litellm.litellm_core_utils.safe_json_dumps import safe_dumps
 from litellm.llms.base_llm.ocr.transformation import OCRResponse, OCRUsageInfo
 from litellm.proxy._types import SpendLogsMetadataFields, SpendLogsPayload, UserAPIKeyAuth
@@ -58,7 +61,6 @@ from litellm.proxy.spend_tracking.spend_tracking_utils import (
 )
 from litellm.proxy.utils import hash_token
 from litellm.types.llms.openai import HttpxBinaryResponseContent
-from litellm.types.qos import PROVIDER_TASK_HIDDEN_PARAM
 from litellm.types.router import GenericLiteLLMParams
 from litellm.types.utils import (
     StandardLoggingHiddenParams,
@@ -67,7 +69,6 @@ from litellm.types.utils import (
     StandardLoggingPayload,
     StandardLoggingPayloadErrorInformation,
 )
-from litellm.types.videos.main import VideoObject
 
 
 def _get_additional_usage_values_for_usage(usage: litellm.Usage) -> dict:
@@ -197,16 +198,46 @@ def test_video_status_polls_get_one_spend_log_row_per_state_so_the_finished_stat
     assert get_spend_logs_id("avideo_status", {}, {"litellm_call_id": "call-1"}) == "call-1", "a failed poll"
 
 
-def test_get_logging_payload_keeps_the_prompt_only_of_a_video_the_scheduled_probe_created() -> None:
-    video: Final = VideoObject(id="video_abc", object="video", status="queued")
-    video.hidden_params = {PROVIDER_TASK_HIDDEN_PARAM: {"task_id": "TASK-1", "status": "waiting"}}
+class _SpendLogRows(CustomLogger):
+    def __init__(self) -> None:
+        super().__init__()
+        self.rows: tuple[SpendLogsPayload, ...] = ()
 
-    assert _logged_qos_media("avideo_generation", video, (QOS_MEDIA_PROBE_TAG,)) == {
-        "task_id": "TASK-1",
-        "task_status": "waiting",
-        "prompt": "你好",
-    }
-    assert _logged_qos_media("avideo_generation", video) == {"task_id": "TASK-1", "task_status": "waiting"}
+    async def async_log_success_event(
+        self,
+        kwargs: dict[str, object],
+        response_obj: object,
+        start_time: datetime.datetime,
+        end_time: datetime.datetime,
+    ) -> None:
+        self.rows = (*self.rows, get_logging_payload(kwargs, response_obj, start_time, end_time))
+
+
+@respx.mock
+async def test_get_logging_payload_keeps_the_prompt_only_of_a_video_the_scheduled_probe_created(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("litellm.disable_aiohttp_transport", True)
+    respx.post(path__regex=r"/async/videos/generations$").mock(
+        return_value=httpx.Response(200, json={"task_id": "TASK-1", "status": "waiting"})
+    )
+    spend_logs: Final = _SpendLogRows()
+    monkeypatch.setattr("litellm.callbacks", [spend_logs])
+    router: Final = litellm.Router(
+        model_list=[{"model_name": "LTX-2", "litellm_params": {"model": "moark/LTX-2", "api_key": "moark-test-key"}}]
+    )
+
+    for tags in ([QOS_MEDIA_PROBE_TAG], []):
+        await router.avideo_generation(model="LTX-2", prompt="红色皮球滚过草地", metadata={"tags": tags})
+        await asyncio.sleep(0)
+        await GLOBAL_LOGGING_WORKER.flush()
+
+    assert tuple(
+        TypeAdapter(dict[str, object]).validate_json(row["metadata"]).get("qos_media") for row in spend_logs.rows
+    ) == (
+        {"task_id": "TASK-1", "task_status": "waiting", "prompt": "红色皮球滚过草地"},
+        {"task_id": "TASK-1", "task_status": "waiting"},
+    )
 
 
 def test_get_logging_payload_drops_a_client_supplied_qos_media_on_calls_it_does_not_measure() -> None:
