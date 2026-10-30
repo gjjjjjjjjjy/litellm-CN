@@ -32,7 +32,7 @@ ORDER BY model_name, model_id
 HEALTH_PROBES_SQL: Final = f"""
 SELECT
     COALESCE(model, '') AS model,
-    COALESCE(api_base, '') AS api_base,
+    RTRIM(COALESCE(api_base, ''), '/') AS api_base,
     COUNT(*)::int AS probes,
     percentile_cont(0.5) WITHIN GROUP (ORDER BY EXTRACT(epoch FROM ("endTime" - "startTime")) * 1000) AS p50,
     percentile_cont(0.95) WITHIN GROUP (ORDER BY EXTRACT(epoch FROM ("endTime" - "startTime")) * 1000) AS p95,
