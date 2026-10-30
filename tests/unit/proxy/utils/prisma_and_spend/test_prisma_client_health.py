@@ -200,7 +200,7 @@ async def test_save_health_check_result_creates_record(
         "status": data["status"],
         "healthy_count": data["healthy_count"],
         "response_time_ms": data["response_time_ms"],
-        "details": data["details"],
+        "details": data["details"].data,
         "checked_by": data["checked_by"],
         "model_id": data["model_id"],
     }

@@ -1,31 +1,12 @@
-import { screen, waitFor, within } from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import HomeBoard from "./HomeBoard";
 import { apiClient } from "@/components/networking";
 import { renderWithProviders, testQueryClient } from "../../../../../../tests/test-utils";
 
-vi.mock("@/components/networking", () => ({ apiClient: { get: vi.fn() } }));
-
-const percentiles = (p95: number) => ({ p50: p95 / 2, p95, p99: p95 });
-
-const group = (model_group: string) => ({
-  model_group,
-  requests: 50,
-  failed_requests: 0,
-  streamed_requests: 50,
-  output_tokens: 1000,
-  peak_concurrency: 4,
-  first_request_at: "2026-10-26T00:00:00Z",
-  last_response_at: "2026-10-26T01:00:00Z",
-  requests_per_second: 1,
-  output_tokens_per_second: 12,
-  ttft_ms: percentiles(900),
-  tpot_ms: percentiles(40),
-  e2e_latency_ms: percentiles(2000),
-  response_checks: { checked: 0, crosstalk: 0, marker_missing: 0 },
-});
+vi.mock("@/components/networking", () => ({ apiClient: { get: vi.fn(), post: vi.fn() } }));
 
 const node = (model_name: string, latest_status: string) => ({
   model_name,
@@ -40,6 +21,9 @@ const node = (model_name: string, latest_status: string) => ({
   last_error: null,
   last_failure_at: null,
   last_checked_at: "2026-10-26T00:00:00Z",
+  last_ttft_ms: model_name === "Qwen3" ? null : 900,
+  last_latency_ms: model_name === "Qwen3" ? null : 2000,
+  last_streamed_at: model_name === "Qwen3" ? null : "2026-10-26T00:00:00Z",
 });
 
 const target = (model: string) => ({
@@ -57,19 +41,6 @@ const target = (model: string) => ({
 
 const responses: Record<string, unknown> = {
   "/qos/targets": { models: [target("GLM-5.3"), target("Qwen3")] },
-  "/qos/summary": {
-    start_time: "",
-    end_time: "",
-    tag: null,
-    model_groups: [group("GLM-5.3"), group("Qwen3")],
-    deployments: ["GLM-5.3", "Qwen3"].map((name) => ({
-      ...group(name),
-      model_id: `node-${name}`,
-      model: name,
-      vendor: "moark",
-      api_base: "https://api.moark.com/v1",
-    })),
-  },
   "/qos/health": {
     start_time: "",
     end_time: "",
@@ -94,11 +65,16 @@ describe("HomeBoard", () => {
   beforeEach(() => {
     testQueryClient.clear();
     vi.mocked(apiClient.get).mockReset();
+    vi.mocked(apiClient.post).mockReset();
     vi.mocked(apiClient.get).mockImplementation(async (path: string) => responses[path]);
   });
 
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it("shows current service health and places the unavailable channel first", async () => {
-    renderWithProviders(<HomeBoard accessToken="token" />);
+    renderWithProviders(<HomeBoard accessToken="token" canCheckHealth={false} />);
 
     expect(await screen.findByText("Some channels are unavailable")).toBeInTheDocument();
     const cards = within(screen.getByRole("region", { name: "Channel status" })).getAllByRole("article");
@@ -110,7 +86,7 @@ describe("HomeBoard", () => {
   });
 
   it("shows recent service events without loading announcement or news feeds", async () => {
-    renderWithProviders(<HomeBoard accessToken="token" />);
+    renderWithProviders(<HomeBoard accessToken="token" canCheckHealth={false} />);
 
     expect(await screen.findByText("Qwen3 node unhealthy")).toBeInTheDocument();
     expect(apiClient.get).not.toHaveBeenCalledWith("/qos/home/news", expect.anything());
@@ -122,7 +98,7 @@ describe("HomeBoard", () => {
     vi.mocked(apiClient.get).mockImplementation(async (path: string) =>
       path === "/qos/health" ? { start_time: "", end_time: "", nodes: [], probes: [] } : responses[path],
     );
-    renderWithProviders(<HomeBoard accessToken="token" />);
+    renderWithProviders(<HomeBoard accessToken="token" canCheckHealth={false} />);
 
     await screen.findByText("Awaiting health checks");
     const cards = within(screen.getByRole("region", { name: "Channel status" })).getAllByRole("article");
@@ -132,19 +108,108 @@ describe("HomeBoard", () => {
     }
   });
 
-  it("refreshes the channel list, health checks and request metrics with one action", async () => {
+  it("expands every configured model on demand and restores the compact view", async () => {
     const user = userEvent.setup();
-    renderWithProviders(<HomeBoard accessToken="token" />);
+    const models = Array.from({ length: 7 }, (_, index) => target(`Model ${index + 1}`));
+    vi.mocked(apiClient.get).mockImplementation(async (path: string) =>
+      path === "/qos/targets" ? { models } : responses[path],
+    );
+    renderWithProviders(<HomeBoard accessToken="token" canCheckHealth={false} />);
+    await screen.findByRole("heading", { name: "Model 1", exact: true });
+    const channels = screen.getByRole("region", { name: "Channel status" });
+    expect(within(channels).getAllByRole("article")).toHaveLength(3);
+
+    await user.click(screen.getByRole("button", { name: "View more models" }));
+    expect(within(channels).getAllByRole("article")).toHaveLength(models.length);
+    expect(screen.getByRole("heading", { name: "Model 7", exact: true })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Show fewer models" })).toHaveAttribute("aria-expanded", "true");
+
+    await user.click(screen.getByRole("button", { name: "Show fewer models" }));
+    expect(within(channels).getAllByRole("article")).toHaveLength(3);
+    expect(screen.getByRole("button", { name: "View more models" })).toHaveAttribute("aria-expanded", "false");
+  });
+
+  it("refreshes the channel list, health checks and activity with one action", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<HomeBoard accessToken="token" canCheckHealth={false} />);
     await screen.findByText("Qwen3 node unhealthy");
-    await waitFor(() => expect(screen.getByRole("button", { name: "Refresh" })).toBeEnabled());
+    await waitFor(() => expect(screen.getByRole("button", { name: "Refresh data" })).toBeEnabled());
     vi.mocked(apiClient.get).mockClear();
 
-    await user.click(screen.getByRole("button", { name: "Refresh" }));
+    await user.click(screen.getByRole("button", { name: "Refresh data" }));
     await waitFor(() =>
       expect(new Set(vi.mocked(apiClient.get).mock.calls.map(([path]) => path))).toEqual(
-        new Set(["/qos/targets", "/qos/health", "/qos/summary"]),
+        new Set(["/qos/targets", "/qos/health", "/qos/home/activity"]),
       ),
     );
+    expect(apiClient.post).not.toHaveBeenCalled();
+  });
+
+  it("checks upstream endpoints before refreshing an administrator's status cards", async () => {
+    const user = userEvent.setup();
+    const completed = Promise.withResolvers<unknown>();
+    vi.mocked(apiClient.post).mockReturnValue(completed.promise);
+    renderWithProviders(<HomeBoard accessToken="token" canCheckHealth={true} />);
+    await screen.findByText("Some channels are unavailable");
+    await waitFor(() => expect(screen.getByRole("button", { name: "Check and refresh" })).toBeEnabled());
+    vi.mocked(apiClient.get).mockClear();
+
+    await user.click(screen.getByRole("button", { name: "Check and refresh" }));
+    expect(apiClient.post).toHaveBeenCalledExactlyOnceWith("/qos/health/refresh", { accessToken: "token" });
+    expect(screen.getByRole("button", { name: "Checking endpoints" })).toBeDisabled();
+    expect(apiClient.get).not.toHaveBeenCalled();
+
+    const freshHealth = {
+      start_time: "",
+      end_time: "",
+      nodes: [
+        node("GLM-5.3", "healthy"),
+        {
+          ...node("Qwen3", "healthy"),
+          last_ttft_ms: 1250,
+          last_latency_ms: 4500,
+          last_streamed_at: "2026-10-26T12:00:00Z",
+        },
+      ],
+      probes: [],
+    };
+    completed.resolve(freshHealth);
+    expect(await screen.findByText("All channels operational")).toBeInTheDocument();
+    expect(screen.getByText("1.25 s")).toBeInTheDocument();
+    expect(screen.getByText("4.50 s")).toBeInTheDocument();
+    expect(apiClient.get).not.toHaveBeenCalledWith("/qos/health", expect.anything());
+  });
+
+  it("shows a failed manual check and allows another attempt", async () => {
+    const user = userEvent.setup();
+    vi.mocked(apiClient.post).mockRejectedValue(new Error("Health results could not be saved"));
+    renderWithProviders(<HomeBoard accessToken="token" canCheckHealth={true} />);
+    await screen.findByText("Some channels are unavailable");
+    await waitFor(() => expect(screen.getByRole("button", { name: "Check and refresh" })).toBeEnabled());
+
+    await user.click(screen.getByRole("button", { name: "Check and refresh" }));
+    expect(await screen.findByText("Health results could not be saved")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Check and refresh" })).toBeEnabled();
+    expect(screen.getByText("Some channels are unavailable")).toBeInTheDocument();
+  });
+
+  it("reads fresh data every minute without triggering upstream checks", async () => {
+    vi.useFakeTimers();
+    renderWithProviders(<HomeBoard accessToken="token" canCheckHealth={true} />);
+    await act(() => vi.advanceTimersByTimeAsync(1));
+    expect(screen.getByText("Some channels are unavailable")).toBeInTheDocument();
+    vi.mocked(apiClient.get).mockClear();
+
+    await act(() => vi.advanceTimersByTimeAsync(59_998));
+    expect(apiClient.get).not.toHaveBeenCalled();
+    await act(() => vi.advanceTimersByTimeAsync(1));
+    expect(
+      vi
+        .mocked(apiClient.get)
+        .mock.calls.map(([path]) => path)
+        .sort(),
+    ).toEqual(["/qos/health", "/qos/home/activity", "/qos/targets"]);
+    expect(apiClient.post).not.toHaveBeenCalled();
   });
 
   it("exposes a health-check loading failure without reporting an update time", async () => {
@@ -152,7 +217,7 @@ describe("HomeBoard", () => {
       if (path === "/qos/health") throw new Error("Health service unreachable");
       return responses[path];
     });
-    renderWithProviders(<HomeBoard accessToken="token" />);
+    renderWithProviders(<HomeBoard accessToken="token" canCheckHealth={false} />);
 
     expect(await screen.findByText("Service status unavailable")).toBeInTheDocument();
     expect(screen.getByText(/Health service unreachable/)).toBeInTheDocument();

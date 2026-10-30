@@ -4,6 +4,7 @@ import HomeBoard from "@/app/(dashboard)/qos/_components/home/HomeBoard";
 import LoadingScreen from "@/components/common_components/LoadingScreen";
 import { proxyBaseUrl } from "@/components/networking";
 import { useAuth } from "@/contexts/AuthContext";
+import { isProxyAdminRole } from "@/utils/roles";
 import {
   buildLoginUrlWithReturn,
   consumeReturnUrl,
@@ -17,7 +18,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useRef } from "react";
 
 function CreateKeyPageContent() {
-  const { authLoading, token, accessToken } = useAuth();
+  const { authLoading, token, accessToken, userRole } = useAuth();
 
   const router = useRouter();
   const searchParams = useSearchParams()!;
@@ -89,7 +90,7 @@ function CreateKeyPageContent() {
     return <LoadingScreen />;
   }
 
-  return <HomeBoard accessToken={accessToken} />;
+  return <HomeBoard accessToken={accessToken} canCheckHealth={isProxyAdminRole(userRole)} />;
 }
 
 export default function CreateKeyPage() {

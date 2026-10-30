@@ -6,7 +6,7 @@ import { createQueryKeys } from "../common/queryKeysFactory";
 export type QosActivity = components["schemas"]["QosActivityResponse"];
 export type QosActivityEvent = QosActivity["events"][number];
 
-const homeKeys = createQueryKeys("qosHome");
+export const homeKeys = createQueryKeys("qosHome");
 export const useQosActivity = (accessToken: string | null, refreshMs: number | false): UseQueryResult<QosActivity> => {
   const options = {
     queryKey: [...homeKeys.all, "activity"],

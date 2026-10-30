@@ -1,4 +1,6 @@
 import re
+import time
+from copy import deepcopy
 from datetime import datetime, timedelta
 from functools import partial
 from typing import TYPE_CHECKING, Annotated, Final
@@ -482,6 +484,81 @@ async def get_qos_health(
         nodes=tuple(health_node(row, target) for row in history if (target := target_of(row.model_id)) is not None),
         probes=tuple(health_probe(row) for row in probes if probe_key(row.api_base, row.model) in current_probe_keys),
     )
+
+
+@router.post(
+    "/qos/health/refresh",
+    tags=["qos"],
+    dependencies=[Depends(user_api_key_auth)],
+    response_model=QosHealthResponse,
+)
+async def refresh_qos_health(
+    user_api_key_dict: Annotated[UserAPIKeyAuth, Depends(user_api_key_auth)],
+) -> QosHealthResponse:
+    from litellm.proxy.health_check import health_check_filter_kwargs_from_general_settings, perform_health_check
+    from litellm.proxy.health_endpoints._health_endpoints import save_background_health_checks_to_db
+    from litellm.proxy.management_endpoints.qos_health_stream import check_stream_health, supports_stream_probe
+    from litellm.proxy.proxy_server import (
+        general_settings,
+        health_check_concurrency,
+        llm_model_list,
+        llm_router,
+        prisma_client,
+    )
+    from litellm.types.router import Deployment
+
+    require_admin(user_api_key_dict)
+    if prisma_client is None:
+        raise HTTPException(status_code=500, detail=CommonProxyErrors.db_not_connected_error.value)
+    if llm_model_list is None:
+        raise HTTPException(status_code=503, detail="Model list not initialized")
+    models: Final = deepcopy(llm_model_list)
+    deployments: Final = TypeAdapter(tuple[Deployment, ...]).validate_python(models)
+    stream_deployments: Final = tuple(deployment for deployment in deployments if supports_stream_probe(deployment))
+    other_models: Final = [
+        deployment.model_dump(exclude_none=True)
+        for deployment in deployments
+        if not supports_stream_probe(deployment)
+    ]
+    started: Final = time.time()
+    healthy, unhealthy, _ = await perform_health_check(
+        model_list=other_models,
+        router=llm_router,
+        max_concurrency=health_check_concurrency,
+        **health_check_filter_kwargs_from_general_settings(general_settings),
+    )
+    persisted: Final = await save_background_health_checks_to_db(
+        prisma_client,
+        other_models,
+        healthy,
+        unhealthy,
+        started,
+        checked_by=user_api_key_dict.user_id,
+        persist_all=True,
+    )
+    if not persisted:
+        raise HTTPException(status_code=500, detail="Health checks completed but results could not be saved")
+    for deployment in stream_deployments:
+        if (
+            general_settings.get("health_check_skip_disabled_background_models") is True
+            and deployment.model_info.get("disable_background_health_check") is True
+        ):
+            continue
+        result: Final = await check_stream_health(deployment)
+        row: Final = await prisma_client.save_health_check_result(
+            model_name=deployment.model_name,
+            model_id=deployment.model_info.id,
+            status="healthy" if result.error is None else "unhealthy",
+            healthy_count=int(result.error is None),
+            unhealthy_count=int(result.error is not None),
+            error_message=result.error,
+            response_time_ms=result.latency_ms,
+            details={"qos_ttft_ms": result.ttft_ms, "qos_latency_ms": result.latency_ms},
+            checked_by=user_api_key_dict.user_id,
+        )
+        if row is None:
+            raise HTTPException(status_code=500, detail="Health checks completed but results could not be saved")
+    return await get_qos_health(user_api_key_dict, start_time=None, end_time=None, all_time=False)
 
 
 class _DeletedCount(LiteLLMBaseModel):

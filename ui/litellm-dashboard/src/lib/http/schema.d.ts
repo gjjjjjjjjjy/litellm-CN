@@ -14281,6 +14281,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/qos/health/refresh": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Refresh Qos Health */
+        post: operations["refresh_qos_health_qos_health_refresh_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/qos/home/activity": {
         parameters: {
             query?: never;
@@ -43398,6 +43415,12 @@ export interface components {
             last_error: string | null;
             /** Last Failure At */
             last_failure_at: string | null;
+            /** Last Latency Ms */
+            last_latency_ms?: number | null;
+            /** Last Streamed At */
+            last_streamed_at?: string | null;
+            /** Last Ttft Ms */
+            last_ttft_ms?: number | null;
             /** Latest Status */
             latest_status: string;
             /** Model Id */
@@ -72812,6 +72835,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    refresh_qos_health_qos_health_refresh_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QosHealthResponse"];
                 };
             };
         };

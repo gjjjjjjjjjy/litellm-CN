@@ -2,12 +2,25 @@
 
 import React from "react";
 import Image from "next/image";
-import { Activity, CircleAlert, CircleCheck, CircleDashed, CircleX, Clock3, RefreshCw, Timer } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
+import {
+  Activity,
+  ChevronDown,
+  ChevronUp,
+  CircleAlert,
+  CircleCheck,
+  CircleDashed,
+  CircleX,
+  Clock3,
+  Cpu,
+  Globe2,
+  RefreshCw,
+  Timer,
+} from "lucide-react";
 
 import { useQosTargets } from "@/app/(dashboard)/hooks/qos/useQosBenchmarks";
-import { useQosHealth } from "@/app/(dashboard)/hooks/qos/useQosHealth";
-import { useQosSummary } from "@/app/(dashboard)/hooks/qos/useQosSummary";
-import { Logo } from "@/components/molecules/logo/Logo";
+import { healthKeys, useQosHealth, useRefreshQosHealth } from "@/app/(dashboard)/hooks/qos/useQosHealth";
+import { homeKeys } from "@/app/(dashboard)/hooks/qos/useQosHome";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -27,13 +40,13 @@ import {
 
 const REFRESH_MS = 60_000;
 const BOARD_RANGE = "24h";
+const INITIAL_VISIBLE_CHANNELS = 3;
 
 interface StatusStyle {
   readonly icon: typeof CircleCheck;
   readonly className: string;
   readonly dot: string;
   readonly badge: string;
-  readonly surface: string;
   readonly label: string;
 }
 
@@ -43,7 +56,6 @@ const STATUS_STYLE: Readonly<Record<ServiceStatus, StatusStyle>> = {
     className: "text-success",
     dot: "bg-success",
     badge: "bg-success/10 text-success",
-    surface: "border-success/20 bg-success/5",
     label: "Operational",
   },
   degraded: {
@@ -51,7 +63,6 @@ const STATUS_STYLE: Readonly<Record<ServiceStatus, StatusStyle>> = {
     className: "text-warning",
     dot: "bg-warning",
     badge: "bg-warning/10 text-warning",
-    surface: "border-warning/20 bg-warning/5",
     label: "Degraded",
   },
   down: {
@@ -59,7 +70,6 @@ const STATUS_STYLE: Readonly<Record<ServiceStatus, StatusStyle>> = {
     className: "text-destructive",
     dot: "bg-destructive",
     badge: "bg-destructive/10 text-destructive",
-    surface: "border-destructive/20 bg-destructive/5",
     label: "Unavailable",
   },
   idle: {
@@ -67,7 +77,6 @@ const STATUS_STYLE: Readonly<Record<ServiceStatus, StatusStyle>> = {
     className: "text-muted-foreground",
     dot: "bg-muted-foreground",
     badge: "bg-muted text-muted-foreground",
-    surface: "border-border bg-muted/30",
     label: "Awaiting checks",
   },
 };
@@ -90,23 +99,44 @@ const RefreshStatus = ({ fetching, updatedAt }: { fetching: boolean; updatedAt: 
   );
 };
 
+const RefreshAction = ({
+  checking,
+  fetching,
+  canCheckHealth,
+  onRefresh,
+}: {
+  checking: boolean;
+  fetching: boolean;
+  canCheckHealth: boolean;
+  onRefresh: () => void;
+}) => {
+  const busy = checking ? true : fetching;
+  const label = canCheckHealth ? "Check and refresh" : "Refresh data";
+  return (
+    <Button variant="outline" size="sm" onClick={onRefresh} disabled={busy}>
+      <RefreshCw className={cn("size-3.5", busy && "motion-safe:animate-spin")} />
+      {checking ? "Checking endpoints" : label}
+    </Button>
+  );
+};
+
 const ChannelStatusCard = ({ card, now }: { card: ChannelCard; now: Date }) => {
   const style = STATUS_STYLE[card.status];
   return (
-    <article className="min-w-0 rounded-xl border bg-card p-4 shadow-xs transition-colors hover:border-primary/30">
+    <article className="min-w-0 overflow-hidden rounded-xl border border-border/70 bg-card p-5 shadow-xs transition-shadow hover:shadow-sm">
       <header className="flex items-start gap-3">
-        <span className="flex size-10 shrink-0 items-center justify-center rounded-lg border bg-muted/30">
-          <Logo provider={card.deployment.vendor} className="size-5" />
+        <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-blue-500/8 text-blue-600 dark:text-blue-400">
+          <Cpu className="size-4" aria-hidden="true" />
         </span>
         <div className="min-w-0 flex-1">
-          <h3 className="truncate text-sm font-semibold" title={card.model}>
+          <h3 className="truncate text-[15px] font-semibold tracking-tight" title={card.model}>
             {card.model}
           </h3>
           <p className="mt-1 text-xs text-muted-foreground">{vendorName(card.deployment.vendor)}</p>
         </div>
         <span
           className={cn(
-            "inline-flex shrink-0 items-center gap-1.5 rounded-md px-2 py-1 text-[11px] font-medium",
+            "inline-flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium",
             style.badge,
           )}
         >
@@ -115,44 +145,56 @@ const ChannelStatusCard = ({ card, now }: { card: ChannelCard; now: Date }) => {
         </span>
       </header>
       {card.deployment.api_base !== "" && (
-        <p className="mt-3 truncate font-mono text-[11px] text-muted-foreground" title={card.deployment.api_base}>
-          {card.deployment.api_base}
+        <p
+          className="mt-4 flex items-center gap-1.5 font-mono text-[11px] text-muted-foreground"
+          title={card.deployment.api_base}
+        >
+          <Globe2 className="size-3 shrink-0" aria-hidden="true" />
+          <span className="truncate">{card.deployment.api_base}</span>
         </p>
       )}
-      <dl className="mt-3 grid grid-cols-2 gap-2">
-        <div className="rounded-lg border border-border/50 bg-muted/30 px-3 py-2.5">
+      <dl className="mt-5 grid grid-cols-2 divide-x border-y border-border/60 py-4">
+        <div className="pr-4">
           <dt className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
             <Timer className="size-3" aria-hidden="true" />
-            TTFT P95
+            TTFT
           </dt>
-          <dd className="mt-1 text-lg font-semibold tracking-tight tabular-nums">
-            {card.metrics === undefined ? "-" : formatMs(card.metrics.ttft_ms.p95)}
+          <dd className="mt-2 text-xl font-semibold tracking-tight tabular-nums">
+            {formatMs(card.health?.last_ttft_ms)}
           </dd>
         </div>
-        <div className="rounded-lg border border-border/50 bg-muted/30 px-3 py-2.5">
+        <div className="pl-4">
           <dt className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
             <Activity className="size-3" aria-hidden="true" />
-            Response latency P95
+            Response time
           </dt>
-          <dd className="mt-1 text-lg font-semibold tracking-tight tabular-nums">
-            {card.metrics === undefined ? "-" : formatMs(card.metrics.e2e_latency_ms.p95)}
+          <dd className="mt-2 text-xl font-semibold tracking-tight tabular-nums">
+            {formatMs(card.health?.last_latency_ms)}
           </dd>
         </div>
       </dl>
-      <div className="mt-4 flex items-center justify-between gap-3 border-t pt-3">
-        <div className="text-[11px] leading-5 text-muted-foreground">
+      <p className="mt-2 text-[11px] text-muted-foreground">
+        {card.health?.last_streamed_at == null
+          ? "No streamed check yet"
+          : `Streamed check ${relativeTimeLabel(card.health.last_streamed_at, now)}`}
+      </p>
+      <div className="mt-4 flex items-center justify-between gap-3">
+        <div className="text-[11px] leading-4 text-muted-foreground">
           <p>Health check availability</p>
           <p>Last 24 hours</p>
         </div>
-        <p className={cn("text-2xl font-semibold tracking-tight tabular-nums", style.className)}>
+        <p className="text-lg font-semibold tracking-tight tabular-nums">
           {card.health === undefined ? "-" : `${(card.health.availability * 100).toFixed(2)}%`}
         </p>
       </div>
-      <p className="mt-3 flex items-center gap-1.5 text-[11px] text-muted-foreground">
+      <p
+        className="mt-3 flex items-center gap-1.5 text-[11px] text-muted-foreground"
+        title="Stable health checks are recorded hourly; manual checks are always recorded"
+      >
         <Clock3 className="size-3" aria-hidden="true" />
         {card.health === undefined
           ? "No health check yet"
-          : `Checked ${relativeTimeLabel(card.health.last_checked_at, now)}`}
+          : `Last recorded check ${relativeTimeLabel(card.health.last_checked_at, now)}`}
       </p>
       {card.health?.latest_status === "unhealthy" && card.health.last_error !== null && (
         <p
@@ -166,16 +208,25 @@ const ChannelStatusCard = ({ card, now }: { card: ChannelCard; now: Date }) => {
   );
 };
 
-export default function HomeBoard({ accessToken }: { accessToken: string | null }) {
+export default function HomeBoard({
+  accessToken,
+  canCheckHealth,
+}: {
+  accessToken: string | null;
+  canCheckHealth: boolean;
+}) {
+  const queryClient = useQueryClient();
+  const checkHealth = useRefreshQosHealth(accessToken);
   const now = useNow();
+  const [expanded, setExpanded] = React.useState(false);
   const targetsQuery = useQosTargets(accessToken, REFRESH_MS);
   const healthQuery = useQosHealth(accessToken, BOARD_RANGE, REFRESH_MS);
-  const summaryQuery = useQosSummary(accessToken, BOARD_RANGE, "", REFRESH_MS);
   const cards = channelCards(
     targetsQuery.data === undefined ? [] : targetsQuery.data,
     healthQuery.data === undefined ? [] : healthQuery.data.nodes,
-    summaryQuery.data === undefined ? [] : summaryQuery.data.deployments,
   );
+  const visibleCards = expanded ? cards : cards.slice(0, INITIAL_VISIBLE_CHANNELS);
+  const ExpandIcon = expanded ? ChevronUp : ChevronDown;
   const statusQueries = [targetsQuery, healthQuery] as const;
   const loading = statusQueries.some((query) => query.isPending);
   const statusFailed = statusQueries.some((query) => query.isError);
@@ -187,7 +238,6 @@ export default function HomeBoard({ accessToken }: { accessToken: string | null 
   const queries = [
     { label: "Channels", query: targetsQuery },
     { label: "Health checks", query: healthQuery },
-    { label: "Request metrics", query: summaryQuery },
   ] as const;
   const errors = queries.filter(({ query }) => query.isError);
   const fetching = queries.some(({ query }) => query.isFetching);
@@ -205,14 +255,24 @@ export default function HomeBoard({ accessToken }: { accessToken: string | null 
       className: "text-muted-foreground",
     },
   ] as const;
+  const refreshData = () =>
+    Promise.all([targetsQuery.refetch(), queryClient.invalidateQueries({ queryKey: homeKeys.all })]);
   const refresh = () => {
-    void targetsQuery.refetch();
+    if (canCheckHealth) {
+      checkHealth.mutate(undefined, {
+        onSuccess: (data) => {
+          queryClient.setQueryData(healthKeys.list({ filters: { range: BOARD_RANGE } }), data);
+          void refreshData();
+        },
+      });
+      return;
+    }
     void healthQuery.refetch();
-    void summaryQuery.refetch();
+    void refreshData();
   };
 
   return (
-    <div className="min-h-full min-w-0 bg-muted/20 px-4 py-5 text-foreground md:px-6">
+    <div className="min-h-full min-w-0 bg-muted/15 px-4 py-6 text-foreground md:px-8">
       <div className="mx-auto flex max-w-[1440px] flex-col gap-5">
         <header className="flex flex-wrap items-center justify-between gap-4">
           <div className="flex items-center gap-3">
@@ -233,32 +293,33 @@ export default function HomeBoard({ accessToken }: { accessToken: string | null 
           </div>
           <div className="flex items-center gap-3">
             <RefreshStatus fetching={fetching} updatedAt={healthQuery.dataUpdatedAt} />
-            <Button variant="outline" size="sm" onClick={refresh} disabled={fetching}>
-              <RefreshCw className={cn("size-3.5", fetching && "motion-safe:animate-spin")} />
-              Refresh
-            </Button>
+            <RefreshAction
+              checking={checkHealth.isPending}
+              fetching={fetching}
+              canCheckHealth={canCheckHealth}
+              onRefresh={refresh}
+            />
           </div>
         </header>
 
         <section
-          className={cn(
-            "flex flex-wrap items-center justify-between gap-5 rounded-xl border p-4 md:px-5",
-            style.surface,
-          )}
+          className="flex flex-wrap items-center justify-between gap-6 rounded-xl border border-border/70 bg-card px-5 py-5 sm:px-6"
           aria-label="Service overview"
         >
           <div className="flex items-center gap-3">
-            <StatusIcon className={cn("size-7 shrink-0", style.className)} aria-hidden="true" />
+            <span className={cn("flex size-10 shrink-0 items-center justify-center rounded-full", style.badge)}>
+              <StatusIcon className="size-5" aria-hidden="true" />
+            </span>
             <div>
               <h2 className="text-base font-semibold" role="status">
                 {title}
               </h2>
-              <p className="mt-1 text-xs text-muted-foreground">Latest health checks · data refreshes every minute</p>
+              <p className="mt-1 text-xs text-muted-foreground">Automatic data refresh every minute</p>
             </div>
           </div>
-          <dl className="grid grid-cols-4 gap-5 md:gap-8">
+          <dl className="grid w-full grid-cols-4 divide-x sm:w-auto">
             {figures.map((figure) => (
-              <div key={figure.label}>
+              <div key={figure.label} className="min-w-0 px-4 text-center first:pl-0 last:pr-0">
                 <dt className="text-[11px] text-muted-foreground">{figure.label}</dt>
                 <dd className={cn("mt-1 text-xl font-semibold tabular-nums", figure.className)}>
                   {targetsQuery.data === undefined ? "-" : figure.value}
@@ -267,6 +328,13 @@ export default function HomeBoard({ accessToken }: { accessToken: string | null 
             ))}
           </dl>
         </section>
+
+        {checkHealth.isError && (
+          <Alert variant="destructive">
+            <AlertTitle>Endpoint checks could not be completed</AlertTitle>
+            <AlertDescription>{extractErrorMessage(checkHealth.error)}</AlertDescription>
+          </Alert>
+        )}
 
         {errors.length > 0 && (
           <Alert variant="destructive">
@@ -283,7 +351,13 @@ export default function HomeBoard({ accessToken }: { accessToken: string | null 
           </Alert>
         )}
 
-        <section aria-label="Channel status">
+        <section aria-label="Channel status" className="flex flex-col gap-3">
+          <header className="flex items-center justify-between gap-3 px-0.5">
+            <h2 className="text-sm font-semibold">Model channels</h2>
+            {targetsQuery.isSuccess && (
+              <p className="text-xs tabular-nums text-muted-foreground">{`${visibleCards.length} of ${cards.length} channels`}</p>
+            )}
+          </header>
           {targetsQuery.isPending && (
             <div
               className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,17rem),1fr))] gap-4"
@@ -300,11 +374,26 @@ export default function HomeBoard({ accessToken }: { accessToken: string | null 
               No model deployments configured
             </p>
           )}
-          <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,17rem),1fr))] gap-4">
-            {cards.map((card) => (
+          <div id="home-model-channels" className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,17rem),1fr))] gap-4">
+            {visibleCards.map((card) => (
               <ChannelStatusCard key={`${card.model}-${card.deployment.model_id}`} card={card} now={now} />
             ))}
           </div>
+          {cards.length > INITIAL_VISIBLE_CHANNELS && (
+            <div className="flex justify-center pt-1">
+              <Button
+                variant="outline"
+                size="sm"
+                className="rounded-full px-5"
+                aria-expanded={expanded}
+                aria-controls="home-model-channels"
+                onClick={() => setExpanded((value) => !value)}
+              >
+                {expanded ? "Show fewer models" : "View more models"}
+                <ExpandIcon className="size-3.5" aria-hidden="true" />
+              </Button>
+            </div>
+          )}
         </section>
 
         <ActivityPanel accessToken={accessToken} refreshMs={REFRESH_MS} now={now} />

@@ -1,28 +1,13 @@
 import type { QosActivityEvent } from "@/app/(dashboard)/hooks/qos/useQosHome";
-import {
-  successRate,
-  vendorName,
-  type QosDeploymentMetrics,
-  type QosHealthNode,
-  type QosModelGroupMetrics,
-  type QosTargetDeployment,
-  type QosTargetModel,
-} from "../qosData";
+import { vendorName, type QosHealthNode, type QosTargetDeployment, type QosTargetModel } from "../qosData";
 
 export type ServiceStatus = "ok" | "degraded" | "down" | "idle";
 
-const DEGRADED_SUCCESS_RATE = 0.95;
-
-/** A model is down when every node failed its latest health check, degraded when some did or it fails requests. */
-export const modelStatus = (
-  nodes: readonly QosHealthNode[],
-  metrics: QosModelGroupMetrics | undefined,
-): ServiceStatus => {
+export const modelStatus = (nodes: readonly QosHealthNode[]): ServiceStatus => {
   const unhealthy = nodes.filter((node) => node.latest_status === "unhealthy").length;
   if (nodes.length > 0 && unhealthy === nodes.length) return "down";
-  const success = metrics === undefined ? null : successRate(metrics);
-  if (unhealthy > 0 || (success !== null && success < DEGRADED_SUCCESS_RATE)) return "degraded";
-  if (nodes.length === 0 && success === null) return "idle";
+  if (unhealthy > 0) return "degraded";
+  if (nodes.length === 0) return "idle";
   return "ok";
 };
 
@@ -47,13 +32,11 @@ export interface ChannelCard {
   readonly status: ServiceStatus;
   readonly deployment: QosTargetDeployment;
   readonly health: QosHealthNode | undefined;
-  readonly metrics: QosDeploymentMetrics | undefined;
 }
 
 export const channelCards = (
   models: readonly QosTargetModel[],
   nodes: readonly QosHealthNode[],
-  metrics: readonly QosDeploymentMetrics[],
 ): readonly ChannelCard[] => {
   const rank: Readonly<Record<ServiceStatus, number>> = { down: 0, degraded: 1, ok: 2, idle: 3 };
   const cards = models.flatMap((model) =>
@@ -61,15 +44,11 @@ export const channelCards = (
       const health = nodes.find(
         (node) => node.model_id === deployment.model_id && node.model_name === model.model_group,
       );
-      const traffic = metrics.find(
-        (row) => row.model_id === deployment.model_id && row.model_group === model.model_group,
-      );
       return {
         model: model.model_group,
         deployment,
         health,
-        metrics: traffic,
-        status: health === undefined ? "idle" : modelStatus([health], traffic),
+        status: health === undefined ? "idle" : modelStatus([health]),
       };
     }),
   );

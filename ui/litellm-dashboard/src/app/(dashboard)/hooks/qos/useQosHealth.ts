@@ -1,4 +1,4 @@
-import { useQuery, type UseQueryResult } from "@tanstack/react-query";
+import { useMutation, useQuery, type UseQueryResult } from "@tanstack/react-query";
 import { apiClient } from "@/components/networking";
 import {
   qosRefreshOptions,
@@ -9,6 +9,11 @@ import {
 import { createQueryKeys } from "../common/queryKeysFactory";
 
 export const healthKeys = createQueryKeys("qosHealth");
+
+export const useRefreshQosHealth = (accessToken: string | null) =>
+  useMutation({
+    mutationFn: () => apiClient.post<QosHealthResponse>("/qos/health/refresh", { accessToken }),
+  });
 
 export const useQosHealth = (
   accessToken: string | null,

@@ -621,6 +621,101 @@ class TestMediaEndpoint:
 
 
 class TestHealthEndpoint:
+    @pytest.mark.parametrize("role", tuple(role for role in LitellmUserRoles if role != LitellmUserRoles.PROXY_ADMIN))
+    def test_manual_checks_require_a_writable_proxy_admin(self, role: LitellmUserRoles) -> None:
+        with patch("litellm.acompletion", new_callable=AsyncMock) as probe:
+            response = _client(role).post("/qos/health/refresh")
+        assert response.status_code == 403
+        probe.assert_not_called()
+
+    @pytest.mark.parametrize("saved", [True, False])
+    def test_manual_checks_probe_each_endpoint_and_await_a_fresh_record_even_when_status_is_unchanged(
+        self, saved: bool
+    ) -> None:
+        models: Final = [
+            {
+                "model_name": "shared-model",
+                "litellm_params": {"model": "openai/test-chat", "api_base": f"https://{node}.example/v1"},
+                "model_info": {"id": node, "mode": "chat"},
+            }
+            for node in ("node-a", "node-b")
+        ]
+        checked_at: Final = datetime.now(timezone.utc)
+        previous: Final = [
+            {
+                "health_check_id": f"previous-{node}",
+                "model_name": "shared-model",
+                "model_id": node,
+                "status": "healthy",
+                "healthy_count": 1,
+                "unhealthy_count": 0,
+                "checked_at": checked_at,
+                "created_at": checked_at,
+                "updated_at": checked_at,
+            }
+            for node in ("node-a", "node-b")
+        ]
+        from litellm.litellm_core_utils.streaming_handler import CustomStreamWrapper
+        from litellm.types.utils import ModelResponseStream
+
+        stream: Final = MagicMock(spec=CustomStreamWrapper)
+        stream.__aiter__.return_value = [ModelResponseStream(choices=[{"delta": {"content": "OK"}}])]
+        stream.aclose = AsyncMock()
+        history: Final = [
+            {
+                "model_name": "shared-model",
+                "model_id": node,
+                "checks": 2,
+                "failures": 0,
+                "latest_status": "healthy",
+                "last_error": None,
+                "last_failure_at": None,
+                "last_checked_at": checked_at,
+                "last_streamed_at": checked_at,
+                "last_ttft_ms": 250.0,
+                "last_latency_ms": 1000.0,
+            }
+            for node in ("node-a", "node-b")
+        ]
+        prisma: Final = MagicMock()
+        prisma.save_health_check_result = AsyncMock(return_value=object() if saved else None)
+        prisma.db.query_raw = AsyncMock(side_effect=[previous, history, []])
+        llm_router: Final = _router(
+            {
+                node: _deployment("shared-model", "openai/test-chat", f"https://{node}.example/v1")
+                for node in ("node-a", "node-b")
+            }
+        )
+        with (
+            patch("litellm.proxy.proxy_server.prisma_client", prisma),
+            patch("litellm.proxy.proxy_server.llm_model_list", models),
+            patch("litellm.proxy.proxy_server.llm_router", llm_router),
+            patch("litellm.acompletion", new_callable=AsyncMock, return_value=stream) as probe,
+        ):
+            response = _client(LitellmUserRoles.PROXY_ADMIN).post("/qos/health/refresh")
+
+        expected_models: Final = models if saved else models[:1]
+        assert probe.await_count == len(expected_models)
+        assert {call.kwargs["api_base"] for call in probe.await_args_list} == {
+            model["litellm_params"]["api_base"] for model in expected_models
+        }
+        assert {call.kwargs["model_id"] for call in prisma.save_health_check_result.await_args_list} == {
+            model["model_info"]["id"] for model in expected_models
+        }
+        assert all(
+            call.kwargs["details"]["qos_ttft_ms"] is not None
+            for call in prisma.save_health_check_result.await_args_list
+        )
+        if saved:
+            assert response.status_code == 200
+            assert prisma.db.query_raw.await_count == 3
+            nodes: Final = response.json()["nodes"]
+            assert len(nodes) == len(models)
+            assert all((node["last_ttft_ms"], node["last_latency_ms"]) == (250.0, 1000.0) for node in nodes)
+        else:
+            assert response.status_code == 500
+            assert response.json()["detail"] == "Health checks completed but results could not be saved"
+
     def test_current_nodes_show_availability_and_latency_and_removed_models_are_left_out(self) -> None:
         history = [
             {

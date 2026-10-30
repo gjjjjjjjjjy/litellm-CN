@@ -17,7 +17,12 @@ SELECT
     (array_agg(status ORDER BY checked_at DESC))[1] AS latest_status,
     (array_agg(error_message ORDER BY checked_at DESC) FILTER (WHERE status = 'unhealthy'))[1] AS last_error,
     MAX(checked_at) FILTER (WHERE status = 'unhealthy') AS last_failure_at,
-    MAX(checked_at) AS last_checked_at
+    MAX(checked_at) AS last_checked_at,
+    (array_agg((details->>'qos_ttft_ms')::double precision ORDER BY checked_at DESC)
+        FILTER (WHERE details ? 'qos_ttft_ms'))[1] AS last_ttft_ms,
+    (array_agg((details->>'qos_latency_ms')::double precision ORDER BY checked_at DESC)
+        FILTER (WHERE details ? 'qos_ttft_ms'))[1] AS last_latency_ms,
+    MAX(checked_at) FILTER (WHERE details ? 'qos_ttft_ms') AS last_streamed_at
 FROM "LiteLLM_HealthCheckTable"
 WHERE checked_at >= $1::timestamp AND checked_at < $2::timestamp
 GROUP BY model_name, COALESCE(model_id, '')
@@ -53,6 +58,9 @@ class HealthHistoryRow(LiteLLMBaseModel):
     last_error: str | None
     last_failure_at: datetime | None
     last_checked_at: datetime
+    last_ttft_ms: float | None = None
+    last_latency_ms: float | None = None
+    last_streamed_at: datetime | None = None
 
 
 class HealthProbeRow(LiteLLMBaseModel):
@@ -112,6 +120,9 @@ def health_node(row: HealthHistoryRow, target: DeploymentTarget) -> QosHealthNod
         last_error=row.last_error,
         last_failure_at=row.last_failure_at,
         last_checked_at=row.last_checked_at,
+        last_ttft_ms=row.last_ttft_ms,
+        last_latency_ms=row.last_latency_ms,
+        last_streamed_at=row.last_streamed_at,
     )
 
 

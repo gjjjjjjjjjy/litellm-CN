@@ -7395,6 +7395,8 @@ class PrismaClient:
         model_id: str | None = None,
     ):
         """Save health check result to database"""
+        from prisma import Json
+
         try:
             # Build base data with required fields
             health_check_data: Final = {
@@ -7405,10 +7407,11 @@ class PrismaClient:
             }
 
             # Add optional fields using dict comprehension and helper methods
+            cleaned_details: Final = self._clean_details(details)
             optional_fields: Final = {
                 "error_message": str(error_message)[:500] if error_message else None,
                 "response_time_ms": self._validate_response_time(response_time_ms),
-                "details": self._clean_details(details),
+                "details": None if cleaned_details is None else Json(cleaned_details),
                 "checked_by": str(checked_by) if checked_by else None,
                 "model_id": str(model_id) if model_id else None,
             }

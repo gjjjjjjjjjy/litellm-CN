@@ -842,6 +842,7 @@ async def _save_health_check_results_if_changed(
     latest_checks_map: dict,
     start_time: float,
     checked_by: str | None = None,
+    persist_all: bool = False,
 ) -> bool:
     """
     Save health check results to database, but only if status changed or >1 hour since last save.
@@ -862,13 +863,18 @@ async def _save_health_check_results_if_changed(
         latest_checks_map: Dictionary mapping model_id/model_name to latest health check
         start_time: Start time of health check for calculating response time
         checked_by: Identifier for who/what performed the check
+        persist_all: Save an explicit manual check even when its status is unchanged
 
     Returns:
         True when every row that needed writing was written (including when nothing needed
         writing); False when any write failed.
     """
-    to_write: Final = tuple(
-        result for result in model_results.values() if _should_persist_health_check_result(result, latest_checks_map)
+    to_write: Final = (
+        tuple(model_results.values())
+        if persist_all
+        else tuple(
+            result for result in model_results.values() if _should_persist_health_check_result(result, latest_checks_map)
+        )
     )
     writes: Final = tuple(
         prisma_client.save_health_check_result(
@@ -895,6 +901,7 @@ async def save_background_health_checks_to_db(
     unhealthy_endpoints: list,
     start_time: float,
     checked_by: str | None = None,
+    persist_all: bool = False,
 ) -> bool:
     """
     Save background health check results to database for each model.
@@ -902,7 +909,7 @@ async def save_background_health_checks_to_db(
     Maps health check endpoints back to their original models to get model_name and model_id.
     Aggregates results per unique model (by model_id if available, otherwise model_name).
 
-    OPTIMIZATION: Only saves to database if the status has changed from the last saved check.
+    By default, only saves to database if the status changed or the previous record is over an hour old.
     This dramatically reduces database writes when health status remains stable.
 
     Returns:
@@ -939,6 +946,7 @@ async def save_background_health_checks_to_db(
             latest_checks_map,
             start_time,
             checked_by,
+            persist_all=persist_all,
         )
     except Exception as db_error:
         verbose_proxy_logger.warning("Failed to save background health checks to database: %s", db_error)
