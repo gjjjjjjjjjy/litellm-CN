@@ -23,6 +23,7 @@ import fireworksLogo from "../../public/assets/logos/fireworks.svg";
 import friendliLogo from "../../public/assets/logos/friendli.svg";
 import gigachatLogo from "../../public/assets/logos/gigachat.svg";
 import githubCopilotLogo from "../../public/assets/logos/github_copilot.svg";
+import giteeAiLogo from "../../public/assets/logos/gitee_ai.svg";
 import googleLogo from "../../public/assets/logos/google.svg";
 import groqLogo from "../../public/assets/logos/groq.svg";
 import huggingfaceLogo from "../../public/assets/logos/huggingface.svg";
@@ -367,6 +368,7 @@ export const providerLogoMap: Partial<Record<Providers, string>> = {
   [Providers.LLAMA]: metaLlamaLogo.src,
   [Providers.MiniMax]: minimaxLogo.src,
   [Providers.MistralAI]: mistralLogo.src,
+  [Providers.MOARK]: giteeAiLogo.src,
   [Providers.MOONSHOT]: moonshotLogo.src,
   [Providers.MORPH]: morphLogo.src,
   [Providers.NEBIUS]: nebiusLogo.src,

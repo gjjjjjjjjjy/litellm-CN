@@ -12,6 +12,7 @@ const TREATMENT_BY_ASSET: Readonly<Record<string, LogoTreatment>> = {
   "friendli.svg": "invert",
   "github.svg": "invert",
   "github_copilot.svg": "invert",
+  "gitee_ai.svg": "invert",
   "lago.svg": "invert",
   "lambda.svg": "invert",
   "langflow.svg": "invert",

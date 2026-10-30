@@ -12,7 +12,6 @@ import {
   CircleDashed,
   CircleX,
   Clock3,
-  Cpu,
   Globe2,
   RefreshCw,
   Timer,
@@ -21,6 +20,7 @@ import {
 import { useQosTargets } from "@/app/(dashboard)/hooks/qos/useQosBenchmarks";
 import { healthKeys, useQosHealth, useRefreshQosHealth } from "@/app/(dashboard)/hooks/qos/useQosHealth";
 import { homeKeys } from "@/app/(dashboard)/hooks/qos/useQosHome";
+import { Logo } from "@/components/molecules/logo/Logo";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -126,7 +126,11 @@ const ChannelStatusCard = ({ card, now }: { card: ChannelCard; now: Date }) => {
     <article className="min-w-0 overflow-hidden rounded-xl border border-border/70 bg-card p-5 shadow-xs transition-shadow hover:shadow-sm">
       <header className="flex items-start gap-3">
         <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-blue-500/8 text-blue-600 dark:text-blue-400">
-          <Cpu className="size-4" aria-hidden="true" />
+          <Logo
+            provider={card.deployment.vendor}
+            label={vendorName(card.deployment.vendor)}
+            className="size-5 object-contain"
+          />
         </span>
         <div className="min-w-0 flex-1">
           <h3 className="truncate text-[15px] font-semibold tracking-tight" title={card.model}>

@@ -83,6 +83,10 @@ describe("HomeBoard", () => {
     expect(within(cards[1]).getByText("Operational")).toBeInTheDocument();
     expect(within(cards[1]).getByText("900 ms")).toBeInTheDocument();
     expect(within(cards[1]).getByText("2.00 s")).toBeInTheDocument();
+    expect(within(cards[1]).getByRole("img", { name: "Moark (Gitee AI) logo" })).toHaveAttribute(
+      "src",
+      expect.stringContaining("gitee_ai"),
+    );
   });
 
   it("shows recent service events without loading announcement or news feeds", async () => {
