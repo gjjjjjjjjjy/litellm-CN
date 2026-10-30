@@ -211,7 +211,7 @@ describe("QosView", () => {
     await user.click(screen.getByRole("tab", { name: "Video review" }));
 
     expect(await screen.findByRole("heading", { name: "Ratings per model" })).toBeInTheDocument();
-    expect(await screen.findByText("No finished videos in this time range")).toBeInTheDocument();
+    expect(await screen.findByText("No finished probe videos in this time range")).toBeInTheDocument();
     expect(vi.mocked(apiClient.get).mock.calls.some(([path]) => path === "/qos/videos")).toBe(true);
   });
 

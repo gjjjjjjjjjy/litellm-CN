@@ -8,6 +8,9 @@ import { renderWithProviders, testQueryClient } from "../../../../../tests/test-
 
 vi.mock("@/components/networking", () => ({ apiClient: { get: vi.fn(), getBlob: vi.fn(), put: vi.fn() } }));
 
+const PROBE_PROMPT = "固定镜头：阳光下的绿色草地上，一个红色皮球从画面左侧向右滚动，蓝天上飘着白云";
+const OLDER_PROMPT = "颜色缓慢流动的渐变";
+
 const earlierReview = {
   overall: 4,
   visual: 5,
@@ -37,21 +40,31 @@ const reviews = {
   ],
   videos: [
     {
+      video_id: "video-minimax",
+      model_group: "MiniMax-H3",
+      created_at: "2026-10-30T09:00:01Z",
+      completed_at: "2026-10-30T09:01:40Z",
+      prompt: PROBE_PROMPT,
+      reviews: 0,
+      overall: null,
+      my_review: null,
+    },
+    {
       video_id: "video-ltx",
       model_group: "LTX-2",
-      created_at: "2026-10-29T08:06:26Z",
-      completed_at: "2026-10-29T08:08:17Z",
-      prompt: null,
+      created_at: "2026-10-30T09:00:00Z",
+      completed_at: "2026-10-30T09:02:17Z",
+      prompt: PROBE_PROMPT,
       reviews: 2,
       overall: 3.5,
       my_review: earlierReview,
     },
     {
-      video_id: "video-minimax",
-      model_group: "MiniMax-H3",
+      video_id: "video-wan",
+      model_group: "Wan2_2-I2V-A14B",
       created_at: "2026-10-29T09:00:00Z",
-      completed_at: "2026-10-29T09:01:40Z",
-      prompt: "一只猫在阳光下的草地上慢慢走",
+      completed_at: "2026-10-29T09:10:00Z",
+      prompt: OLDER_PROMPT,
       reviews: 0,
       overall: null,
       my_review: null,
@@ -59,11 +72,12 @@ const reviews = {
   ],
 };
 
-const cardOf = (modelGroup: string): HTMLElement => {
-  const card = screen.getByText(modelGroup, { selector: '[data-slot="card-title"]' }).closest('[data-slot="card"]');
-  if (!(card instanceof HTMLElement)) throw new Error(`No review card for ${modelGroup}`);
-  return card;
-};
+const cardOf = (modelGroup: string): HTMLElement => screen.getByRole("article", { name: modelGroup });
+
+const cardTitles = (group: HTMLElement): (string | null)[] =>
+  within(group)
+    .getAllByText(/.+/, { selector: '[data-slot="card-title"]' })
+    .map((title) => title.textContent);
 
 const scoreButton = (card: HTMLElement, dimension: string, score: number): HTMLElement =>
   within(within(card).getByRole("radiogroup", { name: dimension })).getByRole("radio", { name: String(score) });
@@ -79,21 +93,19 @@ describe("QosVideoReviewPanel", () => {
     Object.defineProperty(URL, "revokeObjectURL", { value: vi.fn(), configurable: true });
   });
 
-  it("shows each model's average ratings and the videos to review, with a probe video's prompt", async () => {
+  it("shows each model's average ratings and the videos of each prompt under that prompt", async () => {
     renderWithProviders(<QosVideoReviewPanel accessToken="token" />);
 
-    const minimax = await screen.findByText("MiniMax-H3", { selector: '[data-slot="card-title"]' });
-    expect(minimax).toBeInTheDocument();
+    await screen.findByText("MiniMax-H3", { selector: '[data-slot="card-title"]' });
     const summaryRow = screen.getAllByRole("row").find((row) => within(row).queryByText("LTX-2") !== null);
     expect(
       within(summaryRow as HTMLElement)
         .getAllByRole("cell")
         .map((cell) => cell.textContent),
     ).toEqual(["LTX-2", "1", "2", "3.5", "5.0", "2.0", "-", "-", "-"]);
-    expect(within(cardOf("MiniMax-H3")).getByText("一只猫在阳光下的草地上慢慢走")).toBeInTheDocument();
-    expect(
-      within(cardOf("LTX-2")).getByText(/only videos made by the scheduled probe keep their prompt/),
-    ).toBeInTheDocument();
+    expect(cardTitles(screen.getByRole("group", { name: /红色皮球/ }))).toEqual(["MiniMax-H3", "LTX-2"]);
+    expect(cardTitles(screen.getByRole("group", { name: new RegExp(OLDER_PROMPT) }))).toEqual(["Wan2_2-I2V-A14B"]);
+    expect(screen.getAllByText(PROBE_PROMPT)).toHaveLength(1);
   });
 
   it("asks for the last 7 days by default", async () => {

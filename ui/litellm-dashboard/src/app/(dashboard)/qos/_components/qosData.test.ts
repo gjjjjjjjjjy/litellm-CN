@@ -24,8 +24,10 @@ import {
   reviewInput,
   reviewScores,
   targetChoiceValue,
+  videosByPrompt,
   videosWithoutResult,
   type QosDeploymentMetrics,
+  type QosReviewVideo,
   type QosSummary,
   type TargetChoice,
 } from "./qosData";
@@ -333,6 +335,32 @@ describe("video review helpers", () => {
     expect(reviewInput({ motion: 3 }, "blurry")).toBeNull();
     expect(reviewInput({ overall: 2, motion: 3 }, "  blurry  ")).toEqual({ overall: 2, motion: 3, comment: "blurry" });
     expect(reviewInput({ overall: 5 }, "   ")).toEqual({ overall: 5, comment: null });
+  });
+
+  it("puts each video under its prompt, newest prompt first, keeping the newest-first order inside a prompt", () => {
+    const video = (video_id: string, prompt: string): QosReviewVideo => ({
+      video_id,
+      model_group: video_id,
+      created_at: "2026-10-30T09:00:00Z",
+      completed_at: "2026-10-30T09:02:00Z",
+      prompt,
+      reviews: 0,
+      overall: null,
+      my_review: null,
+    });
+
+    const groups = videosByPrompt([
+      video("ltx-new", "ball"),
+      video("wan-old", "gradient"),
+      video("minimax-new", "ball"),
+      video("ltx-old", "gradient"),
+    ]);
+
+    expect(groups.map((group) => [group.prompt, group.videos.map((each) => each.video_id)])).toEqual([
+      ["ball", ["ltx-new", "minimax-new"]],
+      ["gradient", ["wan-old", "ltx-old"]],
+    ]);
+    expect(videosByPrompt([])).toEqual([]);
   });
 
   it("shows an average rating with one decimal and a missing one as a dash", () => {

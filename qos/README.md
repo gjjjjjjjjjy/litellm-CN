@@ -39,10 +39,10 @@
 视频模型没有后台健康检查，`qos/media_probe.py` 经网关为每个视频模型生成一条视频并轮询到结束，提交、最终状态、排队时间、生成时间和价格都会计入「音视频」标签页。部署的 `model_info` 中设置了 `qos_probe` 的视频模型才参与探测
 
 ```json
-{"qos_probe": {"prompt": "颜色缓慢流动的渐变", "image": true, "params": {"num_frames": 25}}}
+{"qos_probe": {"image": true, "params": {"num_frames": 73}}}
 ```
 
-`prompt` 默认为一句文生视频提示词。`image` 为 true 时以图生视频提交，测试图由脚本生成。`params` 原样作为请求字段，例如时长 `seconds`、分辨率 `width` 和 `height`
+所有模型用同一句 Prompt（脚本里的 `PROBE_PROMPT`，一个红色皮球从左向右滚过草地），评审时才能横向对比。`image` 为 true 时以图生视频提交，首帧是脚本按这句 Prompt 画的同一张图：草地左侧一个红色皮球，上方是蓝天白云。`params` 原样作为请求字段，例如时长 `seconds`、分辨率 `width` 和 `height`，但改不了 Prompt。各模型的时长和分辨率也应尽量接近，对比才公平
 
 ```bash
 LITELLM_API_KEY=sk-... python qos/media_probe.py --base-url http://<网关地址> --every 10800
@@ -50,11 +50,11 @@ LITELLM_API_KEY=sk-... python qos/media_probe.py --base-url http://<网关地址
 
 `--every` 为运行间隔（秒），按整点对齐，网关重启不会额外运行；不加时只运行一次。`--dry-run` 只列出参与探测的模型和参数。脚本只依赖 httpx 和 pydantic，可直接用网关镜像运行。每次探测按服务商标价计费，间隔要按预算设置
 
-探测请求带 `x-litellm-tags: qos-media-probe` 标签，网关只为这类请求记录视频的提示词，其他请求的提示词照旧不保存
+探测请求带 `x-litellm-tags: qos-media-probe` 标签，网关只为这类请求记录视频的 Prompt，其他请求的 Prompt 照旧不保存
 
 ### 视频评审
 
-「服务质量」页面的「视频评审」标签页列出已生成完成的视频，管理员可以直接播放，并按总体、画质、运动、Prompt 贴合度、物理常识、声音六项打 1–5 分，总体必填，可附评语。每位评审人对同一视频只保留最后一次评分，页面上方按模型汇总评审数和各项平均分
+「服务质量」页面的「视频评审」标签页只列出定时探测生成完成的视频，按 Prompt 分组，同一轮探测的各模型视频排在一起，方便并排对比。管理员可以直接播放，并按总体、画质、运动、Prompt 贴合度、物理常识、声音六项打 1–5 分，总体必填，可附评语。每位评审人对同一视频只保留最后一次评分，页面上方按模型汇总评审数和各项平均分
 
 视频经网关用生成它的模型的凭证取回，评审人不需要模型调用权限。评分记在该视频创建请求的 SpendLogs `metadata.qos_video_reviews` 里，按评审人区分，随请求日志一起保留和清理
 

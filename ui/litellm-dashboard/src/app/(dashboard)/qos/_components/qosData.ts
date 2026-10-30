@@ -315,6 +315,14 @@ export const reviewScores = (review: QosVideoReview | null | undefined): ReviewS
         }),
       );
 
+export type PromptVideos = { readonly prompt: string; readonly videos: readonly QosReviewVideo[] };
+
+export const videosByPrompt = (videos: readonly QosReviewVideo[]): readonly PromptVideos[] =>
+  [...new Set(videos.map((video) => video.prompt))].map((prompt) => ({
+    prompt,
+    videos: videos.filter((video) => video.prompt === prompt),
+  }));
+
 export const reviewInput = (scores: ReviewScores, comment: string): QosVideoReviewInput | null => {
   const overall = scores.overall;
   if (overall === undefined) return null;

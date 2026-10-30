@@ -1047,7 +1047,7 @@ class TestVideoReviews:
         assert response.status_code == 422
         prisma.db.query_raw.assert_not_awaited()
 
-    def test_a_review_of_a_video_the_gateway_never_created_is_not_found(self) -> None:
+    def test_a_review_of_a_video_the_scheduled_probe_did_not_make_is_not_found(self) -> None:
         prisma: Final = MagicMock()
         prisma.db.query_raw = AsyncMock(return_value=[])
         with patch("litellm.proxy.proxy_server.prisma_client", prisma):

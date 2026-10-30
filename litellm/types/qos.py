@@ -172,7 +172,7 @@ class QosReviewVideo(LiteLLMBaseModel):
     model_group: str
     created_at: UtcDatetime
     completed_at: UtcDatetime
-    prompt: str | None = Field(description="The prompt of a scheduled probe video; other prompts are not stored")
+    prompt: str = Field(description="The prompt the scheduled probe gave every model in its run")
     reviews: int
     overall: float | None = Field(description="Average overall rating of this video")
     my_review: QosVideoReview | None

@@ -14424,7 +14424,7 @@ export interface paths {
         };
         /**
          * Get Qos Videos
-         * @description Finished videos to watch and rate, newest first, and each model's average ratings.
+         * @description Finished videos the scheduled probe made, newest first, to watch and rate, and each model's average ratings.
          */
         get: operations["get_qos_videos_qos_videos_get"];
         put?: never;
@@ -43724,9 +43724,9 @@ export interface components {
             overall: number | null;
             /**
              * Prompt
-             * @description The prompt of a scheduled probe video; other prompts are not stored
+             * @description The prompt the scheduled probe gave every model in its run
              */
-            prompt: string | null;
+            prompt: string;
             /** Reviews */
             reviews: number;
             /** Video Id */

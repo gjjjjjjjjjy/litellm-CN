@@ -458,7 +458,7 @@ async def get_qos_videos(
         bool, Query(description="Include all retained history; cannot be combined with start_time")
     ] = False,
 ) -> QosVideoReviewsResponse:
-    """Finished videos to watch and rate, newest first, and each model's average ratings."""
+    """Finished videos the scheduled probe made, newest first, to watch and rate, and each model's average ratings."""
     from litellm.proxy.proxy_server import prisma_client
 
     require_video_reviewer(user_api_key_dict)
@@ -534,7 +534,7 @@ async def put_qos_video_review(
         )
     )
     if not recorded:
-        raise HTTPException(status_code=404, detail="No video with this id was generated through the gateway")
+        raise HTTPException(status_code=404, detail="No video with this id was made by the scheduled probe")
     return saved
 
 

@@ -29,6 +29,8 @@ import {
   type QosVideoReviewSummary,
   type ReviewDimension,
   type ReviewScores,
+  type PromptVideos,
+  videosByPrompt,
 } from "./qosData";
 
 const SCORES = [1, 2, 3, 4, 5] as const;
@@ -125,26 +127,17 @@ function VideoReviewCard({ accessToken, video }: { accessToken: string | null; v
   const [comment, setComment] = React.useState(() => video.my_review?.comment ?? "");
   const save = useSaveVideoReview(accessToken);
   const input = reviewInput(scores, comment);
+  const titleId = React.useId();
 
   return (
-    <Card>
+    <Card role="article" aria-labelledby={titleId}>
       <CardHeader>
-        <CardTitle>{video.model_group}</CardTitle>
+        <CardTitle id={titleId}>{video.model_group}</CardTitle>
         <CardDescription>
           {new Date(video.created_at).toLocaleString()} · {video.reviews} ratings · average {formatScore(video.overall)}
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-3">
-        {video.prompt === null ? (
-          <p className="text-sm text-muted-foreground">
-            No prompt recorded: only videos made by the scheduled probe keep their prompt.
-          </p>
-        ) : (
-          <p className="text-sm">
-            <span className="text-muted-foreground">Prompt: </span>
-            {video.prompt}
-          </p>
-        )}
         <VideoPlayer accessToken={accessToken} videoId={video.video_id} />
         <div className="flex flex-col gap-2">
           {REVIEW_DIMENSIONS.map((dimension) => (
@@ -178,6 +171,23 @@ function VideoReviewCard({ accessToken, video }: { accessToken: string | null; v
         </div>
       </CardContent>
     </Card>
+  );
+}
+
+function PromptGroup({ accessToken, group }: { accessToken: string | null; group: PromptVideos }) {
+  const labelId = React.useId();
+  return (
+    <div role="group" aria-labelledby={labelId} className="flex flex-col gap-3">
+      <p id={labelId} className="text-sm">
+        <span className="text-muted-foreground">Prompt: </span>
+        {group.prompt}
+      </p>
+      <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
+        {group.videos.map((video) => (
+          <VideoReviewCard key={video.video_id} accessToken={accessToken} video={video} />
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -236,20 +246,21 @@ export default function QosVideoReviewPanel({ accessToken }: { accessToken: stri
         />
       </section>
 
-      <section className="flex flex-col gap-2">
-        <h3 className="text-base font-semibold">Videos to review</h3>
-        <p className="text-sm text-muted-foreground">
-          Watch each finished video and rate it from 1 (bad) to 5 (good). Saving again replaces your own earlier rating;
-          other reviewers keep theirs.
-        </p>
-        {data !== undefined && data.videos.length === 0 && (
-          <p className="text-sm text-muted-foreground">No finished videos in this time range</p>
-        )}
-        <div className="grid gap-4 lg:grid-cols-2">
-          {(data?.videos ?? []).map((video) => (
-            <VideoReviewCard key={video.video_id} accessToken={accessToken} video={video} />
-          ))}
+      <section className="flex flex-col gap-4">
+        <div className="flex flex-col gap-2">
+          <h3 className="text-base font-semibold">Videos to review</h3>
+          <p className="text-sm text-muted-foreground">
+            Every model in a probe run gets the same prompt, and the image-to-video models the same first frame, so
+            compare them side by side and rate each from 1 (bad) to 5 (good). Saving again replaces your own earlier
+            rating; other reviewers keep theirs.
+          </p>
         </div>
+        {data !== undefined && data.videos.length === 0 && (
+          <p className="text-sm text-muted-foreground">No finished probe videos in this time range</p>
+        )}
+        {videosByPrompt(data?.videos ?? []).map((group) => (
+          <PromptGroup key={group.prompt} accessToken={accessToken} group={group} />
+        ))}
       </section>
     </div>
   );

@@ -1,8 +1,10 @@
 """
 Manual video review: finished videos to watch and rate, and the ratings per model.
 
-Ratings live on the video's creation spend log row under `qos_video_reviews`, one entry per reviewer, so they
-age out with the rest of service quality data and need no table of their own.
+Only videos the scheduled probe made are reviewed: every model got the same prompt, so their ratings compare, and
+theirs is the only prompt the gateway stores. Ratings live on the video's creation spend log row under
+`qos_video_reviews`, one entry per reviewer, so they age out with the rest of service quality data and need no table
+of their own.
 """
 
 from collections.abc import Mapping
@@ -24,6 +26,7 @@ from litellm.types.qos import QosReviewVideo, QosVideoReview, QosVideoReviewSumm
 QOS_VIDEO_REVIEWS_KEY: Final = "qos_video_reviews"
 REVIEW_VIDEO_LIMIT: Final = 200
 _CREATED: Final = sql_list(VIDEO_CREATE_CALL_TYPES)
+_PROBE_MADE: Final = f"metadata -> '{QOS_MEDIA_KEY}' ->> 'prompt' IS NOT NULL"
 
 REVIEW_VIDEOS_SQL: Final = f"""
 WITH created AS (
@@ -35,6 +38,7 @@ WITH created AS (
     WHERE "startTime" >= $1::timestamp AND "startTime" < $2::timestamp
         AND call_type IN ({_CREATED})
         AND metadata -> '{QOS_MEDIA_KEY}' ->> 'task_id' IS NOT NULL
+        AND {_PROBE_MADE}
 ),
 finished AS (
     SELECT metadata -> '{QOS_MEDIA_KEY}' ->> 'task_id' AS task_id, MIN("startTime") AS completed_at
@@ -65,6 +69,7 @@ FROM "LiteLLM_SpendLogs" AS logs
 CROSS JOIN LATERAL jsonb_each(logs.metadata -> '{QOS_VIDEO_REVIEWS_KEY}') AS review
 WHERE logs."startTime" >= $1::timestamp AND logs."startTime" < $2::timestamp
     AND logs.call_type IN ({_CREATED})
+    AND logs.{_PROBE_MADE}
     AND jsonb_typeof(logs.metadata -> '{QOS_VIDEO_REVIEWS_KEY}') = 'object'
 GROUP BY 1
 ORDER BY 1
@@ -76,7 +81,7 @@ SET metadata = COALESCE(metadata, '{{}}'::jsonb) || jsonb_build_object(
     '{QOS_VIDEO_REVIEWS_KEY}',
     COALESCE(metadata -> '{QOS_VIDEO_REVIEWS_KEY}', '{{}}'::jsonb) || jsonb_build_object($2::text, $3::jsonb)
 )
-WHERE request_id = $1 AND call_type IN ({_CREATED})
+WHERE request_id = $1 AND call_type IN ({_CREATED}) AND {_PROBE_MADE}
 RETURNING request_id
 """
 
@@ -87,7 +92,7 @@ class ReviewVideoRow(LiteLLMBaseModel):
     video_id: str
     created_at: datetime
     model_group: str
-    prompt: str | None
+    prompt: str
     reviews: Mapping[str, QosVideoReview]
     completed_at: datetime
 

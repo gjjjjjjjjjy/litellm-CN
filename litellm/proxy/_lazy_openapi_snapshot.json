@@ -55123,16 +55123,9 @@
               "title": "Overall"
             },
             "prompt": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "description": "The prompt of a scheduled probe video; other prompts are not stored",
-              "title": "Prompt"
+              "description": "The prompt the scheduled probe gave every model in its run",
+              "title": "Prompt",
+              "type": "string"
             },
             "reviews": {
               "title": "Reviews",
@@ -56785,7 +56778,7 @@
       },
       "/qos/videos": {
         "get": {
-          "description": "Finished videos to watch and rate, newest first, and each model's average ratings.",
+          "description": "Finished videos the scheduled probe made, newest first, to watch and rate, and each model's average ratings.",
           "operationId": "get_qos_videos_qos_videos_get",
           "parameters": [
             {
