@@ -25,6 +25,7 @@ from litellm.proxy.video_endpoints.utils import (
     get_custom_provider_from_data,
     video_reference_to_id,
 )
+from litellm.types.videos.main import VideoObject
 from litellm.types.videos.utils import (
     decode_character_id_with_provider,
     decode_video_id_with_provider,
@@ -304,8 +305,9 @@ async def video_status(
             proxy_logging_obj=proxy_logging_obj,
             version=version,
         )
-    else:
-        return status
+    if provider_from_id and isinstance(status, VideoObject):
+        return status.model_copy(update={"id": video_id})
+    return status
 
 
 @router.get(
