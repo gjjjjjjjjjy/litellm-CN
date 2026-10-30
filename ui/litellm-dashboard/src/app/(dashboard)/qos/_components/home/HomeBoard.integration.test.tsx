@@ -6,9 +6,7 @@ import HomeBoard from "./HomeBoard";
 import { apiClient } from "@/components/networking";
 import { renderWithProviders, testQueryClient } from "../../../../../../tests/test-utils";
 
-vi.mock("@/components/networking", () => ({ apiClient: { get: vi.fn(), post: vi.fn(), delete: vi.fn() } }));
-const authorized = vi.hoisted(() => ({ userRole: "Admin", isViewOnly: false }));
-vi.mock("@/app/(dashboard)/hooks/useAuthorized", () => ({ default: () => authorized }));
+vi.mock("@/components/networking", () => ({ apiClient: { get: vi.fn() } }));
 
 const percentiles = (p95: number) => ({ p50: p95 / 2, p95, p99: p95 });
 
@@ -78,17 +76,6 @@ const responses: Record<string, unknown> = {
     nodes: [node("GLM-5.3", "healthy"), node("Qwen3", "unhealthy")],
     probes: [],
   },
-  "/qos/announcements": {
-    announcements: [
-      {
-        id: "a1",
-        title: "Maintenance on Saturday",
-        body: "02:00-04:00",
-        author: "admin@example.com",
-        created_at: "2026-10-26T11:00:00Z",
-      },
-    ],
-  },
   "/qos/home/activity": {
     events: [
       {
@@ -106,11 +93,7 @@ const responses: Record<string, unknown> = {
 describe("HomeBoard", () => {
   beforeEach(() => {
     testQueryClient.clear();
-    authorized.userRole = "Admin";
-    authorized.isViewOnly = false;
     vi.mocked(apiClient.get).mockReset();
-    vi.mocked(apiClient.post).mockReset();
-    vi.mocked(apiClient.delete).mockReset();
     vi.mocked(apiClient.get).mockImplementation(async (path: string) => responses[path]);
   });
 
@@ -126,12 +109,13 @@ describe("HomeBoard", () => {
     expect(within(cards[1]).getByText("2.00 s")).toBeInTheDocument();
   });
 
-  it("keeps announcements and recent service events without requesting news", async () => {
+  it("shows recent service events without loading announcement or news feeds", async () => {
     renderWithProviders(<HomeBoard accessToken="token" />);
 
-    expect(await screen.findByText("Maintenance on Saturday")).toBeInTheDocument();
     expect(await screen.findByText("Qwen3 node unhealthy")).toBeInTheDocument();
     expect(apiClient.get).not.toHaveBeenCalledWith("/qos/home/news", expect.anything());
+    expect(apiClient.get).not.toHaveBeenCalledWith("/qos/announcements", expect.anything());
+    expect(screen.queryByRole("heading", { name: "Announcements" })).not.toBeInTheDocument();
   });
 
   it("shows an unchecked channel as awaiting checks even when it has successful traffic", async () => {
@@ -151,7 +135,7 @@ describe("HomeBoard", () => {
   it("refreshes the channel list, health checks and request metrics with one action", async () => {
     const user = userEvent.setup();
     renderWithProviders(<HomeBoard accessToken="token" />);
-    await screen.findByText("Maintenance on Saturday");
+    await screen.findByText("Qwen3 node unhealthy");
     await waitFor(() => expect(screen.getByRole("button", { name: "Refresh" })).toBeEnabled());
     vi.mocked(apiClient.get).mockClear();
 
@@ -161,46 +145,6 @@ describe("HomeBoard", () => {
         new Set(["/qos/targets", "/qos/health", "/qos/summary"]),
       ),
     );
-  });
-
-  it("lets an admin post an announcement", async () => {
-    const user = userEvent.setup();
-    vi.mocked(apiClient.post).mockResolvedValue({ announcements: [] });
-    renderWithProviders(<HomeBoard accessToken="token" />);
-
-    await user.click(await screen.findByRole("button", { name: "Post" }));
-    await user.type(screen.getByLabelText("Title"), "Benchmarks paused");
-    await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Post" }));
-
-    expect(apiClient.post).toHaveBeenCalledWith("/qos/announcements", {
-      accessToken: "token",
-      body: { title: "Benchmarks paused", body: "" },
-    });
-  });
-
-  it("deletes an announcement only after the admin confirms", async () => {
-    const user = userEvent.setup();
-    vi.mocked(apiClient.delete).mockResolvedValue({ announcements: [] });
-    renderWithProviders(<HomeBoard accessToken="token" />);
-
-    await user.click(await screen.findByRole("button", { name: "Delete announcement" }));
-    expect(apiClient.delete).not.toHaveBeenCalled();
-    await user.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: "Delete" }));
-
-    expect(apiClient.delete).toHaveBeenCalledWith("/qos/announcements/a1", { accessToken: "token" });
-    await waitFor(() => expect(screen.queryByText("Maintenance on Saturday")).not.toBeInTheDocument());
-    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
-  });
-
-  it("keeps the confirmation open with the reason when deleting fails", async () => {
-    const user = userEvent.setup();
-    vi.mocked(apiClient.delete).mockRejectedValue(new Error("Announcement a1 not found"));
-    renderWithProviders(<HomeBoard accessToken="token" />);
-
-    await user.click(await screen.findByRole("button", { name: "Delete announcement" }));
-    await user.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: "Delete" }));
-
-    expect(await within(screen.getByRole("alertdialog")).findByText("Announcement a1 not found")).toBeInTheDocument();
   });
 
   it("exposes a health-check loading failure without reporting an update time", async () => {
@@ -214,14 +158,5 @@ describe("HomeBoard", () => {
     expect(screen.getByText(/Health service unreachable/)).toBeInTheDocument();
     await waitFor(() => expect(screen.queryByText("Refreshing")).not.toBeInTheDocument());
     expect(screen.queryByText(/^Updated /)).not.toBeInTheDocument();
-  });
-
-  it("offers no posting or deleting to other users", async () => {
-    authorized.userRole = "Internal User";
-    renderWithProviders(<HomeBoard accessToken="token" />);
-
-    await screen.findByText("Maintenance on Saturday");
-    expect(screen.queryByRole("button", { name: "Post" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Delete announcement" })).not.toBeInTheDocument();
   });
 });

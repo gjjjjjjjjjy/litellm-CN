@@ -7,17 +7,15 @@ import { Activity, CircleAlert, CircleCheck, CircleDashed, CircleX, Clock3, Refr
 import { useQosTargets } from "@/app/(dashboard)/hooks/qos/useQosBenchmarks";
 import { useQosHealth } from "@/app/(dashboard)/hooks/qos/useQosHealth";
 import { useQosSummary } from "@/app/(dashboard)/hooks/qos/useQosSummary";
-import useAuthorized from "@/app/(dashboard)/hooks/useAuthorized";
 import { Logo } from "@/components/molecules/logo/Logo";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/cva.config";
 import { extractErrorMessage } from "@/utils/errorUtils";
-import { isProxyAdminRole } from "@/utils/roles";
 import { uiHref } from "@/utils/uiHref";
 import { formatMs, vendorName } from "../qosData";
-import { ActivityPanel, AnnouncementsPanel } from "./HomeFeeds";
+import { ActivityPanel } from "./HomeFeeds";
 import {
   channelCards,
   overallStatus,
@@ -169,8 +167,6 @@ const ChannelStatusCard = ({ card, now }: { card: ChannelCard; now: Date }) => {
 };
 
 export default function HomeBoard({ accessToken }: { accessToken: string | null }) {
-  const { userRole, isViewOnly } = useAuthorized();
-  const canManage = isProxyAdminRole(userRole) && !isViewOnly;
   const now = useNow();
   const targetsQuery = useQosTargets(accessToken, REFRESH_MS);
   const healthQuery = useQosHealth(accessToken, BOARD_RANGE, REFRESH_MS);
@@ -311,10 +307,7 @@ export default function HomeBoard({ accessToken }: { accessToken: string | null 
           </div>
         </section>
 
-        <div className="grid items-start gap-4 lg:grid-cols-2">
-          <AnnouncementsPanel accessToken={accessToken} canManage={canManage} now={now} />
-          <ActivityPanel accessToken={accessToken} refreshMs={REFRESH_MS} now={now} />
-        </div>
+        <ActivityPanel accessToken={accessToken} refreshMs={REFRESH_MS} now={now} />
       </div>
     </div>
   );
