@@ -43864,6 +43864,8 @@ export interface components {
             audio?: number | null;
             /** Comment */
             comment?: string | null;
+            /** Detail */
+            detail?: number | null;
             /** Motion */
             motion?: number | null;
             /** Overall */
@@ -43889,6 +43891,8 @@ export interface components {
             audio?: number | null;
             /** Comment */
             comment?: string | null;
+            /** Detail */
+            detail?: number | null;
             /** Motion */
             motion?: number | null;
             /** Overall */
@@ -43904,6 +43908,8 @@ export interface components {
             alignment: number | null;
             /** Audio */
             audio: number | null;
+            /** Detail */
+            detail: number | null;
             /** Model Group */
             model_group: string;
             /** Motion */

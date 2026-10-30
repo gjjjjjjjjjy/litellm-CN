@@ -152,6 +152,7 @@ class QosVideoReviewInput(LiteLLMBaseModel):
 
     overall: ReviewScore
     visual: ReviewScore | None = None
+    detail: ReviewScore | None = None
     motion: ReviewScore | None = None
     alignment: ReviewScore | None = None
     physics: ReviewScore | None = None
@@ -186,6 +187,7 @@ class QosVideoReviewSummary(LiteLLMBaseModel):
     reviews: int
     overall: float | None
     visual: float | None
+    detail: float | None
     motion: float | None
     alignment: float | None
     physics: float | None

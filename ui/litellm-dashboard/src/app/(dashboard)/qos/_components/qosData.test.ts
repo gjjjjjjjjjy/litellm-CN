@@ -320,6 +320,7 @@ describe("video review helpers", () => {
     const review = {
       overall: 4,
       visual: null,
+      detail: 3,
       motion: 2,
       alignment: null,
       physics: null,
@@ -327,7 +328,8 @@ describe("video review helpers", () => {
       comment: "jittery hands",
       reviewed_at: "2026-10-29T08:00:00Z",
     };
-    expect(reviewScores(review)).toEqual({ overall: 4, motion: 2, audio: 5 });
+    const chosenScores = { overall: 4, detail: 3, motion: 2, audio: 5 };
+    expect(reviewScores(review)).toEqual(chosenScores);
     expect(reviewScores(null)).toEqual({});
   });
 

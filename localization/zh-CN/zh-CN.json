@@ -8362,6 +8362,7 @@
   "Via tool permissions": "通过工具权限",
   "Via toolset: {0}": "通过工具集：{0}",
   "Video Generation - /videos": "视频生成 - /videos",
+  "Video detail": "视频细节",
   "Video generation": "视频生成",
   "Video generation requests that started in the time range, each creating at most one provider task.": "开始时间在所选时间范围内的视频生成请求，每个请求最多创建一个服务商任务。",
   "Video review": "视频评审",

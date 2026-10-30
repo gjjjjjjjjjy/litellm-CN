@@ -906,6 +906,7 @@ class TestBenchmarkDeletion:
 _REVIEW: Final = {
     "overall": 4,
     "visual": 5,
+    "detail": 2,
     "motion": 3,
     "alignment": None,
     "physics": 4,
@@ -972,6 +973,7 @@ class TestVideoReviews:
             "reviews": 2,
             "overall": 3.5,
             "visual": 5.0,
+            "detail": 2.5,
             "motion": 3.0,
             "alignment": None,
             "physics": 4.0,
@@ -1014,12 +1016,19 @@ class TestVideoReviews:
 
         with patch("litellm.proxy.proxy_server.prisma_client", prisma):
             response: Final = _client(role).put(
-                "/qos/videos/review?video_id=video-1", json={"overall": 4, "motion": 2, "comment": "jittery hands"}
+                "/qos/videos/review?video_id=video-1",
+                json={"overall": 4, "detail": 1, "motion": 2, "comment": "jittery hands"},
             )
 
         assert response.status_code == 200, response.text
         saved: Final = response.json()
-        assert (saved["overall"], saved["motion"], saved["visual"], saved["comment"]) == (4, 2, None, "jittery hands")
+        assert (saved["overall"], saved["detail"], saved["motion"], saved["visual"], saved["comment"]) == (
+            4,
+            1,
+            2,
+            None,
+            "jittery hands",
+        )
         ((sql, video_id, reviewer, stored),) = (call.args for call in prisma.db.query_raw.await_args_list)
         assert (sql, video_id, reviewer) == (RECORD_VIDEO_REVIEW_SQL, "video-1", "default_user_id")
         assert json.loads(stored) == saved
@@ -1030,6 +1039,7 @@ class TestVideoReviews:
             {"overall": 0},
             {"overall": 6},
             {"overall": 3, "physics": 9},
+            {"overall": 3, "detail": 0},
             {"overall": 3, "comment": "x" * 501},
             {"visual": 4},
             {"overall": 3, "sharpness": 4},

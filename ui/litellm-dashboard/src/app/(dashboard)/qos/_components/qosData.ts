@@ -280,11 +280,12 @@ export type QosVideoReview = components["schemas"]["QosVideoReview"];
 export type QosVideoReviewInput = components["schemas"]["QosVideoReviewInput"];
 export type QosVideoReviewSummary = components["schemas"]["QosVideoReviewSummary"];
 
-export type ReviewDimension = "overall" | "visual" | "motion" | "alignment" | "physics" | "audio";
+export type ReviewDimension = "overall" | "visual" | "detail" | "motion" | "alignment" | "physics" | "audio";
 
 export const REVIEW_DIMENSIONS: readonly ReviewDimension[] = [
   "overall",
   "visual",
+  "detail",
   "motion",
   "alignment",
   "physics",
@@ -294,6 +295,7 @@ export const REVIEW_DIMENSIONS: readonly ReviewDimension[] = [
 export const REVIEW_DIMENSION_LABELS: Readonly<Record<ReviewDimension, string>> = {
   overall: "Overall",
   visual: "Visual quality",
+  detail: "Video detail",
   motion: "Motion",
   alignment: "Prompt alignment",
   physics: "Physics and common sense",

@@ -14,6 +14,7 @@ const OLDER_PROMPT = "颜色缓慢流动的渐变";
 const earlierReview = {
   overall: 4,
   visual: 5,
+  detail: 3,
   motion: 2,
   alignment: null,
   physics: null,
@@ -32,6 +33,7 @@ const reviews = {
       reviews: 2,
       overall: 3.5,
       visual: 5,
+      detail: 4,
       motion: 2,
       alignment: null,
       physics: null,
@@ -102,7 +104,7 @@ describe("QosVideoReviewPanel", () => {
       within(summaryRow as HTMLElement)
         .getAllByRole("cell")
         .map((cell) => cell.textContent),
-    ).toEqual(["LTX-2", "1", "2", "3.5", "5.0", "2.0", "-", "-", "-"]);
+    ).toEqual(["LTX-2", "1", "2", "3.5", "5.0", "4.0", "2.0", "-", "-", "-"]);
     expect(cardTitles(screen.getByRole("group", { name: /红色皮球/ }))).toEqual(["MiniMax-H3", "LTX-2"]);
     expect(cardTitles(screen.getByRole("group", { name: new RegExp(OLDER_PROMPT) }))).toEqual(["Wan2_2-I2V-A14B"]);
     expect(screen.getAllByText(PROBE_PROMPT)).toHaveLength(1);
@@ -153,6 +155,7 @@ describe("QosVideoReviewPanel", () => {
     const card = cardOf("LTX-2");
 
     expect(scoreButton(card, "Overall", 4)).toHaveAttribute("aria-checked", "true");
+    expect(scoreButton(card, "Video detail", 3)).toHaveAttribute("aria-checked", "true");
     expect(scoreButton(card, "Motion", 2)).toHaveAttribute("aria-checked", "true");
     expect(scoreButton(card, "Sound", 3)).toHaveAttribute("aria-checked", "false");
     expect(within(card).getByLabelText("Comment")).toHaveValue("hands jitter");
@@ -168,6 +171,7 @@ describe("QosVideoReviewPanel", () => {
     expect(save).toBeDisabled();
 
     await user.click(scoreButton(card, "Visual quality", 5));
+    await user.click(scoreButton(card, "Video detail", 4));
     await user.click(scoreButton(card, "Physics and common sense", 2));
     await user.click(scoreButton(card, "Physics and common sense", 2));
     expect(save).toBeDisabled();
@@ -179,7 +183,7 @@ describe("QosVideoReviewPanel", () => {
     expect(apiClient.put).toHaveBeenCalledWith("/qos/videos/review", {
       accessToken: "token",
       query: { video_id: "video-minimax" },
-      body: { visual: 5, overall: 3, comment: "the cat walks backwards" },
+      body: { visual: 5, detail: 4, overall: 3, comment: "the cat walks backwards" },
     });
     expect(await within(card).findByText("Saved")).toBeInTheDocument();
   });

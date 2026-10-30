@@ -55493,6 +55493,19 @@
               ],
               "title": "Comment"
             },
+            "detail": {
+              "anyOf": [
+                {
+                  "maximum": 5.0,
+                  "minimum": 1.0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Detail"
+            },
             "motion": {
               "anyOf": [
                 {
@@ -55593,6 +55606,19 @@
               ],
               "title": "Comment"
             },
+            "detail": {
+              "anyOf": [
+                {
+                  "maximum": 5.0,
+                  "minimum": 1.0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Detail"
+            },
             "motion": {
               "anyOf": [
                 {
@@ -55669,6 +55695,17 @@
               ],
               "title": "Audio"
             },
+            "detail": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Detail"
+            },
             "model_group": {
               "title": "Model Group",
               "type": "string"
@@ -55732,6 +55769,7 @@
             "reviews",
             "overall",
             "visual",
+            "detail",
             "motion",
             "alignment",
             "physics",
