@@ -8,6 +8,7 @@ const __dirname = path.dirname(__filename);
 const devProxyUrl = process.env.LENS_DEV_PROXY_URL;
 
 const nextConfig = {
+  allowedDevOrigins: ["127.0.0.1"],
   ...(devProxyUrl
     ? {
         async rewrites() {

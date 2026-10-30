@@ -1,6 +1,13 @@
 import type { QosActivityEvent } from "@/app/(dashboard)/hooks/qos/useQosHome";
-import { clockTime, type QosTrends } from "../dashboardData";
-import { successRate, vendorName, type QosHealthNode, type QosModelGroupMetrics } from "../qosData";
+import {
+  successRate,
+  vendorName,
+  type QosDeploymentMetrics,
+  type QosHealthNode,
+  type QosModelGroupMetrics,
+  type QosTargetDeployment,
+  type QosTargetModel,
+} from "../qosData";
 
 export type ServiceStatus = "ok" | "degraded" | "down" | "idle";
 
@@ -22,61 +29,51 @@ export const modelStatus = (
 export const overallStatus = (statuses: readonly ServiceStatus[]): ServiceStatus => {
   if (statuses.some((status) => status === "down")) return "down";
   if (statuses.some((status) => status === "degraded")) return "degraded";
-  return statuses.every((status) => status === "idle") ? "idle" : "ok";
+  if (statuses.length === 0) return "idle";
+  return statuses.includes("idle") ? "idle" : "ok";
 };
 
 const STATUS_LABELS: Readonly<Record<ServiceStatus, string>> = {
-  ok: "All services operational",
-  degraded: "Some services degraded",
-  down: "Service outage",
-  idle: "No traffic yet",
+  ok: "All channels operational",
+  degraded: "Some channels are degraded",
+  down: "Some channels are unavailable",
+  idle: "Awaiting health checks",
 };
 
 export const statusLabel = (status: ServiceStatus): string => STATUS_LABELS[status];
 
-export interface ModelCard {
+export interface ChannelCard {
   readonly model: string;
   readonly status: ServiceStatus;
-  readonly vendors: readonly string[];
-  readonly metrics: QosModelGroupMetrics | undefined;
-  readonly ttftTrend: readonly { readonly time: string; readonly ttft: number | null }[];
+  readonly deployment: QosTargetDeployment;
+  readonly health: QosHealthNode | undefined;
+  readonly metrics: QosDeploymentMetrics | undefined;
 }
 
-/** One card per model that has traffic or health checks, outages first. */
-export const modelCards = (
-  models: readonly QosModelGroupMetrics[],
+export const channelCards = (
+  models: readonly QosTargetModel[],
   nodes: readonly QosHealthNode[],
-  trends: QosTrends | undefined,
-): readonly ModelCard[] => {
-  const names = [...new Set([...models.map((model) => model.model_group), ...nodes.map((node) => node.model_name)])]
-    .filter((name) => name !== "")
-    .sort();
+  metrics: readonly QosDeploymentMetrics[],
+): readonly ChannelCard[] => {
   const rank: Readonly<Record<ServiceStatus, number>> = { down: 0, degraded: 1, ok: 2, idle: 3 };
-  const cards = names.map((name) => {
-    const modelNodes = nodes.filter((node) => node.model_name === name);
-    const metrics = models.find((model) => model.model_group === name);
-    const series = trends?.series.find((item) => item.model_group === name);
-    return {
-      model: name,
-      status: modelStatus(modelNodes, metrics),
-      vendors: [...new Set(modelNodes.map((node) => vendorName(node.vendor)))],
-      metrics,
-      ttftTrend: (series?.points ?? []).map((point) => ({ time: point.bucket_start, ttft: point.ttft_ms.p95 })),
-    };
-  });
+  const cards = models.flatMap((model) =>
+    model.deployments.map((deployment): ChannelCard => {
+      const health = nodes.find(
+        (node) => node.model_id === deployment.model_id && node.model_name === model.model_group,
+      );
+      const traffic = metrics.find(
+        (row) => row.model_id === deployment.model_id && row.model_group === model.model_group,
+      );
+      return {
+        model: model.model_group,
+        deployment,
+        health,
+        metrics: traffic,
+        status: health === undefined ? "idle" : modelStatus([health], traffic),
+      };
+    }),
+  );
   return [...cards].sort((left, right) => rank[left.status] - rank[right.status]);
-};
-
-/** Requests of every model added up per time bucket. */
-export const requestVolume = (trends: QosTrends): readonly { readonly time: string; readonly requests: number }[] => {
-  const points = trends.series.flatMap((series) => series.points);
-  const buckets = [...new Set(points.map((point) => point.bucket_start))].sort();
-  return buckets.map((bucket) => ({
-    time: clockTime(new Date(bucket)),
-    requests: points
-      .filter((point) => point.bucket_start === bucket)
-      .reduce((total, point) => total + point.requests, 0),
-  }));
 };
 
 export const relativeTimeLabel = (value: string, now: Date): string => {
@@ -86,18 +83,6 @@ export const relativeTimeLabel = (value: string, now: Date): string => {
   const hours = Math.round(minutes / 60);
   if (hours < 24) return `${hours} h ago`;
   return `${Math.round(hours / 24)} d ago`;
-};
-
-const NEWS_PROVIDERS: readonly (readonly [RegExp, string])[] = [
-  [/openai/i, "openai"],
-  [/hugging\s*face/i, "huggingface"],
-  [/google|gemini/i, "gemini"],
-];
-
-/** The provider whose logo marks a news source; other sources show their initial. */
-export const newsLogoProvider = (source: string): string => {
-  const match = NEWS_PROVIDERS.find(([pattern]) => pattern.test(source));
-  return match === undefined ? source : match[1];
 };
 
 export type ActivityTone = "success" | "warning" | "error" | "info";

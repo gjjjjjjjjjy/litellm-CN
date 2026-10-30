@@ -3,27 +3,12 @@ import { apiClient } from "@/components/networking";
 import type { components } from "@/lib/http/schema";
 import { createQueryKeys } from "../common/queryKeysFactory";
 
-export type QosNews = components["schemas"]["QosNewsResponse"];
-export type QosNewsItem = components["schemas"]["QosNewsItem"];
 export type QosAnnouncement = components["schemas"]["QosAnnouncement"];
 export type QosAnnouncementCreate = components["schemas"]["QosAnnouncementCreate"];
 export type QosActivity = components["schemas"]["QosActivityResponse"];
 export type QosActivityEvent = QosActivity["events"][number];
 
 const homeKeys = createQueryKeys("qosHome");
-const NEWS_REFRESH_MS = 10 * 60_000;
-
-export const useQosNews = (accessToken: string | null): UseQueryResult<QosNews> => {
-  const options = {
-    queryKey: [...homeKeys.all, "news"],
-    queryFn: () => apiClient.get<QosNews>("/qos/home/news", { accessToken }),
-    enabled: Boolean(accessToken),
-    refetchInterval: NEWS_REFRESH_MS,
-    retry: false,
-  };
-  return useQuery<QosNews>(options);
-};
-
 export const useQosActivity = (accessToken: string | null, refreshMs: number | false): UseQueryResult<QosActivity> => {
   const options = {
     queryKey: [...homeKeys.all, "activity"],

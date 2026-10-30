@@ -1,13 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  activityLine,
-  modelCards,
-  modelStatus,
-  newsLogoProvider,
-  overallStatus,
-  relativeTimeLabel,
-  requestVolume,
-} from "./homeData";
+import { activityLine, channelCards, modelStatus, overallStatus, relativeTimeLabel } from "./homeData";
 
 const percentiles = (p95: number | null) => ({ p50: p95, p95, p99: p95 });
 
@@ -55,57 +47,70 @@ describe("model status", () => {
   it("summarises the gateway by its worst model", () => {
     expect(overallStatus(["ok", "degraded", "ok"])).toBe("degraded");
     expect(overallStatus(["ok", "down"])).toBe("down");
-    expect(overallStatus(["idle", "ok"])).toBe("ok");
+    expect(overallStatus(["idle", "ok"])).toBe("idle");
     expect(overallStatus([])).toBe("idle");
   });
 });
 
-describe("model cards", () => {
-  it("covers models seen in traffic or health checks and puts outages first", () => {
-    const cards = modelCards(
-      [metrics("busy", 10, 0), metrics("", 3, 0)],
-      [node("broken", "unhealthy"), node("busy", "healthy", "ai.gitee.com")],
-      undefined,
+describe("channel cards", () => {
+  it("keeps two endpoints of the same provider separate, puts failures first and includes unchecked deployments", () => {
+    const deployment = (model_id: string, api_base: string) => ({
+      model_id,
+      api_base,
+      provider: "openai",
+      vendor: "moark",
+      upstream_model: "shared-upstream",
+    });
+    const old = deployment("old", "https://ai.gitee.com/v1");
+    const current = deployment("current", "https://api.moark.com/v1");
+    const unchecked = deployment("unchecked", "https://pending.example/v1");
+    const traffic = (target: typeof old, p95: number) => ({
+      ...metrics("chat", 10, 0),
+      ...target,
+      model: target.upstream_model,
+      ttft_ms: percentiles(p95),
+    });
+    const currentTraffic = traffic(current, 800);
+    const oldTraffic = traffic(old, 1200);
+    const cards = channelCards(
+      [{ model_group: "chat", deployments: [current, unchecked, old] }],
+      [
+        { ...node("chat", "healthy"), model_id: "current" },
+        { ...node("chat", "unhealthy"), model_id: "old" },
+        { ...node("retired", "unhealthy"), model_id: "retired" },
+      ],
+      [currentTraffic, oldTraffic, traffic(unchecked, 300)],
     );
 
-    expect(cards.map((card) => [card.model, card.status])).toEqual([
-      ["broken", "down"],
-      ["busy", "ok"],
+    expect(cards.map((card) => [card.deployment.model_id, card.status])).toEqual([
+      ["old", "down"],
+      ["current", "ok"],
+      ["unchecked", "idle"],
     ]);
-    expect(cards[1].vendors).toEqual(["ai.gitee.com"]);
+    expect(cards[0].metrics).toEqual(oldTraffic);
+    expect(cards[1].metrics).toEqual(currentTraffic);
+    expect(cards[0].deployment.api_base).toBe(old.api_base);
+    expect(cards[1].deployment.api_base).toBe(current.api_base);
+    expect(cards[2].health).toBeUndefined();
   });
-});
 
-describe("request volume", () => {
-  it("adds every model's requests up per bucket in time order", () => {
-    const point = (bucket_start: string, requests: number) => ({
-      bucket_start,
-      requests,
-      failed_requests: 0,
-      output_tokens: 0,
-      ttft_ms: percentiles(null),
-      tpot_ms: percentiles(null),
-    });
-    const trends = {
-      start_time: "2026-10-26T00:00:00Z",
-      end_time: "2026-10-27T00:00:00Z",
-      bucket_seconds: 1800,
-      group_by: "model" as const,
-      current: { ...metrics("x", 0, 0), output_tokens_per_second: 0 },
-      previous: { ...metrics("x", 0, 0), output_tokens_per_second: 0 },
-      series: [
-        {
-          model_group: "a",
-          model_id: "",
-          vendor: "",
-          api_base: "",
-          points: [point("2026-10-26T01:00:00Z", 4), point("2026-10-26T00:30:00Z", 1)],
-        },
-        { model_group: "b", model_id: "", vendor: "", api_base: "", points: [point("2026-10-26T01:00:00Z", 6)] },
-      ],
+  it("matches health and traffic to both the configured model name and deployment id", () => {
+    const deployment = {
+      model_id: "shared",
+      api_base: "https://endpoint.example/v1",
+      provider: "openai",
+      vendor: "moark",
+      upstream_model: "upstream",
     };
-
-    expect(requestVolume(trends).map((row) => row.requests)).toEqual([1, 10]);
+    const alphaTraffic = { ...metrics("alpha", 10, 0), ...deployment, model: "upstream" };
+    const cards = channelCards(
+      [{ model_group: "beta", deployments: [deployment] }],
+      [{ ...node("alpha", "unhealthy"), model_id: "shared" }],
+      [alphaTraffic],
+    );
+    expect(cards[0].status).toBe("idle");
+    expect(cards[0].health).toBeUndefined();
+    expect(cards[0].metrics).toBeUndefined();
   });
 });
 
@@ -143,17 +148,5 @@ describe("feed text", () => {
       error: null,
     };
     expect(activityLine(recovered).tone).toBe("success");
-  });
-});
-
-describe("news logo", () => {
-  it("maps known sources to their provider logo", () => {
-    expect(newsLogoProvider("OpenAI")).toBe("openai");
-    expect(newsLogoProvider("Hugging Face")).toBe("huggingface");
-    expect(newsLogoProvider("Google AI")).toBe("gemini");
-  });
-
-  it("keeps other sources so the logo falls back to their initial", () => {
-    expect(newsLogoProvider("量子位")).toBe("量子位");
   });
 });

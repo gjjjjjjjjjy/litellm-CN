@@ -75,11 +75,15 @@ export const useQosBenchmarkRequests = (
   return useQuery<QosBenchmarkRequests>(options);
 };
 
-export const useQosTargets = (accessToken: string | null): UseQueryResult<QosTargetModel[]> => {
+export const useQosTargets = (
+  accessToken: string | null,
+  refreshMs: number | false = false,
+): UseQueryResult<QosTargetModel[]> => {
   const options = {
     queryKey: [...benchmarkKeys.all, "targets"],
     queryFn: async () => (await apiClient.get<{ models: QosTargetModel[] }>("/qos/targets", { accessToken })).models,
     enabled: Boolean(accessToken),
+    refetchInterval: refreshMs,
     retry: false,
   } as const;
   return useQuery<QosTargetModel[]>(options);

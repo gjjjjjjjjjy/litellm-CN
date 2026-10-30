@@ -1,25 +1,13 @@
 "use client";
 
 import React from "react";
-import {
-  Activity,
-  CircleCheck,
-  ExternalLink,
-  FlaskConical,
-  Megaphone,
-  Newspaper,
-  PackagePlus,
-  Plus,
-  ServerCrash,
-  Trash2,
-} from "lucide-react";
+import { Activity, CircleCheck, FlaskConical, Megaphone, PackagePlus, Plus, ServerCrash, Trash2 } from "lucide-react";
 
 import {
   useDeleteAnnouncement,
   usePostAnnouncement,
   useQosActivity,
   useQosAnnouncements,
-  useQosNews,
 } from "@/app/(dashboard)/hooks/qos/useQosHome";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
@@ -44,9 +32,8 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/cva.config";
 import { extractErrorMessage } from "@/utils/errorUtils";
-import { Logo } from "@/components/molecules/logo/Logo";
 import type { QosActivityEvent, QosAnnouncement } from "@/app/(dashboard)/hooks/qos/useQosHome";
-import { activityLine, newsLogoProvider, relativeTimeLabel, type ActivityTone } from "./homeData";
+import { activityLine, relativeTimeLabel, type ActivityTone } from "./homeData";
 
 const FeedPanel = ({
   icon: Icon,
@@ -63,7 +50,7 @@ const FeedPanel = ({
 }) => (
   <section
     className={cn(
-      "flex max-h-72 min-h-0 min-w-0 flex-col overflow-hidden rounded-xl border bg-card shadow-xs lg:max-h-none",
+      "flex max-h-40 min-h-0 min-w-0 flex-col overflow-hidden rounded-xl border bg-card shadow-xs",
       className,
     )}
   >
@@ -221,7 +208,7 @@ export const AnnouncementsPanel = ({
       <FeedPanel
         icon={Megaphone}
         title="Announcements"
-        className="max-h-40 lg:max-h-32"
+        className="max-h-40"
         action={
           <div className="flex items-center gap-2">
             {empty && <span className="text-xs text-muted-foreground">No announcements</span>}
@@ -275,58 +262,6 @@ export const AnnouncementsPanel = ({
         <DeleteAnnouncementDialog accessToken={accessToken} announcement={deleting} onClose={() => setDeleting(null)} />
       )}
     </>
-  );
-};
-
-export const NewsPanel = ({ accessToken, now }: { accessToken: string | null; now: Date }) => {
-  const news = useQosNews(accessToken).data;
-  const failed = news === undefined ? [] : news.sources.filter((source) => source.error !== null);
-
-  return (
-    <FeedPanel icon={Newspaper} title="AI news">
-      {news === undefined || news.items.length === 0 ? (
-        <EmptyLine text="No news yet" />
-      ) : (
-        <ul className="flex flex-col divide-y divide-border/60">
-          {news.items.map((item) => (
-            <li
-              key={item.link}
-              className="flex gap-2.5 py-2.5 first:pt-0 last:pb-0 motion-safe:animate-in motion-safe:fade-in motion-safe:duration-500"
-            >
-              <Logo
-                provider={newsLogoProvider(item.source)}
-                label={item.source}
-                className="mt-0.5 size-4 shrink-0 rounded-sm"
-              />
-              <div className="min-w-0 flex-1">
-                <a
-                  href={item.link}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="group flex items-start gap-1.5 text-xs leading-relaxed font-medium transition-colors hover:text-primary"
-                >
-                  <span className="line-clamp-2 break-words">{item.title}</span>
-                  <ExternalLink className="mt-0.5 size-3 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 group-hover:text-primary" />
-                </a>
-                <p className="mt-1 text-[11px] text-muted-foreground">
-                  {item.published_at === null
-                    ? item.source
-                    : `${item.source} · ${relativeTimeLabel(item.published_at, now)}`}
-                </p>
-              </div>
-            </li>
-          ))}
-        </ul>
-      )}
-      {failed.length > 0 && (
-        <p
-          className="mt-2 text-xs text-warning"
-          title={failed.map((source) => `${source.name}: ${source.error}`).join("\n")}
-        >
-          {`Could not reach ${failed.map((source) => source.name).join(", ")}`}
-        </p>
-      )}
-    </FeedPanel>
   );
 };
 

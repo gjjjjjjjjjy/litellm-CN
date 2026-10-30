@@ -12,16 +12,6 @@ vi.mock("@/app/(dashboard)/hooks/useAuthorized", () => ({ default: () => authori
 
 const percentiles = (p95: number) => ({ p50: p95 / 2, p95, p99: p95 });
 
-const overall = (requests: number) => ({
-  requests,
-  failed_requests: 0,
-  output_tokens: 1000,
-  output_tokens_per_second: 12,
-  ttft_ms: percentiles(900),
-  tpot_ms: percentiles(40),
-  response_checks: { checked: 0, crosstalk: 0, marker_missing: 0 },
-});
-
 const group = (model_group: string) => ({
   model_group,
   requests: 50,
@@ -54,49 +44,39 @@ const node = (model_name: string, latest_status: string) => ({
   last_checked_at: "2026-10-26T00:00:00Z",
 });
 
+const target = (model: string) => ({
+  model_group: model,
+  deployments: [
+    {
+      model_id: `node-${model}`,
+      provider: "openai",
+      vendor: "moark",
+      api_base: "https://api.moark.com/v1",
+      upstream_model: model,
+    },
+  ],
+});
+
 const responses: Record<string, unknown> = {
+  "/qos/targets": { models: [target("GLM-5.3"), target("Qwen3")] },
   "/qos/summary": {
     start_time: "",
     end_time: "",
     tag: null,
     model_groups: [group("GLM-5.3"), group("Qwen3")],
-    deployments: [],
-  },
-  "/qos/trends": {
-    start_time: "2026-10-25T12:00:00Z",
-    end_time: "2026-10-26T12:00:00Z",
-    bucket_seconds: 1800,
-    group_by: "model",
-    current: overall(150),
-    previous: overall(100),
-    series: [],
+    deployments: ["GLM-5.3", "Qwen3"].map((name) => ({
+      ...group(name),
+      model_id: `node-${name}`,
+      model: name,
+      vendor: "moark",
+      api_base: "https://api.moark.com/v1",
+    })),
   },
   "/qos/health": {
     start_time: "",
     end_time: "",
     nodes: [node("GLM-5.3", "healthy"), node("Qwen3", "unhealthy")],
     probes: [],
-  },
-  "/qos/home/news": {
-    items: [
-      {
-        source: "量子位",
-        title: "New open model tops the leaderboard",
-        link: "https://news.example/a",
-        summary: "",
-        published_at: null,
-      },
-    ],
-    sources: [
-      { name: "量子位", url: "https://news.example/rss", items: 1, error: null, fetched_at: "2026-10-26T12:00:00Z" },
-      {
-        name: "OpenAI",
-        url: "https://openai.example/rss",
-        items: 0,
-        error: "ConnectTimeout",
-        fetched_at: "2026-10-26T12:00:00Z",
-      },
-    ],
   },
   "/qos/announcements": {
     announcements: [
@@ -134,28 +114,53 @@ describe("HomeBoard", () => {
     vi.mocked(apiClient.get).mockImplementation(async (path: string) => responses[path]);
   });
 
-  it("puts the outage in the banner, the headline figures up top and the broken model first", async () => {
+  it("shows current service health and places the unavailable channel first", async () => {
     renderWithProviders(<HomeBoard accessToken="token" />);
 
-    expect(await screen.findByText("Service outage")).toBeInTheDocument();
-    expect(await screen.findByText("150")).toBeInTheDocument();
-    expect(screen.getByText("+50.0% vs previous 24 h")).toBeInTheDocument();
-    const models = screen
-      .getAllByRole("article")
-      .map((card) => within(card).getAllByText(/GLM-5.3|Qwen3/)[0].textContent);
-    expect(models).toEqual(["Qwen3", "GLM-5.3"]);
+    expect(await screen.findByText("Some channels are unavailable")).toBeInTheDocument();
+    const cards = within(screen.getByRole("region", { name: "Channel status" })).getAllByRole("article");
+    expect(cards.map((card) => within(card).getByRole("heading").textContent)).toEqual(["Qwen3", "GLM-5.3"]);
+    expect(within(cards[0]).getByText("Unavailable")).toBeInTheDocument();
+    expect(within(cards[1]).getByText("Operational")).toBeInTheDocument();
+    expect(within(cards[1]).getByText("900 ms")).toBeInTheDocument();
+    expect(within(cards[1]).getByText("2.00 s")).toBeInTheDocument();
   });
 
-  it("shows announcements, news with the feeds that failed, and recent activity", async () => {
+  it("keeps announcements and recent service events without requesting news", async () => {
     renderWithProviders(<HomeBoard accessToken="token" />);
 
     expect(await screen.findByText("Maintenance on Saturday")).toBeInTheDocument();
-    expect(await screen.findByRole("link", { name: /New open model tops the leaderboard/ })).toHaveAttribute(
-      "href",
-      "https://news.example/a",
-    );
-    expect(screen.getByText("Could not reach OpenAI")).toBeInTheDocument();
     expect(await screen.findByText("Qwen3 node unhealthy")).toBeInTheDocument();
+    expect(apiClient.get).not.toHaveBeenCalledWith("/qos/home/news", expect.anything());
+  });
+
+  it("shows an unchecked channel as awaiting checks even when it has successful traffic", async () => {
+    vi.mocked(apiClient.get).mockImplementation(async (path: string) =>
+      path === "/qos/health" ? { start_time: "", end_time: "", nodes: [], probes: [] } : responses[path],
+    );
+    renderWithProviders(<HomeBoard accessToken="token" />);
+
+    await screen.findByText("Awaiting health checks");
+    const cards = within(screen.getByRole("region", { name: "Channel status" })).getAllByRole("article");
+    for (const card of cards) {
+      expect(within(card).getByText("Awaiting checks")).toBeInTheDocument();
+      expect(within(card).getByText("No health check yet")).toBeInTheDocument();
+    }
+  });
+
+  it("refreshes the channel list, health checks and request metrics with one action", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<HomeBoard accessToken="token" />);
+    await screen.findByText("Maintenance on Saturday");
+    await waitFor(() => expect(screen.getByRole("button", { name: "Refresh" })).toBeEnabled());
+    vi.mocked(apiClient.get).mockClear();
+
+    await user.click(screen.getByRole("button", { name: "Refresh" }));
+    await waitFor(() =>
+      expect(new Set(vi.mocked(apiClient.get).mock.calls.map(([path]) => path))).toEqual(
+        new Set(["/qos/targets", "/qos/health", "/qos/summary"]),
+      ),
+    );
   });
 
   it("lets an admin post an announcement", async () => {
@@ -198,14 +203,15 @@ describe("HomeBoard", () => {
     expect(await within(screen.getByRole("alertdialog")).findByText("Announcement a1 not found")).toBeInTheDocument();
   });
 
-  it("shows no update time before the summary has ever loaded", async () => {
+  it("exposes a health-check loading failure without reporting an update time", async () => {
     vi.mocked(apiClient.get).mockImplementation(async (path: string) => {
-      if (path === "/qos/summary") throw new Error("down");
+      if (path === "/qos/health") throw new Error("Health service unreachable");
       return responses[path];
     });
     renderWithProviders(<HomeBoard accessToken="token" />);
 
-    await screen.findByText("Maintenance on Saturday");
+    expect(await screen.findByText("Service status unavailable")).toBeInTheDocument();
+    expect(screen.getByText(/Health service unreachable/)).toBeInTheDocument();
     await waitFor(() => expect(screen.queryByText("Refreshing")).not.toBeInTheDocument());
     expect(screen.queryByText(/^Updated /)).not.toBeInTheDocument();
   });
