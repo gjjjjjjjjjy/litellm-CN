@@ -29,7 +29,7 @@ docker run --rm --add-host=host.docker.internal:host-gateway \
   litellm-qos-bench:evalscope-1.14.0 eval \
   --model "$model" --eval-type openai_api --api-url "$base_url/v1" --api-key "$LITELLM_API_KEY" \
   --datasets "${datasets[@]}" --limit "$limit" --repeats "$repeats" --eval-batch-size "$concurrency" \
-  --generation-config "$generation" \
+  --generation-config "$generation" --ignore-errors \
   --work-dir "/qos/results/$tag" --no-timestamp
 
 printf '\n评测完成，请求标签：%s\n结果目录：%s\n' "$tag" "$qos_root/results/$tag"
