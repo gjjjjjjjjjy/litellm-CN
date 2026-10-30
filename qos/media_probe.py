@@ -27,7 +27,7 @@ PROBE_PROMPT: Final = "固定镜头：阳光下的绿色草地上，一个红色
 PROBE_TAG: Final = "qos-media-probe"
 FIRST_FRAME_SIZE: Final = (1280, 720)
 POLL_SECONDS: Final = 15
-MAX_WAIT_SECONDS: Final = 3600
+MAX_WAIT_SECONDS: Final = 9900
 TERMINAL_STATUSES: Final = frozenset({"completed", "failed"})
 logger: Final = logging.getLogger("qos.media_probe")
 
