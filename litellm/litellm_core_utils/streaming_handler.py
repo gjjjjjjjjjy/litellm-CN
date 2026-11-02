@@ -1948,6 +1948,7 @@ class CustomStreamWrapper:
                         self._last_returned_hidden_params["usage"] = final_usage
 
                 if self.sent_stream_usage is False and self.send_stream_usage is True:
+                    response.choices = []
                     self.sent_stream_usage = True
                     return response
                 self._restore_consumer_correlation_context()
@@ -2190,6 +2191,7 @@ class CustomStreamWrapper:
                     self._last_returned_hidden_params["usage"] = final_usage
 
             if self.sent_stream_usage is False and self.send_stream_usage is True:
+                response.choices = []
                 self.sent_stream_usage = True
                 return response
 

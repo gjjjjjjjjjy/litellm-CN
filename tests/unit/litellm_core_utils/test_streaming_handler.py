@@ -6115,7 +6115,7 @@ async def test_async_stream_without_usage_counts_tokens_off_the_event_loop():
 
     chunks, took, lags = await timed_with_loop_lags(consume)
 
-    assert "".join(chunk.choices[0].delta.content or "" for chunk in chunks) == text * 100
+    assert "".join(chunk.choices[0].delta.content or "" for chunk in chunks if chunk.choices) == text * 100
     assert chunks[-1].usage.prompt_tokens > 100_000
     assert chunks[-1].usage.completion_tokens > 100_000
     assert_loop_stayed_free(took, lags)
@@ -6166,12 +6166,13 @@ async def test_openai_stream_relays_the_served_service_tier_on_every_chunk_inclu
 
     assert [chunk.get("service_tier") for chunk in relayed] == ["default"] * len(relayed), relayed
     assert relayed[-1]["usage"]["total_tokens"] == 11
+    assert relayed[-1]["choices"] == []
 
 
 def _last_chunk_carries_finish_reason_wrapper(
-    logging_obj: Logging, finish_reason: str, sync_stream: bool
+    logging_obj: Logging, finish_reason: str, sync_stream: bool, include_usage: bool
 ) -> CustomStreamWrapper:
-    """An OpenAI-compatible SSE body whose LAST chunk carries both a delta and the finish_reason, as vLLM emits
+    """An OpenAI-compatible SSE body whose last content chunk carries a delta and the finish_reason, as vLLM emits
     when speculative decoding finishes a reply in one engine step."""
     from litellm.llms.openai.chat.gpt_transformation import (
         OpenAIChatCompletionStreamingHandler,
@@ -6199,14 +6200,24 @@ def _last_chunk_carries_finish_reason_wrapper(
             line({"role": "assistant", "content": "Hello, this reply is"}),
             line({"content": " cut off"}, "length"),
         ]
-    lines.append("data: [DONE]")
+    usage_line: Final = "data: " + json.dumps(
+        {
+            "id": "chatcmpl-1",
+            "object": "chat.completion.chunk",
+            "created": 1,
+            "model": "m",
+            "choices": [],
+            "usage": {"prompt_tokens": 10, "completion_tokens": 1, "total_tokens": 11},
+        }
+    )
+    stream_lines: Final = (*lines, usage_line, "data: [DONE]") if include_usage else (*lines, "data: [DONE]")
 
     if sync_stream:
-        streaming_response = iter(lines)
+        streaming_response = iter(stream_lines)
     else:
 
         async def _stream():
-            for item in lines:
+            for item in stream_lines:
                 yield item
 
         streaming_response = _stream()
@@ -6217,19 +6228,19 @@ def _last_chunk_carries_finish_reason_wrapper(
         model="m",
         logging_obj=logging_obj,
         custom_llm_provider="hosted_vllm",
+        stream_options={"include_usage": True} if include_usage else None,
     )
 
 
 @pytest.mark.parametrize("finish_reason", ["tool_calls", "length"])
 @pytest.mark.parametrize("sync_mode", [True, False])
+@pytest.mark.parametrize("include_usage", [True, False])
 @pytest.mark.asyncio
-async def test_logged_response_keeps_finish_reason_from_last_content_chunk(
-    finish_reason: str, sync_mode: bool, logging_obj: Logging
-):
-    """The client already got the right finish_reason here; the complete response built from ``chunks`` for
-    callbacks and SpendLogs used to say "stop" instead (tool calls and truncated replies both mislogged)."""
+async def test_finish_reason_is_preserved_with_and_without_a_usage_tail(
+    finish_reason: str, sync_mode: bool, include_usage: bool, logging_obj: Logging
+) -> None:
     response = _last_chunk_carries_finish_reason_wrapper(
-        logging_obj, finish_reason, sync_stream=sync_mode
+        logging_obj, finish_reason, sync_stream=sync_mode, include_usage=include_usage
     )
     if sync_mode:
         received = list(response)
@@ -6239,6 +6250,12 @@ async def test_logged_response_keeps_finish_reason_from_last_content_chunk(
     assert [c.choices[0].finish_reason for c in received if c.choices and c.choices[0].finish_reason] == [
         finish_reason
     ]
+    assert [chunk.choices[-1].finish_reason for chunk in received if chunk.choices][-1] == finish_reason
+    if include_usage:
+        assert received[-1].model_dump()["choices"] == []
+        usage: Final = received[-1].usage
+        assert usage is not None
+        assert (usage.prompt_tokens, usage.completion_tokens, usage.total_tokens) == (10, 1, 11)
     logged = litellm.stream_chunk_builder(chunks=response.chunks)
     assert logged.choices[0].finish_reason == finish_reason
     if finish_reason == "tool_calls":
