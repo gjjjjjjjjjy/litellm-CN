@@ -453,7 +453,7 @@ export default function ImageQosPanel({ accessToken }: { accessToken: string | n
           </div>
           {manualPrompts.map((prompt, index) => <div key={prompt.id} className="space-y-3 rounded-lg border bg-background p-3">
             <div className="flex items-center justify-between gap-2">
-              <span className="text-sm font-medium">Prompt {index + 1}</span>
+              <span className="text-sm font-medium">第 {index + 1} 条提示词</span>
               <Button type="button" variant="ghost" size="sm" onClick={() => removeManualPrompt(prompt.id)} disabled={manualPrompts.length === 1}>删除</Button>
             </div>
             <label className="flex flex-col gap-1 text-sm">生成提示词（必填）
