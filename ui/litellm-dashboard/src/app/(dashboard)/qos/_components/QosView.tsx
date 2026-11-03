@@ -15,12 +15,19 @@ import QosVideoReviewPanel from "./QosVideoReviewPanel";
 import { QOS_BENCHMARK_MODEL_PARAM, type QosBenchmarkStarted } from "./qosData";
 import StartBenchmarkDialog from "./StartBenchmarkDialog";
 
-const QOS_TABS = ["overview", "benchmarks", "images", "health", "media", "reviews"] as const;
+const QOS_TABS = ["overview", "benchmarks", "images", "health", "media"] as const;
+const REVIEWS_TAB = "reviews";
+const URL_TABS = [...QOS_TABS, REVIEWS_TAB] as const;
 type QosTab = (typeof QOS_TABS)[number];
 const isQosTab = (value: string): value is QosTab => QOS_TABS.some((tab) => tab === value);
 
 export default function QosView({ accessToken }: { accessToken: string | null }) {
-  const [tab, setTab] = useUrlTab(QOS_TABS, "overview");
+  const [urlTab, setTab] = useUrlTab(URL_TABS, "overview");
+  const tab: QosTab = urlTab === REVIEWS_TAB ? "media" : urlTab;
+
+  React.useEffect(() => {
+    if (urlTab === REVIEWS_TAB) setTab("media");
+  }, [urlTab, setTab]);
   const [runId, setRunId] = useQueryState("run", parseAsString);
   const [linkedModel, setLinkedModel] = useQueryState(QOS_BENCHMARK_MODEL_PARAM, parseAsString);
   const [dialogModel, setDialogModel] = React.useState<string | null>(() => linkedModel);
@@ -66,7 +73,6 @@ export default function QosView({ accessToken }: { accessToken: string | null })
           <PageTabsTrigger value="images">Images</PageTabsTrigger>
           <PageTabsTrigger value="health">Health checks</PageTabsTrigger>
           <PageTabsTrigger value="media">Audio and video</PageTabsTrigger>
-          <PageTabsTrigger value="reviews">Video review</PageTabsTrigger>
         </PageTabsList>
         <PageTabsContent value="overview">
           <QosOverview accessToken={accessToken} />
@@ -77,11 +83,14 @@ export default function QosView({ accessToken }: { accessToken: string | null })
         <PageTabsContent value="images">
           <ImageQosPanel accessToken={accessToken} />
         </PageTabsContent>
-        <PageTabsContent value="media">
+        <PageTabsContent value="media" className="flex flex-col gap-10">
           <QosMediaPanel accessToken={accessToken} />
-        </PageTabsContent>
-        <PageTabsContent value="reviews">
-          <QosVideoReviewPanel accessToken={accessToken} />
+          <section aria-labelledby="qos-video-review" className="flex flex-col gap-4 border-t pt-6">
+            <h2 id="qos-video-review" className="text-lg font-semibold">
+              Video review
+            </h2>
+            <QosVideoReviewPanel accessToken={accessToken} />
+          </section>
         </PageTabsContent>
         <PageTabsContent value="benchmarks">
           <BenchmarksPanel
