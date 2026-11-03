@@ -55060,6 +55060,49 @@
           "title": "QosPercentiles",
           "type": "object"
         },
+        "QosProbeModel": {
+          "properties": {
+            "currency": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Currency"
+            },
+            "image_to_video": {
+              "title": "Image To Video",
+              "type": "boolean"
+            },
+            "last_price": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "What the provider charged for this model's latest finished video",
+              "title": "Last Price"
+            },
+            "model_group": {
+              "title": "Model Group",
+              "type": "string"
+            }
+          },
+          "required": [
+            "model_group",
+            "image_to_video",
+            "last_price",
+            "currency"
+          ],
+          "title": "QosProbeModel",
+          "type": "object"
+        },
         "QosResponseChecks": {
           "description": "How many benchmark responses were checked for cross-talk with concurrent requests, and what was found.",
           "properties": {
@@ -55086,10 +55129,28 @@
         },
         "QosReviewVideo": {
           "properties": {
+            "ai_review": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/QosVideoAiReview"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
             "completed_at": {
-              "format": "date-time",
-              "title": "Completed At",
-              "type": "string"
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "When the provider reported the video done; None until then",
+              "title": "Completed At"
             },
             "created_at": {
               "format": "date-time",
@@ -55123,13 +55184,22 @@
               "title": "Overall"
             },
             "prompt": {
-              "description": "The prompt the scheduled probe gave every model in its run",
+              "description": "The prompt the probe gave every model in its run",
               "title": "Prompt",
               "type": "string"
             },
             "reviews": {
               "title": "Reviews",
               "type": "integer"
+            },
+            "status": {
+              "enum": [
+                "generating",
+                "completed",
+                "failed"
+              ],
+              "title": "Status",
+              "type": "string"
             },
             "video_id": {
               "title": "Video Id",
@@ -55139,12 +55209,14 @@
           "required": [
             "video_id",
             "model_group",
+            "status",
             "created_at",
             "completed_at",
             "prompt",
             "reviews",
             "overall",
-            "my_review"
+            "my_review",
+            "ai_review"
           ],
           "title": "QosReviewVideo",
           "type": "object"
@@ -55389,6 +55461,430 @@
             "series"
           ],
           "title": "QosTrendsResponse",
+          "type": "object"
+        },
+        "QosUsedPrompt": {
+          "properties": {
+            "last_used": {
+              "format": "date-time",
+              "title": "Last Used",
+              "type": "string"
+            },
+            "prompt": {
+              "title": "Prompt",
+              "type": "string"
+            },
+            "videos": {
+              "title": "Videos",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "prompt",
+            "last_used",
+            "videos"
+          ],
+          "title": "QosUsedPrompt",
+          "type": "object"
+        },
+        "QosVideoAiCheck": {
+          "additionalProperties": false,
+          "description": "One requirement the judge read out of the prompt, and whether the stills meet it.",
+          "properties": {
+            "evidence": {
+              "default": "",
+              "maxLength": 500,
+              "title": "Evidence",
+              "type": "string"
+            },
+            "met": {
+              "title": "Met",
+              "type": "boolean"
+            },
+            "requirement": {
+              "maxLength": 500,
+              "title": "Requirement",
+              "type": "string"
+            }
+          },
+          "required": [
+            "requirement",
+            "met"
+          ],
+          "title": "QosVideoAiCheck",
+          "type": "object"
+        },
+        "QosVideoAiProblem": {
+          "additionalProperties": false,
+          "properties": {
+            "problem": {
+              "maxLength": 500,
+              "title": "Problem",
+              "type": "string"
+            },
+            "second": {
+              "minimum": 0.0,
+              "title": "Second",
+              "type": "number"
+            }
+          },
+          "required": [
+            "second",
+            "problem"
+          ],
+          "title": "QosVideoAiProblem",
+          "type": "object"
+        },
+        "QosVideoAiReasons": {
+          "additionalProperties": false,
+          "properties": {
+            "alignment": {
+              "default": "",
+              "maxLength": 500,
+              "title": "Alignment",
+              "type": "string"
+            },
+            "detail": {
+              "default": "",
+              "maxLength": 500,
+              "title": "Detail",
+              "type": "string"
+            },
+            "motion": {
+              "default": "",
+              "maxLength": 500,
+              "title": "Motion",
+              "type": "string"
+            },
+            "physics": {
+              "default": "",
+              "maxLength": 500,
+              "title": "Physics",
+              "type": "string"
+            },
+            "visual": {
+              "default": "",
+              "maxLength": 500,
+              "title": "Visual",
+              "type": "string"
+            }
+          },
+          "title": "QosVideoAiReasons",
+          "type": "object"
+        },
+        "QosVideoAiReview": {
+          "additionalProperties": false,
+          "properties": {
+            "alignment": {
+              "maximum": 5.0,
+              "minimum": 1.0,
+              "title": "Alignment",
+              "type": "integer"
+            },
+            "checklist": {
+              "default": [],
+              "items": {
+                "$ref": "#/components/schemas/QosVideoAiCheck"
+              },
+              "maxItems": 30,
+              "title": "Checklist",
+              "type": "array"
+            },
+            "detail": {
+              "maximum": 5.0,
+              "minimum": 1.0,
+              "title": "Detail",
+              "type": "integer"
+            },
+            "frames": {
+              "description": "How many stills, one per second, the judge saw",
+              "minimum": 1.0,
+              "title": "Frames",
+              "type": "integer"
+            },
+            "judge": {
+              "description": "The model that rated the stills",
+              "maxLength": 200,
+              "minLength": 1,
+              "title": "Judge",
+              "type": "string"
+            },
+            "motion": {
+              "maximum": 5.0,
+              "minimum": 1.0,
+              "title": "Motion",
+              "type": "integer"
+            },
+            "overall": {
+              "maximum": 5.0,
+              "minimum": 1.0,
+              "title": "Overall",
+              "type": "integer"
+            },
+            "physics": {
+              "maximum": 5.0,
+              "minimum": 1.0,
+              "title": "Physics",
+              "type": "integer"
+            },
+            "problems": {
+              "default": [],
+              "items": {
+                "$ref": "#/components/schemas/QosVideoAiProblem"
+              },
+              "maxItems": 30,
+              "title": "Problems",
+              "type": "array"
+            },
+            "reasons": {
+              "$ref": "#/components/schemas/QosVideoAiReasons"
+            },
+            "reviewed_at": {
+              "format": "date-time",
+              "title": "Reviewed At",
+              "type": "string"
+            },
+            "visual": {
+              "maximum": 5.0,
+              "minimum": 1.0,
+              "title": "Visual",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "judge",
+            "frames",
+            "overall",
+            "visual",
+            "detail",
+            "motion",
+            "alignment",
+            "physics",
+            "reasons",
+            "reviewed_at"
+          ],
+          "title": "QosVideoAiReview",
+          "type": "object"
+        },
+        "QosVideoAiScore": {
+          "additionalProperties": false,
+          "description": "A vision model's ratings of a video from one still per second, 1 (bad) to 5 (good); it hears no sound.",
+          "properties": {
+            "alignment": {
+              "maximum": 5.0,
+              "minimum": 1.0,
+              "title": "Alignment",
+              "type": "integer"
+            },
+            "checklist": {
+              "default": [],
+              "items": {
+                "$ref": "#/components/schemas/QosVideoAiCheck"
+              },
+              "maxItems": 30,
+              "title": "Checklist",
+              "type": "array"
+            },
+            "detail": {
+              "maximum": 5.0,
+              "minimum": 1.0,
+              "title": "Detail",
+              "type": "integer"
+            },
+            "frames": {
+              "description": "How many stills, one per second, the judge saw",
+              "minimum": 1.0,
+              "title": "Frames",
+              "type": "integer"
+            },
+            "judge": {
+              "description": "The model that rated the stills",
+              "maxLength": 200,
+              "minLength": 1,
+              "title": "Judge",
+              "type": "string"
+            },
+            "motion": {
+              "maximum": 5.0,
+              "minimum": 1.0,
+              "title": "Motion",
+              "type": "integer"
+            },
+            "overall": {
+              "maximum": 5.0,
+              "minimum": 1.0,
+              "title": "Overall",
+              "type": "integer"
+            },
+            "physics": {
+              "maximum": 5.0,
+              "minimum": 1.0,
+              "title": "Physics",
+              "type": "integer"
+            },
+            "problems": {
+              "default": [],
+              "items": {
+                "$ref": "#/components/schemas/QosVideoAiProblem"
+              },
+              "maxItems": 30,
+              "title": "Problems",
+              "type": "array"
+            },
+            "reasons": {
+              "$ref": "#/components/schemas/QosVideoAiReasons"
+            },
+            "visual": {
+              "maximum": 5.0,
+              "minimum": 1.0,
+              "title": "Visual",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "judge",
+            "frames",
+            "overall",
+            "visual",
+            "detail",
+            "motion",
+            "alignment",
+            "physics",
+            "reasons"
+          ],
+          "title": "QosVideoAiScore",
+          "type": "object"
+        },
+        "QosVideoAiSummary": {
+          "properties": {
+            "alignment": {
+              "title": "Alignment",
+              "type": "number"
+            },
+            "detail": {
+              "title": "Detail",
+              "type": "number"
+            },
+            "model_group": {
+              "title": "Model Group",
+              "type": "string"
+            },
+            "motion": {
+              "title": "Motion",
+              "type": "number"
+            },
+            "overall": {
+              "title": "Overall",
+              "type": "number"
+            },
+            "physics": {
+              "title": "Physics",
+              "type": "number"
+            },
+            "videos": {
+              "title": "Videos",
+              "type": "integer"
+            },
+            "visual": {
+              "title": "Visual",
+              "type": "number"
+            }
+          },
+          "required": [
+            "model_group",
+            "videos",
+            "overall",
+            "visual",
+            "detail",
+            "motion",
+            "alignment",
+            "physics"
+          ],
+          "title": "QosVideoAiSummary",
+          "type": "object"
+        },
+        "QosVideoEvaluationOptions": {
+          "properties": {
+            "available": {
+              "description": "Whether the gateway knows a media probe to run evaluations on",
+              "title": "Available",
+              "type": "boolean"
+            },
+            "models": {
+              "items": {
+                "$ref": "#/components/schemas/QosProbeModel"
+              },
+              "title": "Models",
+              "type": "array"
+            },
+            "prompts": {
+              "description": "Prompts earlier probe runs used, most recent first",
+              "items": {
+                "$ref": "#/components/schemas/QosUsedPrompt"
+              },
+              "title": "Prompts",
+              "type": "array"
+            }
+          },
+          "required": [
+            "available",
+            "models",
+            "prompts"
+          ],
+          "title": "QosVideoEvaluationOptions",
+          "type": "object"
+        },
+        "QosVideoEvaluationPrompt": {
+          "properties": {
+            "prompt": {
+              "maxLength": 500,
+              "minLength": 1,
+              "title": "Prompt",
+              "type": "string"
+            }
+          },
+          "required": [
+            "prompt"
+          ],
+          "title": "QosVideoEvaluationPrompt",
+          "type": "object"
+        },
+        "QosVideoEvaluationRequest": {
+          "additionalProperties": false,
+          "properties": {
+            "prompt": {
+              "maxLength": 500,
+              "minLength": 1,
+              "title": "Prompt",
+              "type": "string"
+            }
+          },
+          "required": [
+            "prompt"
+          ],
+          "title": "QosVideoEvaluationRequest",
+          "type": "object"
+        },
+        "QosVideoEvaluationStarted": {
+          "properties": {
+            "models": {
+              "description": "The video models the probe is generating with",
+              "items": {
+                "type": "string"
+              },
+              "title": "Models",
+              "type": "array"
+            },
+            "prompt": {
+              "title": "Prompt",
+              "type": "string"
+            }
+          },
+          "required": [
+            "prompt",
+            "models"
+          ],
+          "title": "QosVideoEvaluationStarted",
           "type": "object"
         },
         "QosVideoMetrics": {
@@ -55780,6 +56276,13 @@
         },
         "QosVideoReviewsResponse": {
           "properties": {
+            "ai_summary": {
+              "items": {
+                "$ref": "#/components/schemas/QosVideoAiSummary"
+              },
+              "title": "Ai Summary",
+              "type": "array"
+            },
             "end_time": {
               "format": "date-time",
               "title": "End Time",
@@ -55809,6 +56312,7 @@
             "start_time",
             "end_time",
             "summary",
+            "ai_summary",
             "videos"
           ],
           "title": "QosVideoReviewsResponse",
@@ -56816,7 +57320,7 @@
       },
       "/qos/videos": {
         "get": {
-          "description": "Finished videos the scheduled probe made, newest first, to watch and rate, and each model's average ratings.",
+          "description": "The probe's videos, newest first, to watch and rate, with each model's average ratings by hand and by AI.\n\nA video still generating is listed only while the probe may still be waiting for it.",
           "operationId": "get_qos_videos_qos_videos_get",
           "parameters": [
             {
@@ -56942,6 +57446,168 @@
             }
           ],
           "summary": "Get Qos Video Content",
+          "tags": [
+            "qos"
+          ]
+        }
+      },
+      "/qos/videos/evaluations": {
+        "post": {
+          "description": "Have the probe generate the prompt's videos on every model it probes now, rating each as it finishes.",
+          "operationId": "start_qos_video_evaluation_qos_videos_evaluations_post",
+          "requestBody": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QosVideoEvaluationRequest"
+                }
+              }
+            },
+            "required": true
+          },
+          "responses": {
+            "200": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/QosVideoEvaluationStarted"
+                  }
+                }
+              },
+              "description": "Successful Response"
+            },
+            "422": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/HTTPValidationError"
+                  }
+                }
+              },
+              "description": "Validation Error"
+            }
+          },
+          "security": [
+            {
+              "APIKeyHeader": []
+            }
+          ],
+          "summary": "Start Qos Video Evaluation",
+          "tags": [
+            "qos"
+          ]
+        }
+      },
+      "/qos/videos/evaluations/options": {
+        "get": {
+          "description": "What an evaluation run offers: the models the probe generates with, their latest price, and earlier prompts.",
+          "operationId": "get_qos_video_evaluation_options_qos_videos_evaluations_options_get",
+          "responses": {
+            "200": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/QosVideoEvaluationOptions"
+                  }
+                }
+              },
+              "description": "Successful Response"
+            }
+          },
+          "security": [
+            {
+              "APIKeyHeader": []
+            }
+          ],
+          "summary": "Get Qos Video Evaluation Options",
+          "tags": [
+            "qos"
+          ]
+        }
+      },
+      "/qos/videos/evaluations/prompt": {
+        "post": {
+          "description": "A new test prompt that exercises every rating, unlike the recent ones, for the caller to read before a run.",
+          "operationId": "write_qos_video_evaluation_prompt_qos_videos_evaluations_prompt_post",
+          "responses": {
+            "200": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/QosVideoEvaluationPrompt"
+                  }
+                }
+              },
+              "description": "Successful Response"
+            }
+          },
+          "security": [
+            {
+              "APIKeyHeader": []
+            }
+          ],
+          "summary": "Write Qos Video Evaluation Prompt",
+          "tags": [
+            "qos"
+          ]
+        }
+      },
+      "/qos/videos/evaluations/score": {
+        "put": {
+          "description": "Keep the vision model's ratings of a video the probe made, replacing the ones it gave before.",
+          "operationId": "put_qos_video_ai_review_qos_videos_evaluations_score_put",
+          "parameters": [
+            {
+              "description": "The id the gateway returned for the video",
+              "in": "query",
+              "name": "video_id",
+              "required": true,
+              "schema": {
+                "description": "The id the gateway returned for the video",
+                "minLength": 1,
+                "title": "Video Id",
+                "type": "string"
+              }
+            }
+          ],
+          "requestBody": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QosVideoAiScore"
+                }
+              }
+            },
+            "required": true
+          },
+          "responses": {
+            "200": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/QosVideoAiReview"
+                  }
+                }
+              },
+              "description": "Successful Response"
+            },
+            "422": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/HTTPValidationError"
+                  }
+                }
+              },
+              "description": "Validation Error"
+            }
+          },
+          "security": [
+            {
+              "APIKeyHeader": []
+            }
+          ],
+          "summary": "Put Qos Video Ai Review",
           "tags": [
             "qos"
           ]
@@ -57603,6 +58269,648 @@
           "summary": "Get Qos News",
           "tags": [
             "qos_home"
+          ]
+        }
+      }
+    }
+  },
+  "qos_video_evaluations": {
+    "components": {
+      "schemas": {
+        "HTTPValidationError": {
+          "properties": {
+            "detail": {
+              "items": {
+                "$ref": "#/components/schemas/ValidationError"
+              },
+              "title": "Detail",
+              "type": "array"
+            }
+          },
+          "title": "HTTPValidationError",
+          "type": "object"
+        },
+        "QosProbeModel": {
+          "properties": {
+            "currency": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Currency"
+            },
+            "image_to_video": {
+              "title": "Image To Video",
+              "type": "boolean"
+            },
+            "last_price": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "What the provider charged for this model's latest finished video",
+              "title": "Last Price"
+            },
+            "model_group": {
+              "title": "Model Group",
+              "type": "string"
+            }
+          },
+          "required": [
+            "model_group",
+            "image_to_video",
+            "last_price",
+            "currency"
+          ],
+          "title": "QosProbeModel",
+          "type": "object"
+        },
+        "QosUsedPrompt": {
+          "properties": {
+            "last_used": {
+              "format": "date-time",
+              "title": "Last Used",
+              "type": "string"
+            },
+            "prompt": {
+              "title": "Prompt",
+              "type": "string"
+            },
+            "videos": {
+              "title": "Videos",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "prompt",
+            "last_used",
+            "videos"
+          ],
+          "title": "QosUsedPrompt",
+          "type": "object"
+        },
+        "QosVideoAiCheck": {
+          "additionalProperties": false,
+          "description": "One requirement the judge read out of the prompt, and whether the stills meet it.",
+          "properties": {
+            "evidence": {
+              "default": "",
+              "maxLength": 500,
+              "title": "Evidence",
+              "type": "string"
+            },
+            "met": {
+              "title": "Met",
+              "type": "boolean"
+            },
+            "requirement": {
+              "maxLength": 500,
+              "title": "Requirement",
+              "type": "string"
+            }
+          },
+          "required": [
+            "requirement",
+            "met"
+          ],
+          "title": "QosVideoAiCheck",
+          "type": "object"
+        },
+        "QosVideoAiProblem": {
+          "additionalProperties": false,
+          "properties": {
+            "problem": {
+              "maxLength": 500,
+              "title": "Problem",
+              "type": "string"
+            },
+            "second": {
+              "minimum": 0.0,
+              "title": "Second",
+              "type": "number"
+            }
+          },
+          "required": [
+            "second",
+            "problem"
+          ],
+          "title": "QosVideoAiProblem",
+          "type": "object"
+        },
+        "QosVideoAiReasons": {
+          "additionalProperties": false,
+          "properties": {
+            "alignment": {
+              "default": "",
+              "maxLength": 500,
+              "title": "Alignment",
+              "type": "string"
+            },
+            "detail": {
+              "default": "",
+              "maxLength": 500,
+              "title": "Detail",
+              "type": "string"
+            },
+            "motion": {
+              "default": "",
+              "maxLength": 500,
+              "title": "Motion",
+              "type": "string"
+            },
+            "physics": {
+              "default": "",
+              "maxLength": 500,
+              "title": "Physics",
+              "type": "string"
+            },
+            "visual": {
+              "default": "",
+              "maxLength": 500,
+              "title": "Visual",
+              "type": "string"
+            }
+          },
+          "title": "QosVideoAiReasons",
+          "type": "object"
+        },
+        "QosVideoAiReview": {
+          "additionalProperties": false,
+          "properties": {
+            "alignment": {
+              "maximum": 5.0,
+              "minimum": 1.0,
+              "title": "Alignment",
+              "type": "integer"
+            },
+            "checklist": {
+              "default": [],
+              "items": {
+                "$ref": "#/components/schemas/QosVideoAiCheck"
+              },
+              "maxItems": 30,
+              "title": "Checklist",
+              "type": "array"
+            },
+            "detail": {
+              "maximum": 5.0,
+              "minimum": 1.0,
+              "title": "Detail",
+              "type": "integer"
+            },
+            "frames": {
+              "description": "How many stills, one per second, the judge saw",
+              "minimum": 1.0,
+              "title": "Frames",
+              "type": "integer"
+            },
+            "judge": {
+              "description": "The model that rated the stills",
+              "maxLength": 200,
+              "minLength": 1,
+              "title": "Judge",
+              "type": "string"
+            },
+            "motion": {
+              "maximum": 5.0,
+              "minimum": 1.0,
+              "title": "Motion",
+              "type": "integer"
+            },
+            "overall": {
+              "maximum": 5.0,
+              "minimum": 1.0,
+              "title": "Overall",
+              "type": "integer"
+            },
+            "physics": {
+              "maximum": 5.0,
+              "minimum": 1.0,
+              "title": "Physics",
+              "type": "integer"
+            },
+            "problems": {
+              "default": [],
+              "items": {
+                "$ref": "#/components/schemas/QosVideoAiProblem"
+              },
+              "maxItems": 30,
+              "title": "Problems",
+              "type": "array"
+            },
+            "reasons": {
+              "$ref": "#/components/schemas/QosVideoAiReasons"
+            },
+            "reviewed_at": {
+              "format": "date-time",
+              "title": "Reviewed At",
+              "type": "string"
+            },
+            "visual": {
+              "maximum": 5.0,
+              "minimum": 1.0,
+              "title": "Visual",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "judge",
+            "frames",
+            "overall",
+            "visual",
+            "detail",
+            "motion",
+            "alignment",
+            "physics",
+            "reasons",
+            "reviewed_at"
+          ],
+          "title": "QosVideoAiReview",
+          "type": "object"
+        },
+        "QosVideoAiScore": {
+          "additionalProperties": false,
+          "description": "A vision model's ratings of a video from one still per second, 1 (bad) to 5 (good); it hears no sound.",
+          "properties": {
+            "alignment": {
+              "maximum": 5.0,
+              "minimum": 1.0,
+              "title": "Alignment",
+              "type": "integer"
+            },
+            "checklist": {
+              "default": [],
+              "items": {
+                "$ref": "#/components/schemas/QosVideoAiCheck"
+              },
+              "maxItems": 30,
+              "title": "Checklist",
+              "type": "array"
+            },
+            "detail": {
+              "maximum": 5.0,
+              "minimum": 1.0,
+              "title": "Detail",
+              "type": "integer"
+            },
+            "frames": {
+              "description": "How many stills, one per second, the judge saw",
+              "minimum": 1.0,
+              "title": "Frames",
+              "type": "integer"
+            },
+            "judge": {
+              "description": "The model that rated the stills",
+              "maxLength": 200,
+              "minLength": 1,
+              "title": "Judge",
+              "type": "string"
+            },
+            "motion": {
+              "maximum": 5.0,
+              "minimum": 1.0,
+              "title": "Motion",
+              "type": "integer"
+            },
+            "overall": {
+              "maximum": 5.0,
+              "minimum": 1.0,
+              "title": "Overall",
+              "type": "integer"
+            },
+            "physics": {
+              "maximum": 5.0,
+              "minimum": 1.0,
+              "title": "Physics",
+              "type": "integer"
+            },
+            "problems": {
+              "default": [],
+              "items": {
+                "$ref": "#/components/schemas/QosVideoAiProblem"
+              },
+              "maxItems": 30,
+              "title": "Problems",
+              "type": "array"
+            },
+            "reasons": {
+              "$ref": "#/components/schemas/QosVideoAiReasons"
+            },
+            "visual": {
+              "maximum": 5.0,
+              "minimum": 1.0,
+              "title": "Visual",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "judge",
+            "frames",
+            "overall",
+            "visual",
+            "detail",
+            "motion",
+            "alignment",
+            "physics",
+            "reasons"
+          ],
+          "title": "QosVideoAiScore",
+          "type": "object"
+        },
+        "QosVideoEvaluationOptions": {
+          "properties": {
+            "available": {
+              "description": "Whether the gateway knows a media probe to run evaluations on",
+              "title": "Available",
+              "type": "boolean"
+            },
+            "models": {
+              "items": {
+                "$ref": "#/components/schemas/QosProbeModel"
+              },
+              "title": "Models",
+              "type": "array"
+            },
+            "prompts": {
+              "description": "Prompts earlier probe runs used, most recent first",
+              "items": {
+                "$ref": "#/components/schemas/QosUsedPrompt"
+              },
+              "title": "Prompts",
+              "type": "array"
+            }
+          },
+          "required": [
+            "available",
+            "models",
+            "prompts"
+          ],
+          "title": "QosVideoEvaluationOptions",
+          "type": "object"
+        },
+        "QosVideoEvaluationPrompt": {
+          "properties": {
+            "prompt": {
+              "maxLength": 500,
+              "minLength": 1,
+              "title": "Prompt",
+              "type": "string"
+            }
+          },
+          "required": [
+            "prompt"
+          ],
+          "title": "QosVideoEvaluationPrompt",
+          "type": "object"
+        },
+        "QosVideoEvaluationRequest": {
+          "additionalProperties": false,
+          "properties": {
+            "prompt": {
+              "maxLength": 500,
+              "minLength": 1,
+              "title": "Prompt",
+              "type": "string"
+            }
+          },
+          "required": [
+            "prompt"
+          ],
+          "title": "QosVideoEvaluationRequest",
+          "type": "object"
+        },
+        "QosVideoEvaluationStarted": {
+          "properties": {
+            "models": {
+              "description": "The video models the probe is generating with",
+              "items": {
+                "type": "string"
+              },
+              "title": "Models",
+              "type": "array"
+            },
+            "prompt": {
+              "title": "Prompt",
+              "type": "string"
+            }
+          },
+          "required": [
+            "prompt",
+            "models"
+          ],
+          "title": "QosVideoEvaluationStarted",
+          "type": "object"
+        },
+        "ValidationError": {
+          "properties": {
+            "ctx": {
+              "title": "Context",
+              "type": "object"
+            },
+            "input": {
+              "title": "Input"
+            },
+            "loc": {
+              "items": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "integer"
+                  }
+                ]
+              },
+              "title": "Location",
+              "type": "array"
+            },
+            "msg": {
+              "title": "Message",
+              "type": "string"
+            },
+            "type": {
+              "title": "Error Type",
+              "type": "string"
+            }
+          },
+          "required": [
+            "loc",
+            "msg",
+            "type"
+          ],
+          "title": "ValidationError",
+          "type": "object"
+        }
+      }
+    },
+    "paths": {
+      "/qos/videos/evaluations": {
+        "post": {
+          "description": "Have the probe generate the prompt's videos on every model it probes now, rating each as it finishes.",
+          "operationId": "start_qos_video_evaluation_qos_videos_evaluations_post_2",
+          "requestBody": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QosVideoEvaluationRequest"
+                }
+              }
+            },
+            "required": true
+          },
+          "responses": {
+            "200": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/QosVideoEvaluationStarted"
+                  }
+                }
+              },
+              "description": "Successful Response"
+            },
+            "422": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/HTTPValidationError"
+                  }
+                }
+              },
+              "description": "Validation Error"
+            }
+          },
+          "security": [
+            {
+              "APIKeyHeader": []
+            }
+          ],
+          "summary": "Start Qos Video Evaluation",
+          "tags": [
+            "qos_video_evaluations"
+          ]
+        }
+      },
+      "/qos/videos/evaluations/options": {
+        "get": {
+          "description": "What an evaluation run offers: the models the probe generates with, their latest price, and earlier prompts.",
+          "operationId": "get_qos_video_evaluation_options_qos_videos_evaluations_options_get_2",
+          "responses": {
+            "200": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/QosVideoEvaluationOptions"
+                  }
+                }
+              },
+              "description": "Successful Response"
+            }
+          },
+          "security": [
+            {
+              "APIKeyHeader": []
+            }
+          ],
+          "summary": "Get Qos Video Evaluation Options",
+          "tags": [
+            "qos_video_evaluations"
+          ]
+        }
+      },
+      "/qos/videos/evaluations/prompt": {
+        "post": {
+          "description": "A new test prompt that exercises every rating, unlike the recent ones, for the caller to read before a run.",
+          "operationId": "write_qos_video_evaluation_prompt_qos_videos_evaluations_prompt_post_2",
+          "responses": {
+            "200": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/QosVideoEvaluationPrompt"
+                  }
+                }
+              },
+              "description": "Successful Response"
+            }
+          },
+          "security": [
+            {
+              "APIKeyHeader": []
+            }
+          ],
+          "summary": "Write Qos Video Evaluation Prompt",
+          "tags": [
+            "qos_video_evaluations"
+          ]
+        }
+      },
+      "/qos/videos/evaluations/score": {
+        "put": {
+          "description": "Keep the vision model's ratings of a video the probe made, replacing the ones it gave before.",
+          "operationId": "put_qos_video_ai_review_qos_videos_evaluations_score_put_2",
+          "parameters": [
+            {
+              "description": "The id the gateway returned for the video",
+              "in": "query",
+              "name": "video_id",
+              "required": true,
+              "schema": {
+                "description": "The id the gateway returned for the video",
+                "minLength": 1,
+                "title": "Video Id",
+                "type": "string"
+              }
+            }
+          ],
+          "requestBody": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QosVideoAiScore"
+                }
+              }
+            },
+            "required": true
+          },
+          "responses": {
+            "200": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/QosVideoAiReview"
+                  }
+                }
+              },
+              "description": "Successful Response"
+            },
+            "422": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/HTTPValidationError"
+                  }
+                }
+              },
+              "description": "Validation Error"
+            }
+          },
+          "security": [
+            {
+              "APIKeyHeader": []
+            }
+          ],
+          "summary": "Put Qos Video Ai Review",
+          "tags": [
+            "qos_video_evaluations"
           ]
         }
       }

@@ -6,13 +6,12 @@ import httpx
 import pytest
 
 from litellm.proxy.management_endpoints.qos_media import (
-    PROBE_PROMPT_LIMIT,
     QOS_MEDIA_PROBE_TAG,
     qos_media,
     spoken_chars,
 )
 from litellm.types.llms.openai import HttpxBinaryResponseContent
-from litellm.types.qos import PROVIDER_TASK_HIDDEN_PARAM
+from litellm.types.qos import PROBE_PROMPT_MAX_CHARS, PROVIDER_TASK_HIDDEN_PARAM
 from litellm.types.utils import TranscriptionResponse
 from litellm.types.videos.main import VideoObject
 
@@ -107,12 +106,12 @@ def _queued_video() -> VideoObject:
 def test_a_probe_video_keeps_its_prompt_cut_to_the_limit_for_reviewers() -> None:
     media: Final = qos_media(
         "avideo_generation",
-        "猫" * (PROBE_PROMPT_LIMIT + 100),
+        "猫" * (PROBE_PROMPT_MAX_CHARS + 100),
         _queued_video(),
         ["User-Agent: httpx", QOS_MEDIA_PROBE_TAG],
     )
 
-    assert media == {"task_id": "TASK-1", "task_status": "waiting", "prompt": "猫" * PROBE_PROMPT_LIMIT}
+    assert media == {"task_id": "TASK-1", "task_status": "waiting", "prompt": "猫" * PROBE_PROMPT_MAX_CHARS}
 
 
 @pytest.mark.parametrize(

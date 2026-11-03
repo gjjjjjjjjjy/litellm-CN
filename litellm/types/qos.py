@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from typing import Annotated, Final, Literal, TypeAlias
 
-from pydantic import AfterValidator, ConfigDict, Field, model_validator
+from pydantic import AfterValidator, ConfigDict, Field, StringConstraints, model_validator
 from typing_extensions import Self
 
 from litellm.types.llms.base import LiteLLMBaseModel
@@ -166,17 +166,76 @@ class QosVideoReview(QosVideoReviewInput):
     reviewed_at: UtcDatetime
 
 
+ReviewText: TypeAlias = Annotated[str, Field(max_length=500)]
+
+
+class QosVideoAiReasons(LiteLLMBaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    visual: ReviewText = ""
+    detail: ReviewText = ""
+    motion: ReviewText = ""
+    alignment: ReviewText = ""
+    physics: ReviewText = ""
+
+
+class QosVideoAiCheck(LiteLLMBaseModel):
+    """One requirement the judge read out of the prompt, and whether the stills meet it."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    requirement: ReviewText
+    met: bool
+    evidence: ReviewText = ""
+
+
+class QosVideoAiProblem(LiteLLMBaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    second: float = Field(ge=0)
+    problem: ReviewText
+
+
+class QosVideoAiScore(LiteLLMBaseModel):
+    """A vision model's ratings of a video from one still per second, 1 (bad) to 5 (good); it hears no sound."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    judge: str = Field(min_length=1, max_length=200, description="The model that rated the stills")
+    frames: int = Field(ge=1, description="How many stills, one per second, the judge saw")
+    overall: ReviewScore
+    visual: ReviewScore
+    detail: ReviewScore
+    motion: ReviewScore
+    alignment: ReviewScore
+    physics: ReviewScore
+    reasons: QosVideoAiReasons
+    checklist: tuple[QosVideoAiCheck, ...] = Field(default=(), max_length=30)
+    problems: tuple[QosVideoAiProblem, ...] = Field(default=(), max_length=30)
+
+
+class QosVideoAiReview(QosVideoAiScore):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    reviewed_at: UtcDatetime
+
+
+QosReviewVideoStatus: TypeAlias = Literal["generating", "completed", "failed"]
+
+
 class QosReviewVideo(LiteLLMBaseModel):
     model_config = ConfigDict(frozen=True)
 
     video_id: str
     model_group: str
+    status: QosReviewVideoStatus
     created_at: UtcDatetime
-    completed_at: UtcDatetime
-    prompt: str = Field(description="The prompt the scheduled probe gave every model in its run")
+    completed_at: UtcDatetime | None = Field(description="When the provider reported the video done; None until then")
+    prompt: str = Field(description="The prompt the probe gave every model in its run")
     reviews: int
     overall: float | None = Field(description="Average overall rating of this video")
     my_review: QosVideoReview | None
+    ai_review: QosVideoAiReview | None
 
 
 class QosVideoReviewSummary(LiteLLMBaseModel):
@@ -194,13 +253,74 @@ class QosVideoReviewSummary(LiteLLMBaseModel):
     audio: float | None
 
 
+class QosVideoAiSummary(LiteLLMBaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    model_group: str
+    videos: int
+    overall: float
+    visual: float
+    detail: float
+    motion: float
+    alignment: float
+    physics: float
+
+
 class QosVideoReviewsResponse(LiteLLMBaseModel):
     model_config = ConfigDict(frozen=True)
 
     start_time: UtcDatetime
     end_time: UtcDatetime
     summary: tuple[QosVideoReviewSummary, ...]
+    ai_summary: tuple[QosVideoAiSummary, ...]
     videos: tuple[QosReviewVideo, ...]
+
+
+PROBE_PROMPT_MAX_CHARS: Final = 500
+
+
+class QosVideoEvaluationRequest(LiteLLMBaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    prompt: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=PROBE_PROMPT_MAX_CHARS)]
+
+
+class QosVideoEvaluationStarted(LiteLLMBaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    prompt: str
+    models: tuple[str, ...] = Field(description="The video models the probe is generating with")
+
+
+class QosVideoEvaluationPrompt(LiteLLMBaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    prompt: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=PROBE_PROMPT_MAX_CHARS)]
+
+
+class QosUsedPrompt(LiteLLMBaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    prompt: str
+    last_used: UtcDatetime
+    videos: int
+
+
+class QosProbeModel(LiteLLMBaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    model_group: str
+    image_to_video: bool
+    last_price: float | None = Field(description="What the provider charged for this model's latest finished video")
+    currency: str | None
+
+
+class QosVideoEvaluationOptions(LiteLLMBaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    available: bool = Field(description="Whether the gateway knows a media probe to run evaluations on")
+    models: tuple[QosProbeModel, ...]
+    prompts: tuple[QosUsedPrompt, ...] = Field(description="Prompts earlier probe runs used, most recent first")
 
 
 QOS_BENCHMARK_MAX_REQUESTS: Final = 5000

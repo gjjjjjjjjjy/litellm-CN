@@ -13,7 +13,7 @@ from typing import Final
 from pydantic import JsonValue, TypeAdapter, ValidationError
 
 from litellm.types.llms.openai import HttpxBinaryResponseContent
-from litellm.types.qos import PROVIDER_TASK_HIDDEN_PARAM, QosMedia, QosProviderTask
+from litellm.types.qos import PROBE_PROMPT_MAX_CHARS, PROVIDER_TASK_HIDDEN_PARAM, QosMedia, QosProviderTask
 
 QOS_MEDIA_KEY: Final = "qos_media"
 SPEECH_CALL_TYPES: Final = frozenset({"speech", "aspeech"})
@@ -35,7 +35,6 @@ VIDEO_CREATE_CALL_TYPES: Final = frozenset(
 VIDEO_STATUS_CALL_TYPES: Final = frozenset({"video_status", "avideo_status", "video_retrieve", "avideo_retrieve"})
 VIDEO_TASK_CALL_TYPES: Final = VIDEO_CREATE_CALL_TYPES | VIDEO_STATUS_CALL_TYPES
 QOS_MEDIA_PROBE_TAG: Final = "qos-media-probe"
-PROBE_PROMPT_LIMIT: Final = 500
 _UNSPOKEN_CATEGORIES: Final = ("P", "Z", "C")
 _MP3_SYNC: Final = (b"ID3", b"\xff\xfb", b"\xff\xf3", b"\xff\xf2", b"\xff\xfa")
 _HIDDEN_PARAMS: Final = TypeAdapter(dict[str, object])
@@ -129,7 +128,7 @@ def tag_list(tags: object) -> tuple[object, ...] | None:
 def _probe_prompt(call_type: object, request_input: object, tags: object) -> str | None:
     tagged: Final = isinstance(tags, list | tuple) and QOS_MEDIA_PROBE_TAG in tags
     if call_type in VIDEO_CREATE_CALL_TYPES and tagged and isinstance(request_input, str):
-        return request_input[:PROBE_PROMPT_LIMIT]
+        return request_input[:PROBE_PROMPT_MAX_CHARS]
     return None
 
 

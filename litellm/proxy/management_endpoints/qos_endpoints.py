@@ -1,5 +1,6 @@
 import re
 import time
+from collections.abc import Mapping
 from copy import deepcopy
 from datetime import datetime, timedelta
 from functools import partial
@@ -87,6 +88,9 @@ from litellm.proxy.management_endpoints.qos_trends import (
     trend_series,
 )
 from litellm.proxy.management_endpoints.qos_video_reviews import (
+    AI_REVIEW_SUMMARY_ROWS,
+    AI_REVIEW_SUMMARY_SQL,
+    GENERATING_WINDOW,
     RECORD_VIDEO_REVIEW_SQL,
     RECORDED_REVIEW_ROWS,
     REVIEW_SUMMARY_ROWS,
@@ -123,6 +127,7 @@ if TYPE_CHECKING:
 
 router: Final = APIRouter()
 
+SETTINGS: Final = TypeAdapter(Mapping[str, object])
 RESPONSE_CHECK_RECORD_ATTEMPTS: Final = 30
 RESPONSE_CHECK_RETRY_SECONDS: Final = 5.0
 _RUN_ID: Final = re.compile(rf"{QOS_RUN_PREFIX}[A-Za-z0-9.-]+")
@@ -458,7 +463,10 @@ async def get_qos_videos(
         bool, Query(description="Include all retained history; cannot be combined with start_time")
     ] = False,
 ) -> QosVideoReviewsResponse:
-    """Finished videos the scheduled probe made, newest first, to watch and rate, and each model's average ratings."""
+    """The probe's videos, newest first, to watch and rate, with each model's average ratings by hand and by AI.
+
+    A video still generating is listed only while the probe may still be waiting for it.
+    """
     from litellm.proxy.proxy_server import prisma_client
 
     require_video_reviewer(user_api_key_dict)
@@ -468,12 +476,19 @@ async def get_qos_videos(
     summary: Final = REVIEW_SUMMARY_ROWS.validate_python(
         await query_rows(prisma_client, REVIEW_SUMMARY_SQL, start, end)
     )
-    rows: Final = REVIEW_VIDEO_ROWS.validate_python(await query_rows(prisma_client, REVIEW_VIDEOS_SQL, start, end))
+    ai_summary: Final = AI_REVIEW_SUMMARY_ROWS.validate_python(
+        await query_rows(prisma_client, AI_REVIEW_SUMMARY_SQL, start, end)
+    )
+    generating_since: Final = as_utc_naive(utc_now() - GENERATING_WINDOW)
+    rows: Final = REVIEW_VIDEO_ROWS.validate_python(
+        await query_rows(prisma_client, REVIEW_VIDEOS_SQL, start, end, generating_since)
+    )
     reviewer: Final = _reviewer(user_api_key_dict)
     return QosVideoReviewsResponse(
         start_time=start,
         end_time=end,
         summary=summary,
+        ai_summary=ai_summary,
         videos=tuple(review_video(row, reviewer) for row in rows),
     )
 
@@ -534,7 +549,7 @@ async def put_qos_video_review(
         )
     )
     if not recorded:
-        raise HTTPException(status_code=404, detail="No video with this id was made by the scheduled probe")
+        raise HTTPException(status_code=404, detail="No video with this id was made by the probe")
     return saved
 
 
@@ -658,11 +673,11 @@ async def refresh_qos_health(
     )
     if not persisted:
         raise HTTPException(status_code=500, detail="Health checks completed but results could not be saved")
+    skip_disabled: Final = (
+        SETTINGS.validate_python(general_settings).get("health_check_skip_disabled_background_models") is True
+    )
     for deployment in stream_deployments:
-        if (
-            general_settings.get("health_check_skip_disabled_background_models") is True
-            and deployment.model_info.get("disable_background_health_check") is True
-        ):
+        if skip_disabled and deployment.model_info.get("disable_background_health_check") is True:
             continue
         result: Final = await check_stream_health(deployment)
         row: Final = await prisma_client.save_health_check_result(

@@ -1,4 +1,6 @@
+import base64
 import importlib.util
+import io
 import json
 import struct
 import zlib
@@ -11,8 +13,10 @@ from itertools import islice
 from pathlib import Path
 from typing import Final
 
+import av
 import httpx
 import pytest
+from PIL import Image
 
 ROOT: Final = Path(__file__).resolve().parents[2]
 _spec = importlib.util.spec_from_file_location("media_probe", ROOT / "qos" / "media_probe.py")
@@ -40,6 +44,44 @@ _MODEL_INFO: Final = {
         {"model_name": "IndexTTS-2", "model_info": {"mode": "audio_speech", "qos_probe": {}}},
     ]
 }
+_RED: Final = (220, 20, 20)
+_GREEN: Final = (20, 200, 20)
+_BLUE: Final = (20, 20, 220)
+_WHITE: Final = (240, 240, 240)
+_STREET: Final = "夜晚刚下过雨的街道，镜头从左向右缓慢平移，一个穿黄色雨衣的人骑着自行车从画面左侧骑向右侧"
+_VERDICT: Final = {
+    "overall": 3,
+    "visual": 4,
+    "detail": 2,
+    "motion": 3,
+    "alignment": 4,
+    "physics": 2,
+    "reasons": {"detail": "招牌上的字糊了", "physics": "积水里没有倒影", "audio": "听不到"},
+    "checklist": [{"requirement": "骑车人从左向右", "met": True, "evidence": "第 1 到 3 秒一路向右"}],
+    "problems": [{"second": 2, "problem": "车轮变形"}],
+}
+
+
+def _mp4(colors: tuple[tuple[int, int, int], ...], fps: int) -> bytes:
+    """A small video showing one solid color per frame."""
+    buffer: Final = io.BytesIO()
+    with av.open(buffer, mode="w", format="mp4") as container:
+        stream = container.add_stream("mpeg4", rate=fps)
+        stream.width, stream.height, stream.pix_fmt = 64, 48, "yuv420p"
+        for color in colors:
+            container.mux(stream.encode(av.VideoFrame.from_image(Image.new("RGB", (64, 48), color))))
+        container.mux(stream.encode())
+    return buffer.getvalue()
+
+
+_A_COLOR_A_SECOND: Final = _mp4((_RED,) * 4 + (_GREEN,) * 4 + (_BLUE,) * 4 + (_WHITE,) * 2, fps=4)
+
+
+def _dominant(image: Image.Image) -> str:
+    red, green, blue = image.convert("RGB").resize((1, 1)).getpixel((0, 0))
+    if min(red, green, blue) > 180:
+        return "white"
+    return ("red", "green", "blue")[max(range(3), key=lambda channel: (red, green, blue)[channel])]
 
 
 def _fields(request: httpx.Request) -> dict[str, bytes]:
@@ -59,32 +101,52 @@ def _fields(request: httpx.Request) -> dict[str, bytes]:
 class _Gateway:
     """Answers the probe like the gateway, except a status names another id, as the gateway once did."""
 
-    def __init__(self) -> None:
+    def __init__(self, judge_answer: str = json.dumps(_VERDICT, ensure_ascii=False)) -> None:
+        self.judge_answer = judge_answer
         self.created: dict[str, dict[str, bytes]] = {}
+        self.events: list[str] = []
         self.polled: list[str] = []
+        self.judged: list[dict[str, object]] = []
+        self.scores: dict[str, dict[str, object]] = {}
 
     def handle(self, request: httpx.Request) -> httpx.Response:
-        if request.url.path == "/model/info":
+        path: Final = request.url.path
+        if path == "/model/info":
             return httpx.Response(200, json=_MODEL_INFO)
+        if path == "/qos/videos/content":
+            return httpx.Response(200, content=_A_COLOR_A_SECOND)
+        if path == "/v1/chat/completions":
+            self.judged.append(json.loads(request.content))
+            return httpx.Response(200, json={"choices": [{"message": {"content": self.judge_answer}}]})
+        if path == "/qos/videos/evaluations/score":
+            self.scores[request.url.params["video_id"]] = json.loads(request.content)
+            return httpx.Response(200, json={})
         if request.method == "POST":
             fields: Final = _fields(request)
             model: Final = fields["model"].decode()
             self.created[model] = fields
+            self.events.append(f"submitted {model}")
             return httpx.Response(200, json={"id": f"video_{model}", "status": "queued"})
-        status: Final = "completed" if request.url.path in self.polled else "in_progress"
-        self.polled.append(request.url.path)
-        return httpx.Response(200, json={"id": "video_without_its_deployment", "status": status})
+        done: Final = path in self.polled
+        self.polled.append(path)
+        if done:
+            self.events.append(f"finished {path.rsplit('_', 1)[-1]}")
+        return httpx.Response(
+            200, json={"id": "video_without_its_deployment", "status": "completed" if done else "in_progress"}
+        )
+
+    def client(self) -> httpx.Client:
+        return httpx.Client(transport=httpx.MockTransport(self.handle), base_url="http://gateway")
 
 
-def _probe_run() -> _Gateway:
-    gateway: Final = _Gateway()
-    with httpx.Client(transport=httpx.MockTransport(gateway.handle), base_url="http://gateway") as client:
-        media_probe.run_once(client, dry_run=False, sleep=lambda seconds: None)
+def _probe_run(gateway: _Gateway, judge: str | None = None) -> _Gateway:
+    with gateway.client() as client:
+        media_probe.run_once(client, dry_run=False, sleep=lambda seconds: None, judge=judge)
     return gateway
 
 
 def test_every_probed_model_gets_the_same_prompt_and_every_image_model_the_same_first_frame() -> None:
-    created: Final = _probe_run().created
+    created: Final = _probe_run(_Gateway()).created
 
     assert sorted(created) == sorted((*_IMAGE_MODELS, _TEXT_MODEL))
     assert {fields["prompt"].decode() for fields in created.values()} == {media_probe.PROBE_PROMPT}
@@ -94,9 +156,157 @@ def test_every_probed_model_gets_the_same_prompt_and_every_image_model_the_same_
 
 
 def test_every_poll_asks_about_the_id_the_video_was_created_under() -> None:
-    polled: Final = _probe_run().polled
+    polled: Final = _probe_run(_Gateway()).polled
 
     assert sorted(polled) == sorted(f"/v1/videos/video_{model}" for model in (*_IMAGE_MODELS, _TEXT_MODEL) * 2)
+
+
+def test_any_other_prompt_starts_the_image_models_from_the_text_models_first_frame() -> None:
+    gateway: Final = _Gateway()
+
+    with gateway.client() as client:
+        outcomes: Final = media_probe.evaluate(client, _STREET, media_probe.listed_probes(client), lambda _: None, None)
+
+    assert gateway.events[:2] == [f"submitted {_TEXT_MODEL}", f"finished {_TEXT_MODEL}"]
+    assert {fields["prompt"].decode() for fields in gateway.created.values()} == {_STREET}
+    first_frames: Final = tuple(
+        Image.open(io.BytesIO(gateway.created[model]["input_reference"])) for model in _IMAGE_MODELS
+    )
+    assert {(frame.size, _dominant(frame)) for frame in first_frames} == {(media_probe.FIRST_FRAME_SIZE, "red")}
+    assert sorted(outcome.status for outcome in outcomes) == ["completed"] * 3
+
+
+def test_with_no_finished_text_video_the_image_models_are_skipped_rather_than_given_a_wrong_frame() -> None:
+    gateway: Final = _Gateway()
+    image_only: Final = tuple(
+        probe
+        for probe in media_probe.probes_from(media_probe.ModelList.model_validate(_MODEL_INFO))
+        if probe.spec.image
+    )
+
+    with gateway.client() as client:
+        outcomes: Final = media_probe.evaluate(client, _STREET, image_only, lambda _: None, None)
+
+    assert gateway.created == {}
+    assert {outcome.status for outcome in outcomes} == {"skipped: no finished text-to-video video to start from"}
+
+
+def test_the_stills_are_the_first_frame_at_or_after_each_whole_second() -> None:
+    stills: Final = media_probe.stills_of(_A_COLOR_A_SECOND)
+
+    assert (stills.seconds, stills.fps, [second for second, _ in stills.jpegs]) == (3.5, 4.0, [0, 1, 2, 3])
+    assert [_dominant(Image.open(io.BytesIO(jpeg))) for _, jpeg in stills.jpegs] == ["red", "green", "blue", "white"]
+
+
+def test_each_finished_video_is_rated_from_its_stills_and_the_rating_kept_on_it() -> None:
+    gateway: Final = _probe_run(_Gateway(), judge="qwen-test")
+
+    assert sorted(gateway.scores) == sorted(f"video_{model}" for model in (*_IMAGE_MODELS, _TEXT_MODEL))
+    assert gateway.scores[f"video_{_TEXT_MODEL}"] == {
+        "judge": "qwen-test",
+        "frames": 4,
+        "overall": 3,
+        "visual": 4,
+        "detail": 2,
+        "motion": 3,
+        "alignment": 4,
+        "physics": 2,
+        "reasons": {
+            "visual": "",
+            "detail": "招牌上的字糊了",
+            "motion": "",
+            "alignment": "",
+            "physics": "积水里没有倒影",
+        },
+        "checklist": [{"requirement": "骑车人从左向右", "met": True, "evidence": "第 1 到 3 秒一路向右"}],
+        "problems": [{"second": 2.0, "problem": "车轮变形"}],
+    }
+    asked: Final = {request["model"] for request in gateway.judged}
+    assert asked == {"qwen-test"}
+    user_parts: Final = [request["messages"][1]["content"] for request in gateway.judged]
+    labels: Final = {tuple(part["text"] for part in parts[1:] if part["type"] == "text") for parts in user_parts}
+    assert labels == {("第 0 秒：", "第 1 秒：", "第 2 秒：", "第 3 秒：")}
+    intros: Final = sorted(parts[0]["text"] for parts in user_parts)
+    assert sum("第 0 秒的画面是输入给模型的首帧" in intro for intro in intros) == len(_IMAGE_MODELS)
+
+
+def test_a_judge_answer_without_json_leaves_the_video_unrated_without_stopping_the_run() -> None:
+    gateway: Final = _Gateway(judge_answer="这条视频总体不错")
+
+    with gateway.client() as client:
+        outcomes: Final = media_probe.evaluate(
+            client, media_probe.PROBE_PROMPT, media_probe.listed_probes(client), lambda _: None, "qwen-test"
+        )
+
+    assert gateway.scores == {}
+    assert len(outcomes) == 3
+    assert all(outcome.status.startswith("completed not rated") for outcome in outcomes)
+
+
+def _respond(path: str, authorization: str, body: bytes, started: list[str]) -> tuple[int, dict[str, object]]:
+    def start(prompt: str) -> tuple[str, ...]:
+        started.append(prompt)
+        return (_TEXT_MODEL, *_IMAGE_MODELS)
+
+    def write(avoid: tuple[str, ...]) -> str:
+        if avoid == ("broken",):
+            raise httpx.ConnectError("writer unreachable")
+        return f"a prompt unlike {len(avoid)} others"
+
+    return media_probe.respond(path, authorization, body, api_key="sk-master", start=start, write=write)
+
+
+@pytest.mark.parametrize(
+    ("path", "authorization", "body", "status", "payload"),
+    (
+        (
+            "/evaluations",
+            "Bearer sk-master",
+            json.dumps({"prompt": f" {_STREET} "}).encode(),
+            202,
+            {"prompt": _STREET, "models": [_TEXT_MODEL, *_IMAGE_MODELS]},
+        ),
+        ("/evaluations", "Bearer sk-someone-else", json.dumps({"prompt": _STREET}).encode(), 401, None),
+        ("/evaluations", "", json.dumps({"prompt": _STREET}).encode(), 401, None),
+        ("/evaluations", "Bearer sk-master", json.dumps({"prompt": "  "}).encode(), 400, None),
+        (
+            "/prompts",
+            "Bearer sk-master",
+            json.dumps({"avoid": ["a", "b"]}).encode(),
+            200,
+            {"prompt": "a prompt unlike 2 others"},
+        ),
+        ("/prompts", "Bearer sk-master", json.dumps({"avoid": ["broken"]}).encode(), 502, None),
+        ("/elsewhere", "Bearer sk-master", b"{}", 404, None),
+    ),
+)
+def test_the_probe_answers_only_the_gateway_and_only_for_runs_and_prompts(
+    path: str, authorization: str, body: bytes, status: int, payload: dict[str, object] | None
+) -> None:
+    started: Final[list[str]] = []
+
+    answered_status, answered = _respond(path, authorization, body, started)
+
+    assert answered_status == status
+    if payload is not None:
+        assert answered == payload
+    assert started == ([_STREET] if status == 202 else [])
+
+
+def test_a_new_prompt_is_asked_for_unlike_the_recent_ones_and_comes_back_without_quotes() -> None:
+    asked: Final[list[dict[str, object]]] = []
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        asked.append(json.loads(request.content))
+        return httpx.Response(200, json={"choices": [{"message": {"content": f"“{_STREET}”\n"}}]})
+
+    with httpx.Client(transport=httpx.MockTransport(handle), base_url="http://gateway") as client:
+        written: Final = media_probe.write_prompt(client, "qwen-test", ("红球滚过草地", "倒茶"))
+
+    assert written == _STREET
+    ((request,),) = (asked,)
+    assert request["model"] == "qwen-test"
+    assert "- 红球滚过草地\n- 倒茶" in request["messages"][1]["content"]
 
 
 def _chunks(png: bytes, offset: int = 8) -> Iterator[tuple[bytes, bytes]]:
@@ -192,3 +402,12 @@ def test_a_run_still_starts_a_few_minutes_late_but_not_once_its_time_is_long_gon
 
     assert media_probe.on_time(run_at, clock.sleep, clock.read) is runs
     assert clock.naps == []
+
+
+def test_a_judge_still_is_sent_as_a_jpeg_data_url() -> None:
+    url: Final = media_probe.judge_messages(_STREET, False, media_probe.stills_of(_A_COLOR_A_SECOND))[1]["content"][2][
+        "image_url"
+    ]["url"]
+
+    assert url.startswith("data:image/jpeg;base64,")
+    assert _dominant(Image.open(io.BytesIO(base64.b64decode(url.split(",", 1)[1])))) == "red"
