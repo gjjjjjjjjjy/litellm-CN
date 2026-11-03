@@ -14424,7 +14424,9 @@ export interface paths {
         };
         /**
          * Get Qos Videos
-         * @description Finished videos the scheduled probe made, newest first, to watch and rate, and each model's average ratings.
+         * @description The probe's videos, newest first, to watch and rate, with each model's average ratings by hand and by AI.
+         *
+         *     A video still generating is listed only while the probe may still be waiting for it.
          */
         get: operations["get_qos_videos_qos_videos_get"];
         put?: never;
@@ -14448,6 +14450,86 @@ export interface paths {
          */
         get: operations["get_qos_video_content_qos_videos_content_get"];
         put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/qos/videos/evaluations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start Qos Video Evaluation
+         * @description Have the probe generate the prompt's videos on every model it probes now, rating each as it finishes.
+         */
+        post: operations["start_qos_video_evaluation_qos_videos_evaluations_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/qos/videos/evaluations/options": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Qos Video Evaluation Options
+         * @description What an evaluation run offers: the models the probe generates with, their latest price, and earlier prompts.
+         */
+        get: operations["get_qos_video_evaluation_options_qos_videos_evaluations_options_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/qos/videos/evaluations/prompt": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Write Qos Video Evaluation Prompt
+         * @description A new test prompt that exercises every rating, unlike the recent ones, for the caller to read before a run.
+         */
+        post: operations["write_qos_video_evaluation_prompt_qos_videos_evaluations_prompt_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/qos/videos/evaluations/score": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Put Qos Video Ai Review
+         * @description Keep the vision model's ratings of a video the probe made, replacing the ones it gave before.
+         */
+        put: operations["put_qos_video_ai_review_qos_videos_evaluations_score_put"];
         post?: never;
         delete?: never;
         options?: never;
@@ -43690,6 +43772,20 @@ export interface components {
             /** P99 */
             p99: number | null;
         };
+        /** QosProbeModel */
+        QosProbeModel: {
+            /** Currency */
+            currency: string | null;
+            /** Image To Video */
+            image_to_video: boolean;
+            /**
+             * Last Price
+             * @description What the provider charged for this model's latest finished video
+             */
+            last_price: number | null;
+            /** Model Group */
+            model_group: string;
+        };
         /**
          * QosResponseChecks
          * @description How many benchmark responses were checked for cross-talk with concurrent requests, and what was found.
@@ -43704,11 +43800,12 @@ export interface components {
         };
         /** QosReviewVideo */
         QosReviewVideo: {
+            ai_review: components["schemas"]["QosVideoAiReview"] | null;
             /**
              * Completed At
-             * Format: date-time
+             * @description When the provider reported the video done; None until then
              */
-            completed_at: string;
+            completed_at: string | null;
             /**
              * Created At
              * Format: date-time
@@ -43724,11 +43821,16 @@ export interface components {
             overall: number | null;
             /**
              * Prompt
-             * @description The prompt the scheduled probe gave every model in its run
+             * @description The prompt the probe gave every model in its run
              */
             prompt: string;
             /** Reviews */
             reviews: number;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "generating" | "completed" | "failed";
             /** Video Id */
             video_id: string;
         };
@@ -43832,6 +43934,202 @@ export interface components {
              */
             start_time: string;
         };
+        /** QosUsedPrompt */
+        QosUsedPrompt: {
+            /**
+             * Last Used
+             * Format: date-time
+             */
+            last_used: string;
+            /** Prompt */
+            prompt: string;
+            /** Videos */
+            videos: number;
+        };
+        /**
+         * QosVideoAiCheck
+         * @description One requirement the judge read out of the prompt, and whether the stills meet it.
+         */
+        QosVideoAiCheck: {
+            /**
+             * Evidence
+             * @default
+             */
+            evidence: string;
+            /** Met */
+            met: boolean;
+            /** Requirement */
+            requirement: string;
+        };
+        /** QosVideoAiProblem */
+        QosVideoAiProblem: {
+            /** Problem */
+            problem: string;
+            /** Second */
+            second: number;
+        };
+        /** QosVideoAiReasons */
+        QosVideoAiReasons: {
+            /**
+             * Alignment
+             * @default
+             */
+            alignment: string;
+            /**
+             * Detail
+             * @default
+             */
+            detail: string;
+            /**
+             * Motion
+             * @default
+             */
+            motion: string;
+            /**
+             * Physics
+             * @default
+             */
+            physics: string;
+            /**
+             * Visual
+             * @default
+             */
+            visual: string;
+        };
+        /** QosVideoAiReview */
+        QosVideoAiReview: {
+            /** Alignment */
+            alignment: number;
+            /**
+             * Checklist
+             * @default []
+             */
+            checklist: components["schemas"]["QosVideoAiCheck"][];
+            /** Detail */
+            detail: number;
+            /**
+             * Frames
+             * @description How many stills, one per second, the judge saw
+             */
+            frames: number;
+            /**
+             * Judge
+             * @description The model that rated the stills
+             */
+            judge: string;
+            /** Motion */
+            motion: number;
+            /** Overall */
+            overall: number;
+            /** Physics */
+            physics: number;
+            /**
+             * Problems
+             * @default []
+             */
+            problems: components["schemas"]["QosVideoAiProblem"][];
+            reasons: components["schemas"]["QosVideoAiReasons"];
+            /**
+             * Reviewed At
+             * Format: date-time
+             */
+            reviewed_at: string;
+            /** Visual */
+            visual: number;
+        };
+        /**
+         * QosVideoAiScore
+         * @description A vision model's ratings of a video from one still per second, 1 (bad) to 5 (good); it hears no sound.
+         */
+        QosVideoAiScore: {
+            /** Alignment */
+            alignment: number;
+            /**
+             * Checklist
+             * @default []
+             */
+            checklist: components["schemas"]["QosVideoAiCheck"][];
+            /** Detail */
+            detail: number;
+            /**
+             * Frames
+             * @description How many stills, one per second, the judge saw
+             */
+            frames: number;
+            /**
+             * Judge
+             * @description The model that rated the stills
+             */
+            judge: string;
+            /** Motion */
+            motion: number;
+            /** Overall */
+            overall: number;
+            /** Physics */
+            physics: number;
+            /**
+             * Problems
+             * @default []
+             */
+            problems: components["schemas"]["QosVideoAiProblem"][];
+            reasons: components["schemas"]["QosVideoAiReasons"];
+            /** Visual */
+            visual: number;
+        };
+        /** QosVideoAiSummary */
+        QosVideoAiSummary: {
+            /** Alignment */
+            alignment: number;
+            /** Detail */
+            detail: number;
+            /** Model Group */
+            model_group: string;
+            /** Motion */
+            motion: number;
+            /** Overall */
+            overall: number;
+            /** Physics */
+            physics: number;
+            /** Videos */
+            videos: number;
+            /** Visual */
+            visual: number;
+        };
+        /** QosVideoEvaluationOptions */
+        QosVideoEvaluationOptions: {
+            /**
+             * Available
+             * @description Whether the gateway knows a media probe to run evaluations on
+             */
+            available: boolean;
+            /** Models */
+            models: components["schemas"]["QosProbeModel"][];
+            /**
+             * Prompts
+             * @description Prompts earlier probe runs used, most recent first
+             */
+            prompts: components["schemas"]["QosUsedPrompt"][];
+        };
+        /** QosVideoEvaluationPrompt */
+        QosVideoEvaluationPrompt: {
+            /** Prompt */
+            prompt: string;
+        };
+        /** QosVideoEvaluationRequest */
+        QosVideoEvaluationRequest: {
+            /** Prompt */
+            prompt: string;
+        };
+        /** QosVideoEvaluationStarted */
+        QosVideoEvaluationStarted: {
+            /**
+             * Models
+             * @description The video models the probe is generating with
+             */
+            models: string[];
+            /** Prompt */
+            prompt: string;
+        };
         /** QosVideoMetrics */
         QosVideoMetrics: {
             /** Cancelled */
@@ -43927,6 +44225,8 @@ export interface components {
         };
         /** QosVideoReviewsResponse */
         QosVideoReviewsResponse: {
+            /** Ai Summary */
+            ai_summary: components["schemas"]["QosVideoAiSummary"][];
             /**
              * End Time
              * Format: date-time
@@ -73277,6 +73577,115 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    start_qos_video_evaluation_qos_videos_evaluations_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["QosVideoEvaluationRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QosVideoEvaluationStarted"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_qos_video_evaluation_options_qos_videos_evaluations_options_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QosVideoEvaluationOptions"];
+                };
+            };
+        };
+    };
+    write_qos_video_evaluation_prompt_qos_videos_evaluations_prompt_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QosVideoEvaluationPrompt"];
+                };
+            };
+        };
+    };
+    put_qos_video_ai_review_qos_videos_evaluations_score_put: {
+        parameters: {
+            query: {
+                /** @description The id the gateway returned for the video */
+                video_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["QosVideoAiScore"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QosVideoAiReview"];
+                };
             };
             /** @description Validation Error */
             422: {

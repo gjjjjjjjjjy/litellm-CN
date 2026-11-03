@@ -21,8 +21,12 @@ import {
   interferenceLabel,
   otherTraffic,
   responseCheckBadge,
+  evaluationCost,
+  EVALUATION_START_POLL_MS,
   reviewInput,
+  reviewPollMs,
   reviewScores,
+  VIDEO_REVIEW_POLL_MS,
   targetChoiceValue,
   videosByPrompt,
   videosWithoutResult,
@@ -369,5 +373,42 @@ describe("video review helpers", () => {
     expect(formatScore(3.456)).toBe("3.5");
     expect(formatScore(null)).toBe("-");
     expect(formatScore(undefined)).toBe("-");
+  });
+});
+
+describe("video evaluation helpers", () => {
+  const probeModel = (model_group: string, last_price: number | null, currency: string | null = "CNY") => ({
+    model_group,
+    image_to_video: false,
+    last_price,
+    currency,
+  });
+
+  it("adds up each model's latest price and names the models without one", () => {
+    expect(
+      evaluationCost([probeModel("MiniMax-H3", 2.5), probeModel("LTX-2", 1.5), probeModel("Wan2.7", null, null)]),
+    ).toEqual({ total: 4, currency: "CNY", unpriced: ["Wan2.7"] });
+    expect(evaluationCost([probeModel("Wan2.7", null, null)])).toBeNull();
+  });
+
+  it("refreshes the videos while one is generating and for a while after an evaluation starts", () => {
+    const video = (status: QosReviewVideo["status"]): QosReviewVideo => ({
+      video_id: status,
+      model_group: "LTX-2",
+      status,
+      created_at: "2026-11-03T09:00:00Z",
+      completed_at: null,
+      prompt: "ball",
+      reviews: 0,
+      overall: null,
+      my_review: null,
+      ai_review: null,
+    });
+    const startedAt = 1_000_000;
+
+    expect(reviewPollMs([video("completed"), video("generating")], null, startedAt)).toBe(VIDEO_REVIEW_POLL_MS);
+    expect(reviewPollMs([video("completed"), video("failed")], null, startedAt)).toBe(false);
+    expect(reviewPollMs([], startedAt, startedAt + EVALUATION_START_POLL_MS - 1)).toBe(VIDEO_REVIEW_POLL_MS);
+    expect(reviewPollMs([], startedAt, startedAt + EVALUATION_START_POLL_MS)).toBe(false);
   });
 });

@@ -100,6 +100,7 @@ const videoReviews = {
   start_time: "2026-10-22T11:00:00Z",
   end_time: "2026-10-22T12:00:00Z",
   summary: [],
+  ai_summary: [],
   videos: [],
 };
 

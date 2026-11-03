@@ -331,3 +331,43 @@ export const reviewInput = (scores: ReviewScores, comment: string): QosVideoRevi
   const trimmed = comment.trim();
   return { ...scores, overall, comment: trimmed === "" ? null : trimmed };
 };
+
+export type QosVideoAiReview = components["schemas"]["QosVideoAiReview"];
+export type QosVideoAiSummary = components["schemas"]["QosVideoAiSummary"];
+export type QosVideoEvaluationOptions = components["schemas"]["QosVideoEvaluationOptions"];
+export type QosVideoEvaluationStarted = components["schemas"]["QosVideoEvaluationStarted"];
+export type QosVideoEvaluationPrompt = components["schemas"]["QosVideoEvaluationPrompt"];
+export type QosProbeModel = components["schemas"]["QosProbeModel"];
+
+export type AiDimension = Exclude<ReviewDimension, "audio">;
+
+export const AI_DIMENSIONS: readonly AiDimension[] = ["overall", "visual", "detail", "motion", "alignment", "physics"];
+
+export const VIDEO_REVIEW_POLL_MS = 30_000;
+export const EVALUATION_START_POLL_MS = 10 * 60_000;
+
+export const reviewPollMs = (
+  videos: readonly QosReviewVideo[],
+  evaluationStartedAt: number | null,
+  now: number,
+): number | false =>
+  videos.some((video) => video.status === "generating") ||
+  (evaluationStartedAt !== null && now - evaluationStartedAt < EVALUATION_START_POLL_MS)
+    ? VIDEO_REVIEW_POLL_MS
+    : false;
+
+export type EvaluationCost = {
+  readonly total: number;
+  readonly currency: string;
+  readonly unpriced: readonly string[];
+};
+
+export const evaluationCost = (models: readonly QosProbeModel[]): EvaluationCost | null => {
+  const priced = models.filter((model) => model.last_price !== null);
+  if (priced.length === 0) return null;
+  return {
+    total: priced.reduce((sum, model) => sum + (model.last_price ?? 0), 0),
+    currency: [...new Set(priced.map((model) => model.currency ?? ""))].join(" / "),
+    unpriced: models.filter((model) => model.last_price === null).map((model) => model.model_group),
+  };
+};
