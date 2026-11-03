@@ -45,10 +45,10 @@
 所有模型用同一句 Prompt（脚本里的 `PROBE_PROMPT`，一个红色皮球从左向右滚过草地），评审时才能横向对比。`image` 为 true 时以图生视频提交，首帧是脚本按这句 Prompt 画的同一张图：草地左侧一个红色皮球，上方是蓝天白云。`params` 原样作为请求字段，例如时长 `seconds`、分辨率 `width` 和 `height`，但改不了 Prompt。各模型的时长和分辨率也应尽量接近，对比才公平
 
 ```bash
-LITELLM_API_KEY=sk-... python qos/media_probe.py --base-url http://<网关地址> --every 10800
+LITELLM_API_KEY=sk-... python qos/media_probe.py --base-url http://<网关地址> --at 09:00,11:30,14:00,17:00
 ```
 
-`--every` 为运行间隔（秒），按整点对齐，网关重启不会额外运行；不加时只运行一次。`--dry-run` 只列出参与探测的模型和参数。脚本只依赖 httpx 和 pydantic，可直接用网关镜像运行。每次探测按服务商标价计费，间隔要按预算设置
+`--at` 为每天的运行时间，按容器的时区（`TZ`）计算，多个时间用逗号分隔，不加时只运行一次。到点时如果机器在睡眠，或者上一轮还没结束，晚了 10 分钟以上的那一轮直接跳过，不补跑。每条视频最多等 2 小时 20 分钟，所以相邻两个时间至少要隔两个半小时。`--dry-run` 只列出参与探测的模型和参数。脚本只依赖 httpx 和 pydantic，可直接用网关镜像运行。每次探测按服务商标价计费，运行次数要按预算设置
 
 探测请求带 `x-litellm-tags: qos-media-probe` 标签，网关只为这类请求记录视频的 Prompt，其他请求的 Prompt 照旧不保存
 

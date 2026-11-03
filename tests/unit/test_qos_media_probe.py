@@ -3,13 +3,16 @@ import json
 import struct
 import zlib
 from collections.abc import Iterator
+from datetime import datetime, timedelta
 from email.message import EmailMessage
 from email.parser import BytesParser
 from email.policy import HTTP
+from itertools import islice
 from pathlib import Path
 from typing import Final
 
 import httpx
+import pytest
 
 ROOT: Final = Path(__file__).resolve().parents[2]
 _spec = importlib.util.spec_from_file_location("media_probe", ROOT / "qos" / "media_probe.py")
@@ -122,3 +125,70 @@ def test_the_first_frame_shows_what_the_prompt_opens_on_a_red_ball_on_the_left_o
     assert all(g > r and g > b for r, g, b in rows[-1]), "green grass along the bottom"
     assert sum(x for x, _ in red) / len(red) < width / 3, "the ball starts on the left so it can roll right"
     assert sum(y for _, y in red) / len(red) > height / 2, "the ball sits on the grass"
+
+
+_RUN_TIMES: Final = media_probe.daily_times("17:00, 09:00,11:30,14:00")
+
+
+@pytest.mark.parametrize(
+    ("now", "expected"),
+    (
+        (datetime(2026, 11, 3, 8, 0), datetime(2026, 11, 3, 9, 0)),
+        (datetime(2026, 11, 3, 9, 0), datetime(2026, 11, 3, 11, 30)),
+        (datetime(2026, 11, 3, 15, 12), datetime(2026, 11, 3, 17, 0)),
+        (datetime(2026, 11, 3, 17, 0, 1), datetime(2026, 11, 4, 9, 0)),
+    ),
+)
+def test_the_next_run_is_the_first_daily_time_after_now(now: datetime, expected: datetime) -> None:
+    assert media_probe.next_run(now, _RUN_TIMES) == expected
+
+
+def test_runs_follow_the_daily_times_into_the_next_day() -> None:
+    runs: Final = islice(media_probe.runs_from(datetime(2026, 11, 3, 15, 0), _RUN_TIMES), 5)
+
+    assert [run.strftime("%m-%d %H:%M") for run in runs] == [
+        "11-03 17:00",
+        "11-04 09:00",
+        "11-04 11:30",
+        "11-04 14:00",
+        "11-04 17:00",
+    ]
+
+
+class _Clock:
+    """Wall-clock time that a nap moves forward, plus however long the machine slept during the first nap."""
+
+    def __init__(self, start: datetime, slept_through: timedelta = timedelta()) -> None:
+        self.now = start
+        self.slept_through = slept_through
+        self.naps: list[float] = []
+
+    def sleep(self, seconds: float) -> None:
+        self.now += timedelta(seconds=seconds) + (self.slept_through if not self.naps else timedelta())
+        self.naps.append(seconds)
+
+    def read(self) -> datetime:
+        return self.now
+
+
+def test_a_run_starts_on_time_after_waiting_a_minute_at_a_time() -> None:
+    clock: Final = _Clock(datetime(2026, 11, 3, 13, 57, 30))
+
+    assert media_probe.on_time(datetime(2026, 11, 3, 14, 0), clock.sleep, clock.read)
+    assert clock.naps == [60, 60, 30]
+
+
+def test_a_run_the_machine_slept_through_is_skipped_instead_of_started_late() -> None:
+    clock: Final = _Clock(datetime(2026, 11, 3, 11, 0), slept_through=timedelta(hours=2))
+
+    assert not media_probe.on_time(datetime(2026, 11, 3, 11, 30), clock.sleep, clock.read)
+    assert clock.naps == [60]
+
+
+@pytest.mark.parametrize(("late", "runs"), ((timedelta(minutes=9), True), (timedelta(minutes=11), False)))
+def test_a_run_still_starts_a_few_minutes_late_but_not_once_its_time_is_long_gone(late: timedelta, runs: bool) -> None:
+    run_at: Final = datetime(2026, 11, 3, 11, 30)
+    clock: Final = _Clock(run_at + late)
+
+    assert media_probe.on_time(run_at, clock.sleep, clock.read) is runs
+    assert clock.naps == []

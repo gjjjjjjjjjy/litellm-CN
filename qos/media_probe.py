@@ -14,10 +14,12 @@ import os
 import struct
 import time
 import zlib
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterator, Mapping
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
+from datetime import time as TimeOfDay
+from itertools import accumulate, repeat
 from typing import Final
 
 import httpx
@@ -27,13 +29,15 @@ PROBE_PROMPT: Final = "固定镜头：阳光下的绿色草地上，一个红色
 PROBE_TAG: Final = "qos-media-probe"
 FIRST_FRAME_SIZE: Final = (1280, 720)
 POLL_SECONDS: Final = 15
-MAX_WAIT_SECONDS: Final = 9900
+MAX_WAIT_SECONDS: Final = 8400
 TERMINAL_STATUSES: Final = frozenset({"completed", "failed"})
+LATE_LIMIT: Final = timedelta(minutes=10)
 logger: Final = logging.getLogger("qos.media_probe")
 
 ParamValue = str | int | float | bool
 Color = tuple[int, ...]
 Sleep = Callable[[float], None]
+Now = Callable[[], datetime]
 
 SKY_TOP: Final = (78, 140, 222)
 SKY_HORIZON: Final = (182, 216, 246)
@@ -192,32 +196,51 @@ def run_once(client: httpx.Client, dry_run: bool, sleep: Sleep) -> None:
         logger.info("  %s: %s after %.0f s", outcome.model, outcome.status, outcome.seconds)
 
 
-def next_slot(now: float, every_seconds: int) -> float:
-    return (now // every_seconds + 1) * every_seconds
+def daily_times(value: str) -> tuple[TimeOfDay, ...]:
+    return tuple(sorted(TimeOfDay.fromisoformat(part.strip()) for part in value.split(",")))
 
 
-def sleep_until_next_run(every_seconds: int) -> None:
-    wake_at: Final = next_slot(time.time(), every_seconds)
-    logger.info("next run at %s", datetime.fromtimestamp(wake_at).strftime("%Y-%m-%d %H:%M:%S"))
-    time.sleep(max(wake_at - time.time(), 0))
+def next_run(after: datetime, times: tuple[TimeOfDay, ...]) -> datetime:
+    later_today: Final = tuple(run for run in (datetime.combine(after.date(), at) for at in times) if run > after)
+    return later_today[0] if later_today else datetime.combine(after.date() + timedelta(days=1), times[0])
+
+
+def runs_from(start: datetime, times: tuple[TimeOfDay, ...]) -> Iterator[datetime]:
+    return accumulate(repeat(times), next_run, initial=next_run(start, times))
+
+
+def on_time(run_at: datetime, sleep: Sleep, now: Now) -> bool:
+    """Sleep until run_at a minute at a time, since one long sleep oversleeps by however long the machine slept."""
+    while (left := (run_at - now()).total_seconds()) > 0:
+        sleep(min(left, 60))
+    return now() - run_at <= LATE_LIMIT
+
+
+def scheduled_run(client: httpx.Client, run_at: datetime, dry_run: bool) -> None:
+    logger.info("next run at %s", run_at.strftime("%Y-%m-%d %H:%M"))
+    if on_time(run_at, time.sleep, datetime.now):
+        run_once(client, dry_run, time.sleep)
+        return
+    logger.info("skipped the %s run, it is already %s", run_at.strftime("%H:%M"), datetime.now().strftime("%H:%M"))
 
 
 def main() -> None:
     parser: Final = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--base-url", default=os.environ.get("LITELLM_BASE_URL", "http://127.0.0.1:4000"))
-    parser.add_argument("--every", type=int, default=0, help="seconds between runs, aligned to the clock; 0 runs once")
+    parser.add_argument(
+        "--at", type=daily_times, default=(), help="daily run times in local time, such as 09:00,14:00; none runs once"
+    )
     parser.add_argument("--dry-run", action="store_true", help="list the configured probes without sending anything")
     args: Final = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
     logging.getLogger("httpx").setLevel(logging.WARNING)
     headers: Final = {"Authorization": f"Bearer {os.environ['LITELLM_API_KEY']}", "x-litellm-tags": PROBE_TAG}
     with httpx.Client(base_url=args.base_url, headers=headers, timeout=120) as client:
-        if args.every <= 0:
+        if not args.at:
             run_once(client, args.dry_run, time.sleep)
             return
-        while True:
-            sleep_until_next_run(args.every)
-            run_once(client, args.dry_run, time.sleep)
+        for run_at in runs_from(datetime.now(), args.at):
+            scheduled_run(client, run_at, args.dry_run)
 
 
 if __name__ == "__main__":
