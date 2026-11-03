@@ -101,8 +101,9 @@ def _fields(request: httpx.Request) -> dict[str, bytes]:
 class _Gateway:
     """Answers the probe like the gateway, except a status names another id, as the gateway once did."""
 
-    def __init__(self, judge_answer: str = json.dumps(_VERDICT, ensure_ascii=False)) -> None:
+    def __init__(self, judge_answer: str = json.dumps(_VERDICT, ensure_ascii=False), content_failures: int = 0) -> None:
         self.judge_answer = judge_answer
+        self.content_failures = content_failures
         self.created: dict[str, dict[str, bytes]] = {}
         self.events: list[str] = []
         self.polled: list[str] = []
@@ -114,7 +115,12 @@ class _Gateway:
         if path == "/model/info":
             return httpx.Response(200, json=_MODEL_INFO)
         if path == "/qos/videos/content":
-            return httpx.Response(200, content=_A_COLOR_A_SECOND)
+            self.content_failures -= 1
+            return (
+                httpx.Response(502, json={"detail": "the file store failed"})
+                if self.content_failures >= 0
+                else httpx.Response(200, content=_A_COLOR_A_SECOND)
+            )
         if path == "/v1/chat/completions":
             self.judged.append(json.loads(request.content))
             return httpx.Response(200, json={"choices": [{"message": {"content": self.judge_answer}}]})
@@ -189,6 +195,30 @@ def test_with_no_finished_text_video_the_image_models_are_skipped_rather_than_gi
 
     assert gateway.created == {}
     assert {outcome.status for outcome in outcomes} == {"skipped: no finished text-to-video video to start from"}
+
+
+def test_a_failed_fetch_of_the_text_video_is_tried_again_before_the_image_models_start() -> None:
+    gateway: Final = _Gateway(content_failures=1)
+    naps: Final[list[float]] = []
+
+    with gateway.client() as client:
+        outcomes: Final = media_probe.evaluate(client, _STREET, media_probe.listed_probes(client), naps.append, None)
+
+    assert media_probe.DOWNLOAD_RETRY_SECONDS in naps
+    assert sorted(gateway.created) == sorted((*_IMAGE_MODELS, _TEXT_MODEL))
+    assert sorted(outcome.status for outcome in outcomes) == ["completed"] * 3
+
+
+def test_when_the_text_video_cannot_be_fetched_the_image_models_are_skipped_and_the_run_still_ends() -> None:
+    gateway: Final = _Gateway(content_failures=media_probe.DOWNLOAD_ATTEMPTS)
+
+    with gateway.client() as client:
+        outcomes: Final = media_probe.evaluate(client, _STREET, media_probe.listed_probes(client), lambda _: None, None)
+
+    assert sorted(gateway.created) == [_TEXT_MODEL]
+    image_statuses: Final = [outcome.status for outcome in outcomes if outcome.model in _IMAGE_MODELS]
+    assert len(image_statuses) == len(_IMAGE_MODELS)
+    assert all(status.startswith("skipped: could not take the first frame") for status in image_statuses)
 
 
 def test_the_stills_are_the_first_frame_at_or_after_each_whole_second() -> None:

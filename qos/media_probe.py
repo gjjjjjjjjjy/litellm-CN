@@ -49,6 +49,8 @@ FIRST_FRAME_SIZE: Final = (1280, 720)
 POLL_SECONDS: Final = 15
 MAX_WAIT_SECONDS: Final = 8400
 JUDGE_TIMEOUT_SECONDS: Final = 330
+DOWNLOAD_ATTEMPTS: Final = 3
+DOWNLOAD_RETRY_SECONDS: Final = 10
 PROMPT_TIMEOUT_SECONDS: Final = 170
 STILL_QUALITY: Final = 90
 TEXT_LIMIT: Final = 500
@@ -396,11 +398,24 @@ def score_body(verdict: Verdict, judge: str, frames: int) -> dict[str, object]:
     }
 
 
-def rate(client: httpx.Client, video_id: str, prompt: str, image_to_video: bool, judge: str) -> str:
+def video_bytes(client: httpx.Client, video_id: str, sleep: Sleep) -> bytes:
+    """A finished video's MP4, fetched up to DOWNLOAD_ATTEMPTS times since the provider's file store fails a fetch now
+    and then."""
+    for _ in range(DOWNLOAD_ATTEMPTS - 1):
+        try:
+            fetched = client.get("/qos/videos/content", params={"video_id": video_id})
+            if fetched.status_code == 200:
+                return fetched.content
+        except httpx.TransportError as error:
+            logger.warning("fetching %s failed, trying again: %r", video_id, error)
+        sleep(DOWNLOAD_RETRY_SECONDS)
+    return client.get("/qos/videos/content", params={"video_id": video_id}).raise_for_status().content
+
+
+def rate(client: httpx.Client, video_id: str, prompt: str, image_to_video: bool, judge: str, sleep: Sleep) -> str:
     """Have the judge rate a finished video from its stills and store the rating on it; a failure is only logged."""
     try:
-        video: Final = client.get("/qos/videos/content", params={"video_id": video_id}).raise_for_status().content
-        stills: Final = stills_of(video)
+        stills: Final = stills_of(video_bytes(client, video_id, sleep))
         answered: Final = client.post(
             "/v1/chat/completions",
             json={
@@ -438,7 +453,9 @@ def run_probe(
         status: Final = video.status if ended else wait_for_end(client, video.id, started, sleep)
     except (httpx.HTTPError, ValidationError) as error:
         return Outcome(probe.model, f"gave up: {error!r}"[:200], time.monotonic() - started)
-    rating: Final = rate(client, video.id, prompt, probe.spec.image, judge) if judge and status == "completed" else ""
+    rating: Final = (
+        rate(client, video.id, prompt, probe.spec.image, judge, sleep) if judge and status == "completed" else ""
+    )
     return Outcome(probe.model, f"{status} {rating}".strip(), time.monotonic() - started, video.id)
 
 
@@ -462,12 +479,16 @@ def evaluate(
     text_outcomes: Final = _run_all(client, text_probes, prompt, b"", sleep, judge)
     opening: Final = next((o.video_id for o in text_outcomes if o.video_id and o.status.startswith("completed")), None)
     if opening is None:
-        reason: Final = "skipped: no finished text-to-video video to start from"
-        skipped: Final = tuple(Outcome(probe.model, reason, 0.0) for probe in image_probes)
-        return text_outcomes + skipped
-    opening_video: Final = client.get("/qos/videos/content", params={"video_id": opening}).raise_for_status()
-    frame: Final = opening_frame_png(opening_video.content)
+        return text_outcomes + _skipped(image_probes, "no finished text-to-video video to start from")
+    try:
+        frame: Final = opening_frame_png(video_bytes(client, opening, sleep))
+    except (httpx.HTTPError, ValueError, OSError, av.FFmpegError) as error:
+        return text_outcomes + _skipped(image_probes, f"could not take the first frame: {error!r}"[:160])
     return text_outcomes + _run_all(client, image_probes, prompt, frame, sleep, judge)
+
+
+def _skipped(probes: tuple[Probe, ...], reason: str) -> tuple[Outcome, ...]:
+    return tuple(Outcome(probe.model, f"skipped: {reason}", 0.0) for probe in probes)
 
 
 def log_outcomes(prompt: str, outcomes: tuple[Outcome, ...]) -> None:
