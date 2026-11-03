@@ -6,7 +6,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import ModelsAndEndpointsPage from "./page";
 
 vi.mock("./panels/AllModelsPanel", () => ({ default: () => <div data-testid="panel-all-models" /> }));
-vi.mock("./panels/AddModelPanel", () => ({ default: () => <div data-testid="panel-add" /> }));
+vi.mock("./panels/AddModelPanel", () => ({
+  default: ({ canCreateGateway, canConfigureImages }: { canCreateGateway: boolean; canConfigureImages: boolean }) =>
+    <div data-testid="panel-add" data-gateway={String(canCreateGateway)} data-image={String(canConfigureImages)} />,
+}));
 vi.mock("./panels/AutoRoutersTabPanel", () => ({ default: () => <div data-testid="panel-auto-routers" /> }));
 vi.mock("./panels/LlmCredentialsPanel", () => ({ default: () => <div data-testid="panel-credentials" /> }));
 vi.mock("./panels/PassThroughPanel", () => ({ default: () => <div data-testid="panel-pass-through" /> }));
@@ -141,6 +144,13 @@ describe("ModelsAndEndpointsPage", () => {
     renderPage();
     expect(screen.queryByRole("tab", { name: "LLM Credentials" })).not.toBeInTheDocument();
     expect(screen.queryByRole("tab", { name: "Health Status" })).not.toBeInTheDocument();
+  });
+
+  it("hides shared model creation from an internal user without gateway creation access", () => {
+    mockUseAuthorized.mockReturnValue(NON_ADMIN);
+    renderPage();
+
+    expect(screen.queryByRole("tab", { name: "Add Model" })).not.toBeInTheDocument();
   });
 
   it("keeps the full admin tab order for a real admin", () => {

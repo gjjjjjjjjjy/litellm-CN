@@ -1,0 +1,14 @@
+model_list:
+  - model_name: qwen-image-2.1-viggle-turbo
+    litellm_params:
+      model: openai/qwen-image-2.1-viggle-turbo
+      api_base: http://moark-image-adapter:8080/v1
+      api_key: os.environ/IMAGE_ADAPTER_KEY
+      timeout: 1200
+      max_retries: 0
+    model_info:
+      mode: image_generation
+      disable_background_health_check: true
+
+general_settings:
+  health_check_skip_disabled_background_models: true

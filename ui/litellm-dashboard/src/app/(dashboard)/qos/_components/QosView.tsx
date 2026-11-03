@@ -7,13 +7,14 @@ import { Page, PageTabs, PageTabsContent, PageTabsList, PageTabsTrigger } from "
 import { PageHeader, PageHeaderDescription, PageHeaderTitle } from "@/components/shared/PageHeader";
 import { useUrlTab } from "@/hooks/useUrlTab";
 import BenchmarksPanel from "./BenchmarksPanel";
+import ImageQosPanel from "./ImageQosPanel";
 import QosHealthPanel from "./QosHealthPanel";
 import QosMediaPanel from "./QosMediaPanel";
 import QosOverview from "./QosOverview";
 import { QOS_BENCHMARK_MODEL_PARAM, type QosBenchmarkStarted } from "./qosData";
 import StartBenchmarkDialog from "./StartBenchmarkDialog";
 
-const QOS_TABS = ["overview", "benchmarks", "health", "media"] as const;
+const QOS_TABS = ["overview", "benchmarks", "images", "health", "media"] as const;
 type QosTab = (typeof QOS_TABS)[number];
 const isQosTab = (value: string): value is QosTab => QOS_TABS.some((tab) => tab === value);
 
@@ -40,10 +41,16 @@ export default function QosView({ accessToken }: { accessToken: string | null })
     <Page>
       <PageHeader>
         <PageHeaderTitle>Service Quality</PageHeaderTitle>
-        <PageHeaderDescription>
-          Concurrency, success rate, TTFT, TPOT and latency per model and per node, measured from gateway traffic. TTFT
-          and TPOT come from streamed requests only; cache hits are excluded.
-        </PageHeaderDescription>
+        {tab === "images" ? (
+          <PageHeaderDescription>
+            Image generation success rate, end-to-end latency, provider queue and generation time, and cost.
+          </PageHeaderDescription>
+        ) : (
+          <PageHeaderDescription>
+            Concurrency, success rate, TTFT, TPOT and latency per model and per node, measured from gateway traffic.
+            TTFT and TPOT come from streamed requests only; cache hits are excluded.
+          </PageHeaderDescription>
+        )}
       </PageHeader>
 
       <PageTabs
@@ -55,6 +62,7 @@ export default function QosView({ accessToken }: { accessToken: string | null })
         <PageTabsList>
           <PageTabsTrigger value="overview">Overview</PageTabsTrigger>
           <PageTabsTrigger value="benchmarks">Benchmarks</PageTabsTrigger>
+          <PageTabsTrigger value="images">Images</PageTabsTrigger>
           <PageTabsTrigger value="health">Health checks</PageTabsTrigger>
           <PageTabsTrigger value="media">Audio and video</PageTabsTrigger>
         </PageTabsList>
@@ -63,6 +71,9 @@ export default function QosView({ accessToken }: { accessToken: string | null })
         </PageTabsContent>
         <PageTabsContent value="health">
           <QosHealthPanel accessToken={accessToken} />
+        </PageTabsContent>
+        <PageTabsContent value="images">
+          <ImageQosPanel accessToken={accessToken} />
         </PageTabsContent>
         <PageTabsContent value="media">
           <QosMediaPanel accessToken={accessToken} />

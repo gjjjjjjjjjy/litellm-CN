@@ -2,7 +2,7 @@
 
 中文词库、术语规则和构建脚本随 Fork 一起维护。构建时在临时源码副本中应用译文，并把 Fork 的后端代码（如新增的 Moark / Gitee AI 服务商）一起打包，生成镜像 `litellm-local:zh-cn`
 
-`litellm_zh_cn` 分支基于 `v1.106.4` 稳定版维护中文功能，`main` 分支用于同步官方上游。`origin` 指向自己的 Fork，`upstream` 指向 `BerriAI/litellm`
+`litellm_zh_cn` 分支当前基于 `v1.106.6` 稳定版维护中文功能，`main` 分支用于同步官方上游。`origin` 指向自己的 Fork，`upstream` 指向 `BerriAI/litellm`
 
 ## 构建和启动
 
@@ -13,18 +13,26 @@
 Fork 源码和后端基础镜像需使用同一版本，版本不一致时构建直接报错。当前分支的构建命令为
 
 ```bash
-./localization/zh-CN/build.sh "$PWD" ghcr.io/berriai/litellm:v1.106.4
+./localization/zh-CN/build.sh "$PWD" ghcr.io/berriai/litellm:v1.106.6
 ./local-dev/start.sh
 ```
 
 管理界面为 `http://127.0.0.1:4000/ui/`，内网地址由 `.env` 的 `LITELLM_LAN_IP` 决定。启动脚本复用根目录 `.env`、`local-dev/config.yaml` 和原有 PostgreSQL 数据卷
+
+在 Windows 上使用仓库根目录的 Compose 文件时，把本机镜像覆盖文件放在最后，避免修改仓库默认的 `docker-compose.yml`。已构建中文镜像后运行：
+
+```bash
+docker compose -p litellm-cn -f docker-compose.yml -f docker-compose.local-zh.yml up -d --no-build
+```
+
+如果还使用仓库根目录的异步图片适配器，先在 `.env` 中填写 `MOARK_API_KEY` 和独立的 `IMAGE_ADAPTER_KEY`，再在本机镜像覆盖文件前加入 `-f docker-compose.image-adapter.yml`。覆盖文件只选择本机中文镜像，不改变已有 `.env` 和数据卷
 
 代理需要使用容器可访问的地址，例如
 
 ```bash
 HTTPS_PROXY=http://host.docker.internal:7897 \
 HTTP_PROXY=http://host.docker.internal:7897 \
-./localization/zh-CN/build.sh "$PWD" ghcr.io/berriai/litellm:v1.106.4
+./localization/zh-CN/build.sh "$PWD" ghcr.io/berriai/litellm:v1.106.6
 ```
 
 构建执行补丁测试、TypeScript 检查和 Next.js 静态页面生成。构建结束后自动删除临时源码与依赖

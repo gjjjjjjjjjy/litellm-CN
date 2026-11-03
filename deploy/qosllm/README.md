@@ -102,6 +102,41 @@ docker compose cp caddy:/data/caddy/pki/authorities/local/root.crt ./qosllm-root
 ./unlock-user.sh admin@example.com
 ```
 
+## 接入异步图片模型
+
+仓库提供了一个仅加入 `internal` 网络的图片适配器。它把模力方舟的异步图片任务包装成 LiteLLM 可调用的 `/v1/images/generations`，并将任务 ID、费用和总耗时写入响应头。适配器不会把 `MOARK_API_KEY` 转发到结果图片的下载地址。
+
+首次部署时复制环境变量模板；已有 `.env` 时直接编辑原文件，保留现有密钥：
+
+```bash
+cp .env.example .env
+```
+
+在 `.env` 中填写 `MOARK_API_KEY` 和随机生成的 `IMAGE_ADAPTER_KEY`。默认 `config.yaml` 保持空模型列表。将 `config.image-adapter.example.yaml` 中的模型项合并到现有 `config.yaml` 的 `model_list`，并将示例里的设置合并到 `general_settings`；不要用示例文件覆盖现有配置。然后从部署目录启动覆盖文件：
+
+```bash
+docker compose -f compose.yaml -f compose.image-adapter.yaml up -d --build
+```
+
+`IMAGE_ADAPTER_KEY` 只在 LiteLLM 和适配器之间使用，不能与模力方舟 API key 相同。适配器没有映射宿主机端口，局域网客户端只能访问 LiteLLM 的公开入口。
+
+通用健康检查可能对图像模型发起真实的付费生图请求。示例模型的 `disable_background_health_check: true` 使后台检查跳过它；示例中的 `health_check_skip_disabled_background_models: true` 也使手动健康检查跳过已标记的模型。通过管理页面新增的图像模型目前不会自动带这个标记，需逐个设置。验证图像模型时，使用“服务质量 → 图像”的小样本测试并核对费用。以下直接调用网关的示例同样会产生一次付费请求：
+
+```bash
+curl http://127.0.0.1:4000/v1/images/generations \
+  -H "Authorization: Bearer $LITELLM_MASTER_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"model":"qwen-image-2.1-viggle-turbo","prompt":"极简风格海报，白色背景，中央是黑色粗体大字“国产算力”，下方一行小字“2026 上海”","size":"1024x1024"}'
+```
+
+服务质量页面的 Images 标签提供图片专用测试。先选两条提示词、一个 seed，确认预算后启动；页面显示成功率、P50/P95 延迟、上游排队和生成时间，并提供原图及逐张人工评分。对话压测与图片测试分开，不用 TTFT、TPOT 判断图片服务。图片和评分保存在 `qos_image_runs` 卷，重建网关不会删除；不要运行 `docker compose down -v`。
+
+### 通过模型管理共享图像模型
+
+管理员在“模型与端点 → 添加模型”选择图像生成模式，填写上游模型、API Base、共享 API Key、单张预估费用和能力参数。模力方舟同步模型使用 OpenAI 兼容接口 `https://api.moark.com/v1`；异步 `qwen-image-2.1-viggle-turbo` 使用网关配置的图片适配器及 `.env` 中的 `MOARK_API_KEY`。保存模型配置不会发起付费生图请求。
+
+图像模型与其他网关模型一样由管理员部署和管理。目前只有管理员能在“服务质量 → 图像”发起评测和查看共享评测记录。已存在的旧个人评测记录仍按原用户归属保留，可继续读取；旧个人 API Key 的保存和推理入口已移除。更新代码不会清除 `qos_image_runs` 卷中的任何文件；若要清除旧凭据文件，应先备份并单独检查卷中的 `personal-models` 目录。
+
 ## 首页资讯
 
 首页看板的 AI 资讯来自几个 RSS 源，默认是量子位、InfoQ、Hugging Face、OpenAI 和 Google AI，网关每 30 分钟抓取一次。国内服务器可能访问不到海外源，看板会在资讯栏底部列出抓取失败的源。要换成别的源，在 `config.yaml` 的 `general_settings` 中写出完整列表，然后运行 `docker compose restart litellm`

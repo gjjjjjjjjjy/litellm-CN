@@ -54,7 +54,8 @@ VIDEO_POLL_CALL_TYPES: Final = VIDEO_STATUS_CALL_TYPES | {
 MODEL_TRAFFIC: Final = f"""COALESCE(cache_hit, '') <> 'True'
         AND COALESCE(model, '') <> ''
         AND NOT COALESCE(request_tags ? '{LITTELM_INTERNAL_HEALTH_SERVICE_ACCOUNT_NAME}', false)
-        AND COALESCE(call_type, '') NOT IN ({sql_list(VIDEO_POLL_CALL_TYPES)})"""
+        AND COALESCE(call_type, '') NOT IN ({sql_list(VIDEO_POLL_CALL_TYPES)})
+        AND COALESCE(call_type, '') NOT IN ('image_generation', 'aimage_generation')"""
 
 RESPONSE_CHECK: Final = f"metadata->>'{RESPONSE_CHECK_KEY}'"
 

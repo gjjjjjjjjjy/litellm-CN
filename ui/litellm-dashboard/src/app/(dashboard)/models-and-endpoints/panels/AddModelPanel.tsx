@@ -16,6 +16,7 @@ import { useCredentials } from "@/app/(dashboard)/hooks/credentials/useCredentia
 import { useTeams } from "@/app/(dashboard)/hooks/teams/useTeams";
 import useAuthorized from "@/app/(dashboard)/hooks/useAuthorized";
 import { buildDecisionCatalog } from "@/lib/decisionModels";
+import { Button } from "@/components/ui/button";
 
 const INITIAL_VALUES: MountedFormValues = { litellm_credential_name: null };
 
@@ -52,8 +53,7 @@ export default function AddModelPanel() {
     );
   };
 
-  return (
-    <AddModelForm
+  return <AddModelForm
       form={form}
       registry={registry}
       mountedValues={mountedValues}
@@ -65,6 +65,5 @@ export default function AddModelPanel() {
       teams={teams ?? null}
       credentials={credentialsResponse?.credentials || []}
       decisionCatalog={decisionCatalog}
-    />
-  );
+    />;
 }

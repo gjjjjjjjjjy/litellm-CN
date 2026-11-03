@@ -4,6 +4,8 @@ import { useTags } from "@/app/(dashboard)/hooks/tags/useTags";
 import { all_admin_roles, isUserTeamAdminForAnyTeam } from "@/utils/roles";
 import { modelCreationScope } from "@/utils/modelPermissions";
 import { Switch } from "@/components/ui/switch";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
 import { Field, FieldLabel } from "@/components/ui/field";
 import { Card, CardContent } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -82,7 +84,7 @@ const AddModelForm: React.FC<AddModelFormProps> = ({
   credentials,
   decisionCatalog,
 }) => {
-  const [testMode, setTestMode] = useState<string>("chat");
+  const [secureImageConnection, setSecureImageConnection] = useState(true);
   const [isResultModalVisible, setIsResultModalVisible] = useState<boolean>(false);
   const [isTestingConnection, setIsTestingConnection] = useState<boolean>(false);
   // Using a unique ID to force the ConnectionErrorDisplay to remount and run a fresh test
@@ -99,6 +101,12 @@ const AddModelForm: React.FC<AddModelFormProps> = ({
   const { data: tagsList } = useTags();
   const selectedCredentialName = useWatch({ control: form.control, name: "litellm_credential_name" });
   const pickedProvider = useWatch({ control: form.control, name: "custom_llm_provider" });
+  const selectedMode = useWatch({ control: form.control, name: "mode" });
+  const isImageMode = selectedMode === "image_generation";
+  useEffect(() => {
+    setSecureImageConnection(window.location.protocol === "https:" ||
+      ["localhost", "127.0.0.1"].includes(window.location.hostname));
+  }, []);
   const selectedProvider = typeof pickedProvider === "string" ? pickedProvider : null;
   const queryClient = useQueryClient();
   const [isFederatedCredentialModalOpen, setIsFederatedCredentialModalOpen] = useState(false);
@@ -174,6 +182,8 @@ const AddModelForm: React.FC<AddModelFormProps> = ({
     : null;
 
   const isAdmin = all_admin_roles.includes(userRole);
+  const canDeploySharedImages = isProxyAdminRole(userRole ?? "") && !isViewOnly;
+  const modeOptions = canDeploySharedImages ? TEST_MODES : TEST_MODES.filter((entry) => entry.value !== "image_generation");
   const isTeamAdmin = isUserTeamAdminForAnyTeam(teams, userId);
   // Same owner the Auto-Routers tab uses, so the two creation forms cannot disagree about
   // who has to name a team. This form is only reachable when creation is allowed at all.
@@ -194,6 +204,7 @@ const AddModelForm: React.FC<AddModelFormProps> = ({
               <form
                 onSubmit={(event) => {
                   event.preventDefault();
+                  if (isImageMode && !secureImageConnection) return;
                   void handleOk().then((submitted) => {
                     if (submitted) {
                       setTeamAdminSelectedTeam(null);
@@ -269,18 +280,15 @@ const AddModelForm: React.FC<AddModelFormProps> = ({
                       <MountedFormField label="Mode" name="mode" className="mb-1">
                         {(control) => (
                           <Select
-                            items={TEST_MODES}
+                            items={modeOptions}
                             value={(control.value as string | undefined) ?? null}
-                            onValueChange={(value: string | null) => {
-                              control.onChange(value);
-                              setTestMode(value ?? "");
-                            }}
+                            onValueChange={(value: string | null) => control.onChange(value)}
                           >
                             <SelectTrigger id={control.id} className="w-full" aria-label="Mode">
                               <SelectValue />
                             </SelectTrigger>
                             <SelectContent>
-                              {TEST_MODES.map((mode) => (
+                              {modeOptions.map((mode) => (
                                 <SelectItem key={mode.value} value={mode.value}>
                                   {mode.label}
                                 </SelectItem>
@@ -289,6 +297,62 @@ const AddModelForm: React.FC<AddModelFormProps> = ({
                           </Select>
                         )}
                       </MountedFormField>
+                      {isImageMode && canDeploySharedImages && (
+                        <div className="mb-5 space-y-4 rounded-lg border bg-muted/20 p-4">
+                          <div>
+                            <h3 className="font-medium">图像服务质量配置</h3>
+                            <p className="mt-1 text-sm text-muted-foreground">
+                              此模型仍是共享网关部署，管理员可在“服务质量 → 图像”发起评测。
+                              模力方舟同步模型请选择 OpenAI 兼容服务商，填写上游模型名、API Base https://api.moark.com/v1 和共享 Access Token。
+                              已部署的异步 Qwen 使用网关适配器，无需重复添加。
+                            </p>
+                          </div>
+                          {!secureImageConnection && (
+                            <Alert variant="destructive">
+                              <AlertDescription>请通过 HTTPS 地址或本机 localhost 配置共享图像模型凭据。</AlertDescription>
+                            </Alert>
+                          )}
+                          <div className="grid gap-3 sm:grid-cols-2">
+                            <MountedFormField
+                              name="qos_image_unit_cost_cny"
+                              label="单张预估费用（元）"
+                              required
+                              rules={{ validate: { range: (value: unknown) => {
+                                const cost = Number(value);
+                                return (value !== "" && value != null && Number.isFinite(cost) && cost > 0 && cost <= 100)
+                                  || "请输入大于 0 且不超过 100 元的费用";
+                              } } }}
+                            >
+                              {(control) => <Input id={control.id} type="number" min="0.001" max="100" step="0.001"
+                                value={(control.value as string | undefined) ?? ""} onChange={control.onChange} onBlur={control.onBlur} />}
+                            </MountedFormField>
+                            <MountedFormField
+                              name="qos_image_max_prompt_chars"
+                              label="Prompt 字符上限"
+                              defaultValue="2000"
+                              required
+                              rules={{ validate: { range: (value: unknown) => {
+                                const count = Number(value);
+                                return (value !== "" && value != null && Number.isInteger(count) && count >= 1 && count <= 4000)
+                                  || "请输入 1 到 4000 的整数";
+                              } } }}
+                            >
+                              {(control) => <Input id={control.id} type="number" min="1" max="4000" step="1"
+                                value={(control.value as string | undefined) ?? "2000"} onChange={control.onChange} onBlur={control.onBlur} />}
+                            </MountedFormField>
+                          </div>
+                          <div className="flex flex-wrap gap-5 text-sm">
+                            <MountedFormField name="qos_image_supports_seed" defaultValue={false}>
+                              {(control) => <label className="flex items-center gap-2"><Checkbox checked={control.value === true}
+                                onCheckedChange={(value) => control.onChange(value === true)} />支持种子</label>}
+                            </MountedFormField>
+                            <MountedFormField name="qos_image_supports_negative_prompt" defaultValue={false}>
+                              {(control) => <label className="flex items-center gap-2"><Checkbox checked={control.value === true}
+                                onCheckedChange={(value) => control.onChange(value === true)} />支持独立负面提示词</label>}
+                            </MountedFormField>
+                          </div>
+                        </div>
+                      )}
                       <div className="grid grid-cols-12">
                         <div className="col-span-5" />
                         <div className="col-span-5">
@@ -462,7 +526,7 @@ const AddModelForm: React.FC<AddModelFormProps> = ({
                       </a>
                     </SimpleTooltip>
                     <div className="space-x-2">
-                      <Button
+                      {!isImageMode && <Button
                         variant="outline"
                         data-testid="test-connect-btn"
                         onClick={handleTestConnection}
@@ -470,8 +534,8 @@ const AddModelForm: React.FC<AddModelFormProps> = ({
                         aria-busy={isTestingConnection}
                       >
                         Test Connect
-                      </Button>
-                      <Button data-testid="add-model-btn" type="submit">
+                      </Button>}
+                      <Button data-testid="add-model-btn" type="submit" disabled={isImageMode && !secureImageConnection}>
                         Add Model
                       </Button>
                     </div>
@@ -515,12 +579,7 @@ const AddModelForm: React.FC<AddModelFormProps> = ({
               key={connectionTestId}
               formValues={mountedValues()}
               accessToken={accessToken}
-              testMode={testMode}
               modelName={connectionTestModelName(form.getValues())}
-              onClose={() => {
-                setIsResultModalVisible(false);
-                setIsTestingConnection(false);
-              }}
               onTestComplete={() => setIsTestingConnection(false)}
             />
           )}

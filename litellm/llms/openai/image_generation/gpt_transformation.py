@@ -23,11 +23,13 @@ class GPTImageGenerationConfig(BaseImageGenerationConfig):
     def get_supported_openai_params(self, model: str) -> list[OpenAIImageGenerationOptionalParams]:
         return [
             "background",
+            "extra_body",
             "moderation",
             "n",
             "output_compression",
             "output_format",
             "quality",
+            "response_format",
             "size",
             "user",
         ]

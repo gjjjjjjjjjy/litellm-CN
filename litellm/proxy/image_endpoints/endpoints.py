@@ -1,6 +1,6 @@
 import asyncio
 import io
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from itertools import chain
 from types import MappingProxyType
 from typing import Final, get_type_hints
@@ -36,6 +36,9 @@ from litellm.types.images.main import ImageEditRequestParams
 from litellm.types.llms.openai import ChatCompletionUserMessage
 
 router: Final = APIRouter()
+IMAGE_RESPONSE_HEADERS: Final = frozenset(
+    f"llm_provider-x-image-{field}" for field in ("task-id", "queue-s", "run-s", "cost-cny", "latency-s")
+)
 
 IMAGE_EDIT_NUMERIC_FORM_FIELDS: Final = numeric_form_fields(get_type_hints(ImageEditRequestParams))
 IMAGE_EDIT_OPTIONAL_FIELD_DEFAULTS: Final = MappingProxyType({"prompt": None, "image": None})
@@ -189,6 +192,14 @@ async def image_generation(
                 hidden_params=hidden_params,
             )
         )
+
+        provider_headers: Final = hidden_params.get("additional_headers", {})
+        if isinstance(provider_headers, Mapping):
+            image_headers: Final = {
+                name: value for name, value in provider_headers.items()
+                if name in IMAGE_RESPONSE_HEADERS and isinstance(value, str)
+            }
+            fastapi_response.headers.update(image_headers)
 
         # Call response headers hook (matches base_process_llm_request behavior)
         callback_headers: Final = await proxy_logging_obj.post_call_response_headers_hook(

@@ -70,6 +70,7 @@ const RankingRow = ({ model, rank }: { model: RankedModel; rank: number }) => (
 export default function ModelInsightsView({ accessToken }: { accessToken: string | null }) {
   const [loaded, setLoaded] = React.useState<{ metric: Metric; response: ModelInsightsResponse } | null>(null);
   const [metric, setMetric] = React.useState<Metric>("tokens");
+  const autoSelectedRequests = React.useRef(false);
   const [scale, setScale] = React.useState<Scale>("linear");
   const [granularity, setGranularity] = React.useState<Granularity>("day");
   const [error, setError] = React.useState<string | null>(null);
@@ -83,6 +84,12 @@ export default function ModelInsightsView({ accessToken }: { accessToken: string
         if (cancelled) return;
         setError(null);
         setLoaded({ metric, response });
+        if (metric === "tokens" && !autoSelectedRequests.current
+          && response.daily_totals.every((row) => row.prompt_tokens + row.completion_tokens === 0)
+          && response.daily_totals.some((row) => row.requests > 0)) {
+          autoSelectedRequests.current = true;
+          setMetric("requests");
+        }
       })
       .catch((err: unknown) => {
         if (!cancelled) setError(extractErrorMessage(err));
@@ -151,7 +158,7 @@ export default function ModelInsightsView({ accessToken }: { accessToken: string
             </CardDescription>
           </div>
           <div className="flex items-center gap-3">
-            <Tabs value={metric} onValueChange={(value) => setMetric(value as Metric)}>
+            <Tabs value={metric} onValueChange={(value) => { autoSelectedRequests.current = true; setMetric(value as Metric); }}>
               <TabsList>
                 {(["requests", "spend", "tokens"] as const).map((value) => (
                   <TabsTrigger key={value} value={value} className="capitalize">

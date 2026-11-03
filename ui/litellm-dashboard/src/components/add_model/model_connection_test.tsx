@@ -11,18 +11,14 @@ import { prepareModelAddRequest } from "./handle_add_model_submit";
 interface ModelConnectionTestProps {
   formValues: Record<string, any>;
   accessToken: string;
-  testMode: string;
   modelName?: string;
-  onClose?: () => void;
   onTestComplete?: () => void;
 }
 
 const ModelConnectionTest: React.FC<ModelConnectionTestProps> = ({
   formValues,
   accessToken,
-  testMode: _testMode,
   modelName = "this model",
-  onClose: _onClose,
   onTestComplete,
 }) => {
   const [error, setError] = React.useState<Error | string | null>(null);

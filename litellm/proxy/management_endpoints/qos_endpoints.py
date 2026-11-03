@@ -42,6 +42,7 @@ from litellm.proxy.management_endpoints.qos_requests import (
     REQUESTS_SQL,
     request_log,
 )
+from litellm.proxy.management_endpoints.qos_images import router as image_router
 from litellm.proxy.management_endpoints.qos_response_check import ResponseCheckRecorder, write_response_checks
 from litellm.proxy.management_endpoints.qos_summary import (
     BENCHMARK_DELETE_SQL,
@@ -590,3 +591,6 @@ async def delete_qos_benchmark(
     since: Final = utc_now() - QOS_MAX_WINDOW
     (result,) = _DELETED_COUNT.validate_python(await query_rows(prisma_client, BENCHMARK_DELETE_SQL, since, run_id))
     return QosBenchmarkDeleted(run_id=run_id, deleted_requests=result.deleted_requests)
+
+
+router.include_router(image_router)

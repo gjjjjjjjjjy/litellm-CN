@@ -3,7 +3,7 @@ import { useMemo } from "react";
 import { createQueryKeys } from "../common/queryKeysFactory";
 import { modelInfoCall, modelHubCall, modelAvailableCall } from "@/components/networking";
 import useAuthorized from "../useAuthorized";
-import { EndpointType, isModeCompatibleWithEndpoint } from "@/components/chat_ui/mode_endpoint_mapping";
+import { EndpointType, ModelMode, isModeCompatibleWithEndpoint } from "@/components/chat_ui/mode_endpoint_mapping";
 
 export interface ProxyModel {
   id: string;
@@ -166,6 +166,16 @@ export const selectPlainChatModelGroups = (deployments: AutoRouterDeployment[]):
       .filter((name): name is string => Boolean(name)),
   );
 
+export const selectImageModelDeployments = (deployments: AutoRouterDeployment[]): AutoRouterDeployment[] =>
+  deployments.filter((deployment) => deployment.model_info?.mode === ModelMode.IMAGE_GENERATION);
+
+export const selectImageModelGroups = (deployments: AutoRouterDeployment[]): ReadonlySet<string> =>
+  new Set(
+    selectImageModelDeployments(deployments)
+      .map((deployment) => deployment.model_name)
+      .filter((name): name is string => Boolean(name)),
+  );
+
 export const fetchAllModelDeployments = async (
   accessToken: string,
   userId: string,
@@ -224,6 +234,12 @@ export const usePlainModelGroups = (): ReadonlySet<string> =>
 
 export const usePlainChatModelGroups = (): ReadonlySet<string> =>
   useDeployments(selectPlainChatModelGroups).data ?? NO_AUTO_ROUTERS;
+
+export const useImageModelGroups = (): ReadonlySet<string> =>
+  useDeployments(selectImageModelGroups).data ?? NO_AUTO_ROUTERS;
+
+export const useImageModelDeployments = (): UseQueryResult<AutoRouterDeployment[], Error> =>
+  useDeployments(selectImageModelDeployments);
 
 export const usePlainChatModelDeployments = (): AutoRouterDeployment[] =>
   useDeployments(selectPlainChatModelDeployments).data ?? NO_DEPLOYMENTS;

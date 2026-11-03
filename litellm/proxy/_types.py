@@ -1236,7 +1236,7 @@ class ModelInfoDelete(LiteLLMPydanticObjectBase):
 
 class ModelInfo(LiteLLMPydanticObjectBase):
     id: str | None
-    mode: Literal["embedding", "chat", "completion"] | None
+    mode: Literal["embedding", "chat", "completion", "image_generation"] | None
     input_cost_per_token: float | None = 0.0
     output_cost_per_token: float | None = 0.0
     max_tokens: int | None = 2048  # assume 2048 if not set

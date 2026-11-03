@@ -57,7 +57,10 @@ export default function UsageOverview({
   providerBreakdown,
   budget,
 }: UsageOverviewProps) {
-  const [state, setState] = useState<BreakdownState>({ metric: "spend", dimension: "model_groups" });
+  const [selectedState, setSelectedState] = useState<BreakdownState | null>(null);
+  const defaultMetric: UsageMetric = results.some((day) => day.metrics.spend > 0) ? "spend"
+    : results.some((day) => day.metrics.api_requests > 0) ? "requests" : "spend";
+  const state: BreakdownState = selectedState ?? { metric: defaultMetric, dimension: "model_groups" };
   const [granularity, setGranularity] = useState<Granularity>("day");
   const [scale, setScale] = useState<StackedUsageScale>("linear");
   const { series: dailySeries, ranking } = useBreakdown(results, state, 8);
@@ -80,7 +83,7 @@ export default function UsageOverview({
         subtitle={`${granularity === "day" ? "Daily" : "Weekly"} ${METRIC_NOUN[state.metric]}, top 8 stacked`}
         action={
           <>
-            <BreakdownControls state={state} onChange={setState} showDimension={false} />
+            <BreakdownControls state={state} onChange={setSelectedState} showDimension={false} />
             <Segmented
               label="Bucket size"
               value={granularity}

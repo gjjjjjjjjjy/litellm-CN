@@ -1,0 +1,4 @@
+services:
+  litellm:
+    build: !reset null
+    image: litellm-local:zh-cn

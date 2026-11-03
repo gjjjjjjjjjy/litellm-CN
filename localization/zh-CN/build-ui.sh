@@ -12,6 +12,12 @@ mkdir "$2"
 output="$(cd "$2" && pwd)"
 work="$(mktemp -d -t litellm-zh-cn-ui.XXXXXXXX)"
 trap 'rm -rf "$work"' EXIT
+work_mount="$work"
+patch_mount="$patch_root"
+if command -v cygpath >/dev/null 2>&1; then
+  work_mount="$(cygpath -w "$work")"
+  patch_mount="$(cygpath -w "$patch_root")"
+fi
 
 mkdir "$work/ui"
 tar -C "$repo_root/ui/litellm-dashboard" --exclude=node_modules --exclude=.next --exclude=out -cf - . | tar -C "$work/ui" -xf -
@@ -19,9 +25,10 @@ tar -C "$repo_root/ui/litellm-dashboard" --exclude=node_modules --exclude=.next 
 printf '正在编译中文前端，Node 在本机 Docker 架构上运行\n'
 docker run --rm \
   --platform "$(docker version --format '{{.Server.Os}}/{{.Server.Arch}}')" \
-  --mount "type=bind,source=$work,target=/work" \
-  --mount "type=bind,source=$patch_root,target=/patch,readonly" \
+  --mount "type=bind,source=$work_mount,target=/work" \
+  --mount "type=bind,source=$patch_mount,target=/patch,readonly" \
   --mount "type=volume,source=litellm-zh-cn-npm-cache,target=/root/.npm" \
+  --mount "type=volume,source=litellm-zh-cn-node-modules-cache,target=/work/ui/node_modules" \
   --env HTTPS_PROXY --env HTTP_PROXY --env NO_PROXY \
   --env NEXT_TELEMETRY_DISABLED=1 --env NODE_OPTIONS=--max-old-space-size=4096 \
   node:24.19-alpine3.24 sh -ec '

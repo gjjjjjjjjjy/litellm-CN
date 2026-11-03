@@ -36,7 +36,6 @@ describe("ModelConnectionTest", () => {
       <ModelConnectionTest
         formValues={{ model: "gpt-4o-mini" }}
         accessToken="sk-test"
-        testMode="chat"
         modelName="GPT-4o mini"
         onTestComplete={onTestComplete}
       />,
@@ -76,7 +75,6 @@ describe("ModelConnectionTest", () => {
       <ModelConnectionTest
         formValues={{ model: "gpt-4o-mini" }}
         accessToken="sk-test"
-        testMode="chat"
         modelName="GPT-4o mini"
       />,
     );
@@ -96,7 +94,7 @@ describe("ModelConnectionTest", () => {
   it("shows a preparation failure without sending a connection request", async () => {
     vi.mocked(prepareModelAddRequest).mockResolvedValue(null as never);
 
-    render(<ModelConnectionTest formValues={{}} accessToken="sk-test" testMode="chat" />);
+    render(<ModelConnectionTest formValues={{}} accessToken="sk-test" />);
     await finishConnectionTest();
 
     expect(screen.getByText("Failed to prepare model data. Please check your form inputs.")).toBeInTheDocument();

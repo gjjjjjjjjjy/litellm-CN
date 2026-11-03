@@ -34,6 +34,16 @@ const withPerTokenCosts = (formValues: Record<string, any>): Record<string, any>
 
 export const prepareModelAddRequest = async (formValues: Record<string, any>, accessToken: string, form: any) => {
   try {
+    const imageMode = formValues.mode === "image_generation";
+    const imageCost = Number(formValues.qos_image_unit_cost_cny);
+    const imageMaxPromptChars = Number(formValues.qos_image_max_prompt_chars);
+    if (imageMode && (
+      formValues.qos_image_unit_cost_cny == null || formValues.qos_image_unit_cost_cny === "" ||
+      !Number.isFinite(imageCost) || imageCost <= 0 || imageCost > 100 ||
+      !Number.isInteger(imageMaxPromptChars) || imageMaxPromptChars < 1 || imageMaxPromptChars > 4000
+    )) {
+      throw new Error("图像模型需要有效的单张费用和 Prompt 字符上限");
+    }
     // Get model mappings and safely remove from formValues
     const modelMappings = formValues["model_mappings"] || [];
     if ("model_mappings" in formValues) {
@@ -68,8 +78,10 @@ export const prepareModelAddRequest = async (formValues: Record<string, any>, ac
       litellmParamsObj["model"] = mapping.litellm_model;
 
       // Iterate through the key-value pairs in formValues
-      litellmParamsObj["model"] = mapping.litellm_model;
       for (const [key, value] of Object.entries(pricedValues)) {
+        if (key.startsWith("qos_image_")) {
+          continue;
+        }
         if (value === "") {
           continue;
         }
@@ -168,6 +180,21 @@ export const prepareModelAddRequest = async (formValues: Record<string, any>, ac
         else {
           // Add key-value pair to litellm_params dictionary
           litellmParamsObj[key] = value;
+        }
+      }
+
+      if (imageMode) {
+        modelInfoObj["qos_image_profile"] = {
+          unit_cost_cny: imageCost,
+          supports_seed: formValues.qos_image_supports_seed === true,
+          supports_negative_prompt: formValues.qos_image_supports_negative_prompt === true,
+          max_prompt_chars: imageMaxPromptChars,
+        };
+        litellmParamsObj.timeout ??= 1200;
+        litellmParamsObj.max_retries ??= 0;
+        if (litellmParamsObj.custom_llm_provider === "openai" &&
+            !String(litellmParamsObj.model).startsWith("openai/")) {
+          litellmParamsObj.model = `openai/${litellmParamsObj.model}`;
         }
       }
 

@@ -1,0 +1,36 @@
+services:
+  moark-image-adapter:
+    build:
+      context: ./moark-image-adapter
+    image: qosllm-moark-image-adapter:local
+    restart: unless-stopped
+    environment:
+      MOARK_API_KEY: ${MOARK_API_KEY:?set MOARK_API_KEY in .env}
+      IMAGE_ADAPTER_KEY: ${IMAGE_ADAPTER_KEY:?set IMAGE_ADAPTER_KEY in .env}
+      MOARK_IMAGE_MODEL: qwen-image-2.1-viggle-turbo
+      MOARK_TASK_TIMEOUT: "900"
+      MOARK_POLL_SECONDS: "2"
+    expose:
+      - "8080"
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    cap_drop:
+      - ALL
+
+  litellm:
+    environment:
+      IMAGE_ADAPTER_KEY: ${IMAGE_ADAPTER_KEY:?set IMAGE_ADAPTER_KEY in .env}
+      QOS_IMAGE_RESULTS_DIR: /data/qos-image-runs
+    volumes:
+      - qos_image_runs:/data/qos-image-runs
+    depends_on:
+      moark-image-adapter:
+        condition: service_healthy
+
+volumes:
+  qos_image_runs:

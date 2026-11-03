@@ -2527,6 +2527,8 @@ async def add_new_model(
     )
 
     try:
+        if model_params.model_info.mode == "image_generation" and user_api_key_dict.user_role != LitellmUserRoles.PROXY_ADMIN:
+            raise HTTPException(status_code=403, detail="Only proxy admins can deploy shared image models")
         if prisma_client is None:
             raise HTTPException(
                 status_code=500,
