@@ -10,6 +10,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
 import { extractErrorMessage } from "@/utils/errorUtils";
 import { IMAGE_PROMPTS, SMOKE_PROMPTS, type DefectTag, type ImageItem, type ImagePrompt, type ImageRatingInput, type ImageRun } from "./imagePrompts";
 import { isQosRange, QOS_RANGES, type QosRange } from "./qosData";
@@ -290,8 +291,12 @@ export default function ImageQosPanel({ accessToken }: { accessToken: string | n
   const config = useImageConfig(accessToken);
   const models = Object.keys(config.data?.models ?? {}).sort();
   const [model, setModel] = React.useState("");
-  const [preset, setPreset] = React.useState<"smoke" | "full" | "custom">("smoke");
+  const [preset, setPreset] = React.useState<"smoke" | "full" | "custom" | "manual">("smoke");
   const [customPromptCount, setCustomPromptCount] = React.useState(4);
+  const [manualPrompts, setManualPrompts] = React.useState<ImagePrompt[]>([
+    { id: "manual_1", text: "", check: "", negative_prompt: "" },
+  ]);
+  const nextManualId = React.useRef(2);
   const [seedText, setSeedText] = React.useState("42");
   const [repeats, setRepeats] = React.useState(1);
   const [concurrency, setConcurrency] = React.useState(1);
@@ -309,17 +314,23 @@ export default function ImageQosPanel({ accessToken }: { accessToken: string | n
         ? (preset === "full" ? "42,20261023" : "42")
         : "42");
       setRepeats(preset === "full" ? 2 : 1);
-      setBudget(estimatedBudget(preset === "smoke" ? 2 : preset === "full" ? 16 : customPromptCount,
+      setBudget(estimatedBudget(preset === "smoke" ? 2 : preset === "full" ? 16 : preset === "custom" ? customPromptCount : manualPrompts.length,
         preset === "full" ? 2 : 1, config.data?.models[models[0]]?.unit_cost_cny ?? 0));
     }
-  }, [model, models, config.data, preset, customPromptCount]);
+  }, [model, models, config.data, preset, customPromptCount, manualPrompts.length]);
   React.useEffect(() => {
     if (runs.data?.length && !runs.data.some((run) => run.id === selectedRun)) setSelectedRun(runs.data[0].id);
     if (runs.data?.length === 0 && selectedRun) setSelectedRun(null);
   }, [runs.data, selectedRun]);
 
   const prompts: readonly ImagePrompt[] = preset === "smoke" ? SMOKE_PROMPTS
-    : preset === "full" ? IMAGE_PROMPTS : IMAGE_PROMPTS.slice(0, customPromptCount);
+    : preset === "full" ? IMAGE_PROMPTS : preset === "custom" ? IMAGE_PROMPTS.slice(0, customPromptCount)
+      : manualPrompts.map((prompt) => ({
+        ...prompt,
+        text: prompt.text.trim(),
+        check: prompt.check.trim(),
+        negative_prompt: prompt.negative_prompt?.trim() || undefined,
+      }));
   const profile = config.data?.models[model];
   const seedParts = seedText.split(",");
   const validRepeats = Number.isInteger(repeats) && repeats >= 1 && repeats <= 4;
@@ -331,7 +342,9 @@ export default function ImageQosPanel({ accessToken }: { accessToken: string | n
     : validRepeats;
   const count = prompts.length * seeds.length;
   const estimate = count * (profile?.unit_cost_cny ?? 0);
-  const promptsSupported = Boolean(profile && prompts.every((prompt) => prompt.text.length <= profile.max_prompt_chars
+  const promptsSupported = Boolean(profile && prompts.length <= 16 && prompts.every((prompt) => prompt.text.length > 0
+    && prompt.text.length <= profile.max_prompt_chars && prompt.check.length <= 500
+    && (prompt.negative_prompt?.length ?? 0) <= 1000
     && (profile.supports_negative_prompt || !prompt.negative_prompt)));
   const canStart = canWrite && Boolean(model && profile && config.data && prompts.length > 0 && promptsSupported && validSeeds
     && count <= config.data.max_images && estimate <= budget && concurrency >= 1 && concurrency <= 4);
@@ -342,6 +355,34 @@ export default function ImageQosPanel({ accessToken }: { accessToken: string | n
     start.mutate({ model, prompts, seeds, concurrency, size: "1024x1024", max_cost_cny: budget }, {
       onSuccess: (run) => setSelectedRun(run.id),
     });
+  };
+
+  const addManualPrompt = () => {
+    if (manualPrompts.length >= 16) return;
+    setManualPrompts([...manualPrompts, { id: `manual_${nextManualId.current++}`, text: "", check: "", negative_prompt: "" }]);
+    setBudget(estimatedBudget(manualPrompts.length + 1, seeds.length, profile?.unit_cost_cny ?? 0));
+  };
+
+  const removeManualPrompt = (id: string) => {
+    if (manualPrompts.length <= 1) return;
+    setManualPrompts(manualPrompts.filter((prompt) => prompt.id !== id));
+    setBudget(estimatedBudget(manualPrompts.length - 1, seeds.length, profile?.unit_cost_cny ?? 0));
+  };
+
+  const updateManualPrompt = (id: string, field: "text" | "check" | "negative_prompt", value: string) => {
+    setManualPrompts((current) => current.map((prompt) => prompt.id === id ? { ...prompt, [field]: value } : prompt));
+  };
+
+  const selectPreset = (nextPreset: typeof preset) => {
+    let promptCount = SMOKE_PROMPTS.length;
+    if (nextPreset === "full") promptCount = IMAGE_PROMPTS.length;
+    if (nextPreset === "custom") promptCount = customPromptCount;
+    if (nextPreset === "manual") promptCount = manualPrompts.length;
+    const repeatCount = nextPreset === "full" ? 2 : 1;
+    setPreset(nextPreset);
+    setSeedText(nextPreset === "full" ? "42,20261023" : "42");
+    setRepeats(repeatCount);
+    setBudget(estimatedBudget(promptCount, repeatCount, profile?.unit_cost_cny ?? 0));
   };
 
   return (
@@ -385,10 +426,11 @@ export default function ImageQosPanel({ accessToken }: { accessToken: string | n
         </div>
         <div className="flex flex-wrap items-end gap-3">
           <div className="flex flex-col gap-1 text-sm"><span>Prompt set</span>
-            <div className="flex h-9 overflow-hidden rounded-md border">
-              <Button type="button" variant={preset === "smoke" ? "default" : "ghost"} size="sm" className="rounded-none" onClick={() => { setPreset("smoke"); setSeedText("42"); setRepeats(1); setBudget(estimatedBudget(2, 1, profile?.unit_cost_cny ?? 0)); }}>Smoke · 2</Button>
-              <Button type="button" variant={preset === "full" ? "default" : "ghost"} size="sm" className="rounded-none" onClick={() => { setPreset("full"); setSeedText("42,20261023"); setRepeats(2); setBudget(estimatedBudget(16, 2, profile?.unit_cost_cny ?? 0)); }}>Full · 16</Button>
-              <Button type="button" variant={preset === "custom" ? "default" : "ghost"} size="sm" className="rounded-none" onClick={() => { setPreset("custom"); setSeedText("42"); setRepeats(1); setBudget(estimatedBudget(customPromptCount, 1, profile?.unit_cost_cny ?? 0)); }}>自选</Button>
+            <div className="flex flex-wrap overflow-hidden rounded-md border">
+              <Button type="button" variant={preset === "smoke" ? "default" : "ghost"} size="sm" className="rounded-none" onClick={() => selectPreset("smoke")}>Smoke · 2</Button>
+              <Button type="button" variant={preset === "full" ? "default" : "ghost"} size="sm" className="rounded-none" onClick={() => selectPreset("full")}>Full · 16</Button>
+              <Button type="button" variant={preset === "custom" ? "default" : "ghost"} size="sm" className="rounded-none" onClick={() => selectPreset("custom")}>自选</Button>
+              <Button type="button" variant={preset === "manual" ? "default" : "ghost"} size="sm" className="rounded-none" onClick={() => selectPreset("manual")}>自填 Prompt</Button>
             </div>
           </div>
           {preset === "custom" && <label className="flex flex-col gap-1 text-sm" title="按固定题库顺序取前 N 条 Prompt">Prompt 数量（前 N 条）
@@ -404,9 +446,33 @@ export default function ImageQosPanel({ accessToken }: { accessToken: string | n
           <label className="flex flex-col gap-1 text-sm">Budget (CNY)<Input className="w-28" type="number" min={0.01} max={100} step={0.01} value={budget} onChange={(event) => setBudget(Number(event.target.value))} /></label>
           <Button type="submit" disabled={!canStart || start.isPending}><Play className="size-4" /> Start image test</Button>
         </div>
+        {preset === "manual" && <div className="space-y-3 rounded-xl border bg-muted/20 p-3 sm:p-4">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div><h3 className="font-medium">自填 Prompt</h3><p className="text-xs text-muted-foreground">逐条填写生成要求；同一批次最多 16 条，切换测试方式时会保留已输入内容。</p></div>
+            <Button type="button" variant="outline" size="sm" onClick={addManualPrompt} disabled={manualPrompts.length >= 16}>添加 Prompt</Button>
+          </div>
+          {manualPrompts.map((prompt, index) => <div key={prompt.id} className="space-y-3 rounded-lg border bg-background p-3">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-sm font-medium">Prompt {index + 1}</span>
+              <Button type="button" variant="ghost" size="sm" onClick={() => removeManualPrompt(prompt.id)} disabled={manualPrompts.length === 1}>删除</Button>
+            </div>
+            <label className="flex flex-col gap-1 text-sm">生成提示词（必填）
+              <Textarea value={prompt.text} maxLength={4000} rows={3} placeholder="描述希望生成的图片内容" onChange={(event) => updateManualPrompt(prompt.id, "text", event.target.value)} />
+              <span className="text-xs text-muted-foreground">{prompt.text.length} / {profile?.max_prompt_chars ?? 4000} 字符</span>
+            </label>
+            <div className="grid gap-3 md:grid-cols-2">
+              <label className="flex flex-col gap-1 text-sm">检查要求（选填）
+                <Input value={prompt.check} maxLength={500} placeholder="例如：画面里恰好有三只红色苹果" onChange={(event) => updateManualPrompt(prompt.id, "check", event.target.value)} />
+              </label>
+              <label className="flex flex-col gap-1 text-sm">负面提示词（选填）
+                <Input value={prompt.negative_prompt ?? ""} maxLength={1000} placeholder="仅在模型支持时发送" onChange={(event) => updateManualPrompt(prompt.id, "negative_prompt", event.target.value)} />
+              </label>
+            </div>
+          </div>)}
+        </div>}
         <p className="text-sm text-muted-foreground">{prompts.length} 条 Prompt × {seeds.length} 次 = {count} 张；按每张 {money(profile?.unit_cost_cny ?? 0)} 预估 {money(estimate)}。每张会发送一次付费请求，预算是预估校验，不是服务商实际扣费上限。</p>
         {profile && !profile.supports_seed && <p className="text-sm text-muted-foreground">该模型未声明支持 seed；重复生成不会发送种子参数。</p>}
-        {profile && !promptsSupported && <Alert variant="destructive"><AlertDescription>当前 Prompt 集包含该模型不支持的参数或超出长度限制。</AlertDescription></Alert>}
+        {profile && !promptsSupported && <Alert variant="destructive"><AlertDescription>请填写每条生成提示词，并确认长度和负面提示词符合所选模型的要求。</AlertDescription></Alert>}
         {config.data && count > config.data.max_images && <Alert variant="destructive"><AlertDescription>单次最多可生成 {config.data.max_images} 张图片，请减少 Prompt 数量或重复次数。</AlertDescription></Alert>}
         {profile && estimate > budget && <Alert variant="destructive"><AlertDescription>预估费用超过当前预算，请减少图片数量或调整预算。</AlertDescription></Alert>}
         {models.length === 0 && <Alert><AlertDescription>暂无已注册且配置了评测费用的生图模型。</AlertDescription></Alert>}
