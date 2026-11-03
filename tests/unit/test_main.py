@@ -5978,6 +5978,51 @@ async def test_speech_openai_returns_binary_audio(
     assert response.content == b"ID3-fake-mp3"
 
 
+UNPREFIXED_AUDIO_BASE: Final = "https://speech.example.test/v1"
+
+
+async def test_aspeech_reaches_a_provider_named_apart_from_an_unprefixed_model(
+    respx_mock: respx.MockRouter, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setattr(litellm, "disable_aiohttp_transport", True)
+    route: Final = respx_mock.post(f"{UNPREFIXED_AUDIO_BASE}/audio/speech").mock(
+        return_value=httpx.Response(200, content=b"ID3-fake-mp3")
+    )
+
+    response: Final = await litellm.aspeech(
+        model="IndexTTS-2",
+        custom_llm_provider="openai",
+        input=SPEECH_INPUT,
+        voice="alloy",
+        api_base=UNPREFIXED_AUDIO_BASE,
+        api_key="fake-key",
+    )
+
+    assert route.call_count == 1, "a deployment added from the UI keeps the provider out of the model name"
+    assert json.loads(route.calls[0].request.content)["model"] == "IndexTTS-2"
+    assert response.content == b"ID3-fake-mp3"
+
+
+async def test_atranscription_reaches_a_provider_named_apart_from_an_unprefixed_model(
+    respx_mock: respx.MockRouter, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setattr(litellm, "disable_aiohttp_transport", True)
+    route: Final = respx_mock.post(f"{UNPREFIXED_AUDIO_BASE}/audio/transcriptions").mock(
+        return_value=httpx.Response(200, json={"text": "four score and seven years ago"})
+    )
+
+    response: Final = await litellm.atranscription(
+        model="SenseVoiceSmall",
+        custom_llm_provider="openai",
+        file=GROQ_WAV_FILE,
+        api_base=UNPREFIXED_AUDIO_BASE,
+        api_key="fake-key",
+    )
+
+    assert route.call_count == 1, "a deployment added from the UI keeps the provider out of the model name"
+    assert response.text == "four score and seven years ago"
+
+
 class _SignallingCache(Cache):
     def __init__(self, loop: asyncio.AbstractEventLoop) -> None:
         super().__init__()
