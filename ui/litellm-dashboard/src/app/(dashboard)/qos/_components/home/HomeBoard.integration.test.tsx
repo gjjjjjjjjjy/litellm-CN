@@ -15,15 +15,12 @@ const node = (model_name: string, latest_status: string) => ({
   api_base: "https://api.moark.com/v1",
   upstream_model: model_name,
   checks: 10,
-  failures: 0,
-  availability: 1,
+  failures: model_name === "Qwen3" ? 2 : 0,
+  availability: model_name === "Qwen3" ? 0.8 : 1,
   latest_status,
   last_error: null,
   last_failure_at: null,
   last_checked_at: "2026-10-26T00:00:00Z",
-  last_ttft_ms: model_name === "Qwen3" ? null : 900,
-  last_latency_ms: model_name === "Qwen3" ? null : 2000,
-  last_streamed_at: model_name === "Qwen3" ? null : "2026-10-26T00:00:00Z",
 });
 
 const target = (model: string) => ({
@@ -81,8 +78,9 @@ describe("HomeBoard", () => {
     expect(cards.map((card) => within(card).getByRole("heading").textContent)).toEqual(["Qwen3", "GLM-5.3"]);
     expect(within(cards[0]).getByText("Unavailable")).toBeInTheDocument();
     expect(within(cards[1]).getByText("Operational")).toBeInTheDocument();
-    expect(within(cards[1]).getByText("900 ms")).toBeInTheDocument();
-    expect(within(cards[1]).getByText("2.00 s")).toBeInTheDocument();
+    expect(within(cards[0]).getByText("80.00%")).toBeInTheDocument();
+    expect(within(cards[1]).getByText("100.00%")).toBeInTheDocument();
+    expect(screen.queryByText("TTFT")).not.toBeInTheDocument();
     expect(within(cards[1]).getByRole("img", { name: "Moark (Gitee AI) logo" })).toHaveAttribute(
       "src",
       expect.stringContaining("gitee_ai"),
@@ -168,19 +166,13 @@ describe("HomeBoard", () => {
       end_time: "",
       nodes: [
         node("GLM-5.3", "healthy"),
-        {
-          ...node("Qwen3", "healthy"),
-          last_ttft_ms: 1250,
-          last_latency_ms: 4500,
-          last_streamed_at: "2026-10-26T12:00:00Z",
-        },
+        { ...node("Qwen3", "healthy"), checks: 20, failures: 1, availability: 0.95 },
       ],
       probes: [],
     };
     completed.resolve(freshHealth);
     expect(await screen.findByText("All channels operational")).toBeInTheDocument();
-    expect(screen.getByText("1.25 s")).toBeInTheDocument();
-    expect(screen.getByText("4.50 s")).toBeInTheDocument();
+    expect(screen.getByText("95.00%")).toBeInTheDocument();
     expect(apiClient.get).not.toHaveBeenCalledWith("/qos/health", expect.anything());
   });
 

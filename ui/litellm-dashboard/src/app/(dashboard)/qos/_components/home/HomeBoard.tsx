@@ -4,7 +4,6 @@ import React from "react";
 import Image from "next/image";
 import { useQueryClient } from "@tanstack/react-query";
 import {
-  Activity,
   ChevronDown,
   ChevronUp,
   CircleAlert,
@@ -14,7 +13,6 @@ import {
   Clock3,
   Globe2,
   RefreshCw,
-  Timer,
 } from "lucide-react";
 
 import { useQosTargets } from "@/app/(dashboard)/hooks/qos/useQosBenchmarks";
@@ -27,7 +25,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/cva.config";
 import { extractErrorMessage } from "@/utils/errorUtils";
 import { uiHref } from "@/utils/uiHref";
-import { formatMs, vendorName } from "../qosData";
+import { vendorName } from "../qosData";
 import { ActivityPanel } from "./HomeFeeds";
 import {
   channelCards,
@@ -157,37 +155,12 @@ const ChannelStatusCard = ({ card, now }: { card: ChannelCard; now: Date }) => {
           <span className="truncate">{card.deployment.api_base}</span>
         </p>
       )}
-      <dl className="mt-5 grid grid-cols-2 divide-x border-y border-border/60 py-4">
-        <div className="pr-4">
-          <dt className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-            <Timer className="size-3" aria-hidden="true" />
-            TTFT
-          </dt>
-          <dd className="mt-2 text-xl font-semibold tracking-tight tabular-nums">
-            {formatMs(card.health?.last_ttft_ms)}
-          </dd>
-        </div>
-        <div className="pl-4">
-          <dt className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-            <Activity className="size-3" aria-hidden="true" />
-            Response time
-          </dt>
-          <dd className="mt-2 text-xl font-semibold tracking-tight tabular-nums">
-            {formatMs(card.health?.last_latency_ms)}
-          </dd>
-        </div>
-      </dl>
-      <p className="mt-2 text-[11px] text-muted-foreground">
-        {card.health?.last_streamed_at == null
-          ? "No streamed check yet"
-          : `Streamed check ${relativeTimeLabel(card.health.last_streamed_at, now)}`}
-      </p>
-      <div className="mt-4 flex items-center justify-between gap-3">
+      <div className="mt-5 flex items-center justify-between gap-3 border-y border-border/60 py-4">
         <div className="text-[11px] leading-4 text-muted-foreground">
-          <p>Health check availability</p>
+          <p>Uptime</p>
           <p>Last 24 hours</p>
         </div>
-        <p className="text-lg font-semibold tracking-tight tabular-nums">
+        <p className="text-xl font-semibold tracking-tight tabular-nums">
           {card.health === undefined ? "-" : `${(card.health.availability * 100).toFixed(2)}%`}
         </p>
       </div>

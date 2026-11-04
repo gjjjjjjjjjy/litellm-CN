@@ -55233,40 +55233,6 @@
               ],
               "title": "Last Failure At"
             },
-            "last_latency_ms": {
-              "anyOf": [
-                {
-                  "type": "number"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Last Latency Ms"
-            },
-            "last_streamed_at": {
-              "anyOf": [
-                {
-                  "format": "date-time",
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Last Streamed At"
-            },
-            "last_ttft_ms": {
-              "anyOf": [
-                {
-                  "type": "number"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Last Ttft Ms"
-            },
             "latest_status": {
               "title": "Latest Status",
               "type": "string"

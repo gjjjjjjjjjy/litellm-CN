@@ -43993,12 +43993,6 @@ export interface components {
             last_error: string | null;
             /** Last Failure At */
             last_failure_at: string | null;
-            /** Last Latency Ms */
-            last_latency_ms?: number | null;
-            /** Last Streamed At */
-            last_streamed_at?: string | null;
-            /** Last Ttft Ms */
-            last_ttft_ms?: number | null;
             /** Latest Status */
             latest_status: string;
             /** Model Id */

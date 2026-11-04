@@ -679,9 +679,6 @@ class TestHealthEndpoint:
                 "last_error": None,
                 "last_failure_at": None,
                 "last_checked_at": checked_at,
-                "last_streamed_at": checked_at,
-                "last_ttft_ms": 250.0,
-                "last_latency_ms": 1000.0,
             }
             for node in ("node-a", "node-b")
         ]
@@ -718,8 +715,7 @@ class TestHealthEndpoint:
             assert response.status_code == 200
             assert prisma.db.query_raw.await_count == 3
             nodes: Final = response.json()["nodes"]
-            assert len(nodes) == len(models)
-            assert all((node["last_ttft_ms"], node["last_latency_ms"]) == (250.0, 1000.0) for node in nodes)
+            assert [(node["model_id"], node["availability"]) for node in nodes] == [("node-a", 1.0), ("node-b", 1.0)]
         else:
             assert response.status_code == 500
             assert response.json()["detail"] == "Health checks completed but results could not be saved"
