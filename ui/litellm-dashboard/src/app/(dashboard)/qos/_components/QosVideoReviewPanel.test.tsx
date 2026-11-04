@@ -44,6 +44,26 @@ const earlierReview = {
   reviewed_at: "2026-10-29T08:00:00Z",
 };
 
+const ago = (minutes: number): string => new Date(Date.now() - minutes * 60_000).toISOString();
+
+const video = (overrides: Record<string, unknown>) => ({
+  status: "completed",
+  ai_review: null,
+  model_group: "LTX-2",
+  created_at: ago(10),
+  completed_at: ago(8),
+  prompt: STREET_PROMPT,
+  run: "manual-new",
+  scheduled: false,
+  reviews: 0,
+  overall: null,
+  my_review: null,
+  ...overrides,
+});
+
+const scheduledVideo = (run: string, minutes: number) =>
+  video({ video_id: `video-${run}`, run, scheduled: true, prompt: PROBE_PROMPT, created_at: ago(minutes) });
+
 const reviews = {
   start_time: "2026-10-22T09:00:00Z",
   end_time: "2026-10-29T09:00:00Z",
@@ -65,66 +85,28 @@ const reviews = {
     { model_group: "LTX-2", videos: 1, overall: 2, visual: 3, detail: 1, motion: 2, alignment: 3, physics: 1 },
   ],
   videos: [
-    {
-      video_id: "video-minimax",
-      status: "completed",
-      ai_review: null,
-      model_group: "MiniMax-H3",
-      created_at: "2026-10-30T09:00:01Z",
-      completed_at: "2026-10-30T09:01:40Z",
-      prompt: PROBE_PROMPT,
-      reviews: 0,
-      overall: null,
-      my_review: null,
-    },
-    {
-      video_id: "video-ltx",
-      status: "completed",
-      ai_review: aiReview,
-      model_group: "LTX-2",
-      created_at: "2026-10-30T09:00:00Z",
-      completed_at: "2026-10-30T09:02:17Z",
-      prompt: PROBE_PROMPT,
-      reviews: 2,
-      overall: 3.5,
-      my_review: earlierReview,
-    },
-    {
+    video({ video_id: "video-minimax", model_group: "MiniMax-H3", created_at: ago(9) }),
+    video({ video_id: "video-ltx", ai_review: aiReview, reviews: 2, overall: 3.5, my_review: earlierReview }),
+    video({ video_id: "video-hunyuan", model_group: "HunyuanVideo-1.5", status: "generating", completed_at: null }),
+    video({ video_id: "video-vidu", model_group: "ViduQ2-Turbo", status: "failed", completed_at: null }),
+    scheduledVideo("scheduled-1", 60),
+    video({
       video_id: "video-wan",
-      status: "completed",
-      ai_review: null,
       model_group: "Wan2_2-I2V-A14B",
-      created_at: "2026-10-29T09:00:00Z",
-      completed_at: "2026-10-29T09:10:00Z",
       prompt: OLDER_PROMPT,
-      reviews: 0,
-      overall: null,
-      my_review: null,
-    },
-    {
-      video_id: "video-hunyuan",
-      status: "generating",
-      ai_review: null,
-      model_group: "HunyuanVideo-1.5",
-      created_at: "2026-10-28T09:00:00Z",
-      completed_at: null,
-      prompt: STREET_PROMPT,
-      reviews: 0,
-      overall: null,
-      my_review: null,
-    },
-    {
-      video_id: "video-vidu",
-      status: "failed",
-      ai_review: null,
-      model_group: "ViduQ2-Turbo",
-      created_at: "2026-10-28T09:00:00Z",
-      completed_at: null,
-      prompt: STREET_PROMPT,
-      reviews: 0,
-      overall: null,
-      my_review: null,
-    },
+      run: "manual-old",
+      created_at: ago(180),
+    }),
+    scheduledVideo("scheduled-2", 240),
+    scheduledVideo("scheduled-3", 420),
+    scheduledVideo("scheduled-4", 600),
+    video({
+      video_id: "video-expired",
+      model_group: "Wan2.7",
+      prompt: "过期的 Prompt",
+      run: "manual-expired",
+      created_at: ago(2 * 24 * 60),
+    }),
   ],
 };
 
@@ -141,6 +123,7 @@ const scoreButton = (card: HTMLElement, dimension: string, score: number): HTMLE
 describe("QosVideoReviewPanel", () => {
   beforeEach(() => {
     testQueryClient.clear();
+    window.localStorage.clear();
     vi.mocked(apiClient.get).mockReset();
     vi.mocked(apiClient.get).mockResolvedValue(reviews);
     vi.mocked(apiClient.getBlob).mockReset();
@@ -149,7 +132,7 @@ describe("QosVideoReviewPanel", () => {
     Object.defineProperty(URL, "revokeObjectURL", { value: vi.fn(), configurable: true });
   });
 
-  it("shows each model's average ratings and the videos of each prompt under that prompt", async () => {
+  it("shows each model's average ratings and the newest manual run open with its videos in model order", async () => {
     renderWithProviders(<QosVideoReviewPanel accessToken="token" />);
 
     await screen.findByText("MiniMax-H3", { selector: '[data-slot="card-title"]' });
@@ -161,9 +144,53 @@ describe("QosVideoReviewPanel", () => {
         .getAllByRole("cell")
         .map((cell) => cell.textContent),
     ).toEqual(["LTX-2", "1", "2", "3.5", "5.0", "4.0", "2.0", "-", "-", "-"]);
-    expect(cardTitles(screen.getByRole("group", { name: /红色皮球/ }))).toEqual(["MiniMax-H3", "LTX-2"]);
-    expect(cardTitles(screen.getByRole("group", { name: new RegExp(OLDER_PROMPT) }))).toEqual(["Wan2_2-I2V-A14B"]);
-    expect(screen.getAllByText(PROBE_PROMPT)).toHaveLength(1);
+    const newest = screen.getByRole("group", { name: STREET_PROMPT });
+    expect(cardTitles(newest)).toEqual(["HunyuanVideo-1.5", "LTX-2", "MiniMax-H3", "ViduQ2-Turbo"]);
+    expect(within(newest).getByText("Latest")).toBeInTheDocument();
+    expect(within(newest).getByText(/· 4 videos · AI average 2.0 · rated 1\/4$/)).toBeInTheDocument();
+  });
+
+  it("folds earlier manual runs to one line each until one is opened", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<QosVideoReviewPanel accessToken="token" />);
+    await screen.findByText("MiniMax-H3", { selector: '[data-slot="card-title"]' });
+    const manual = screen.getByRole("region", { name: "Manual evaluations" });
+
+    expect(within(manual).getByText("Earlier manual evaluations")).toBeInTheDocument();
+    expect(screen.queryByText("Wan2_2-I2V-A14B", { selector: '[data-slot="card-title"]' })).not.toBeInTheDocument();
+
+    await user.click(within(manual).getByRole("button", { name: new RegExp(OLDER_PROMPT) }));
+
+    expect(cardTitles(screen.getByRole("group", { name: OLDER_PROMPT }))).toEqual(["Wan2_2-I2V-A14B"]);
+  });
+
+  it("lists the latest three scheduled runs, folded, until all are asked for", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<QosVideoReviewPanel accessToken="token" />);
+    const scheduled = await screen.findByRole("region", { name: "Scheduled evaluations" });
+    await within(scheduled).findByText("4 runs, only the latest 3 listed");
+
+    expect(within(scheduled).getAllByRole("group")).toHaveLength(3);
+    expect(within(scheduled).queryByRole("article")).not.toBeInTheDocument();
+    expect(within(scheduled).getByText(new RegExp(PROBE_PROMPT))).toBeInTheDocument();
+
+    await user.click(within(scheduled).getByRole("button", { name: "Show all" }));
+
+    expect(within(scheduled).getAllByRole("group")).toHaveLength(4);
+  });
+
+  it("hides videos the provider no longer keeps until asked to show them", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<QosVideoReviewPanel accessToken="token" />);
+    await screen.findByText("MiniMax-H3", { selector: '[data-slot="card-title"]' });
+
+    expect(screen.getByText(/^1 more videos have expired/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /过期的 Prompt/ })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Show expired videos" }));
+
+    expect(screen.getByRole("button", { name: /过期的 Prompt/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Hide expired videos" })).toBeInTheDocument();
   });
 
   it("asks for the last 7 days by default", async () => {

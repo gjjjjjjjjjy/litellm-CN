@@ -16,17 +16,23 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { extractErrorMessage } from "@/utils/errorUtils";
+import CollapsibleSection from "./CollapsibleSection";
+import ProbeRuns, { formatRunTime } from "./ProbeRuns";
 import {
   AI_DIMENSIONS,
   formatScore,
+  isExpired,
   isQosRange,
+  probeRuns,
   QOS_RANGES,
   REVIEW_DIMENSION_LABELS,
   REVIEW_DIMENSIONS,
   reviewInput,
   reviewScores,
+  videoRunKey,
+  videoRunSummary,
   type AiDimension,
-  type PromptVideos,
+  type ProbeRun,
   type QosRange,
   type QosReviewVideo,
   type QosVideoAiReview,
@@ -35,7 +41,6 @@ import {
   type QosVideoReviewSummary,
   type ReviewDimension,
   type ReviewScores,
-  videosByPrompt,
 } from "./qosData";
 import StartVideoEvaluationDialog from "./StartVideoEvaluationDialog";
 
@@ -272,16 +277,32 @@ function VideoReviewCard({ accessToken, video }: { accessToken: string | null; v
   );
 }
 
-function PromptGroup({ accessToken, group }: { accessToken: string | null; group: PromptVideos }) {
-  const labelId = React.useId();
+function VideoRunMeta({ run }: { run: ProbeRun<QosReviewVideo> }) {
+  const summary = videoRunSummary(run.items);
+  const average = formatScore(summary.aiAverage);
+  return run.scheduled ? (
+    <span>
+      {summary.videos} videos · AI average {average} · rated {summary.rated}/{summary.videos}
+    </span>
+  ) : (
+    <span>
+      {formatRunTime(run.startedAt)} · {summary.videos} videos · AI average {average} · rated {summary.rated}/
+      {summary.videos}
+    </span>
+  );
+}
+
+function VideoRun({ accessToken, run }: { accessToken: string | null; run: ProbeRun<QosReviewVideo> }) {
   return (
-    <div role="group" aria-labelledby={labelId} className="flex flex-col gap-3">
-      <p id={labelId} className="text-sm">
-        <span className="text-muted-foreground">Prompt: </span>
-        {group.prompt}
-      </p>
+    <div className="flex flex-col gap-3">
+      {!run.scheduled && (
+        <p className="text-sm">
+          <span className="text-muted-foreground">Prompt: </span>
+          {run.items[0].prompt}
+        </p>
+      )}
       <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
-        {group.videos.map((video) => (
+        {run.items.map((video) => (
           <VideoReviewCard key={video.video_id} accessToken={accessToken} video={video} />
         ))}
       </div>
@@ -297,8 +318,12 @@ export default function QosVideoReviewPanel({ accessToken }: { accessToken: stri
   );
   const reviewsQuery = useQosVideoReviews(accessToken, range, started?.at ?? null);
   const data = reviewsQuery.data;
-  const ratingsId = React.useId();
-  const aiRatingsId = React.useId();
+  const [showExpired, setShowExpired] = React.useState(false);
+  const now = reviewsQuery.dataUpdatedAt;
+  const videos = data?.videos ?? [];
+  const expired = videos.filter((video) => isExpired(video, now)).length;
+  const runs = probeRuns(showExpired ? videos : videos.filter((video) => !isExpired(video, now)), videoRunKey);
+  const scheduledPrompt = runs.find((run) => run.scheduled)?.items[0].prompt;
 
   return (
     <div className="flex flex-col gap-6">
@@ -353,10 +378,7 @@ export default function QosVideoReviewPanel({ accessToken }: { accessToken: stri
         </Alert>
       )}
 
-      <section aria-labelledby={ratingsId} className="flex flex-col gap-2">
-        <h3 id={ratingsId} className="text-base font-semibold">
-          Ratings per model
-        </h3>
+      <CollapsibleSection id="video.ratings" title="Ratings per model">
         <DataTable
           data={data === undefined ? [] : [...data.summary]}
           columns={summaryColumns}
@@ -364,12 +386,9 @@ export default function QosVideoReviewPanel({ accessToken }: { accessToken: stri
           isLoading={reviewsQuery.isLoading}
           noDataMessage="No ratings in this time range"
         />
-      </section>
+      </CollapsibleSection>
 
-      <section aria-labelledby={aiRatingsId} className="flex flex-col gap-2">
-        <h3 id={aiRatingsId} className="text-base font-semibold">
-          AI ratings per model
-        </h3>
+      <CollapsibleSection id="video.ai-ratings" title="AI ratings per model">
         <DataTable
           data={data === undefined ? [] : [...data.ai_summary]}
           columns={aiSummaryColumns}
@@ -377,28 +396,54 @@ export default function QosVideoReviewPanel({ accessToken }: { accessToken: stri
           isLoading={reviewsQuery.isLoading}
           noDataMessage="No AI ratings in this time range"
         />
-      </section>
+      </CollapsibleSection>
 
-      <section className="flex flex-col gap-4">
-        <div className="flex flex-col gap-2">
-          <h3 className="text-base font-semibold">Videos to review</h3>
-          <p className="text-sm text-muted-foreground">
-            Every model in a probe run gets the same prompt, and the image-to-video models the same first frame, so
-            compare them side by side and rate each from 1 (bad) to 5 (good). Saving again replaces your own earlier
-            rating; other reviewers keep theirs.
-          </p>
-          <p className="text-sm text-muted-foreground">
-            A vision model also rates each finished video from one still per second. Its ratings are kept apart from the
-            ratings people give.
-          </p>
+      <div className="flex flex-col gap-1 text-sm text-muted-foreground">
+        <p>
+          Every model in a probe run gets the same prompt, and the image-to-video models the same first frame, so
+          compare them side by side and rate each from 1 (bad) to 5 (good). Saving again replaces your own earlier
+          rating; other reviewers keep theirs.
+        </p>
+        <p>
+          A vision model also rates each finished video from one still per second. Its ratings are kept apart from the
+          ratings people give.
+        </p>
+      </div>
+
+      <ProbeRuns
+        id="video"
+        runs={runs}
+        schedule={
+          scheduledPrompt === undefined ? (
+            <span>Runs every day at the probe&apos;s scheduled times.</span>
+          ) : (
+            <span>Runs every day at the probe&apos;s scheduled times, always with this prompt: {scheduledPrompt}</span>
+          )
+        }
+        title={(run) => (run.scheduled ? formatRunTime(run.startedAt) : run.items[0].prompt)}
+        meta={(run) => <VideoRunMeta run={run} />}
+      >
+        {(run) => <VideoRun accessToken={accessToken} run={run} />}
+      </ProbeRuns>
+
+      {expired > 0 && (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border px-4 py-3 text-sm text-muted-foreground">
+          <span>
+            {showExpired ? (
+              <span>
+                {expired} videos shown have expired; the provider keeps them about a day, so they cannot be played
+              </span>
+            ) : (
+              <span>
+                {expired} more videos have expired; the provider keeps them about a day, so they cannot be played
+              </span>
+            )}
+          </span>
+          <Button variant="link" size="sm" className="h-auto p-0" onClick={() => setShowExpired(!showExpired)}>
+            {showExpired ? "Hide expired videos" : "Show expired videos"}
+          </Button>
         </div>
-        {data !== undefined && data.videos.length === 0 && (
-          <p className="text-sm text-muted-foreground">No finished probe videos in this time range</p>
-        )}
-        {videosByPrompt(data?.videos ?? []).map((group) => (
-          <PromptGroup key={group.prompt} accessToken={accessToken} group={group} />
-        ))}
-      </section>
+      )}
 
       {evaluating && (
         <StartVideoEvaluationDialog

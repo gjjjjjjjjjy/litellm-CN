@@ -28,12 +28,24 @@ import {
   reviewScores,
   VIDEO_REVIEW_POLL_MS,
   targetChoiceValue,
-  videosByPrompt,
   videosWithoutResult,
+  characterErrors,
+  isExpired,
+  probeRuns,
+  realTimeFactor,
+  SPEECH_POLL_MS,
+  SPEECH_START_POLL_MS,
+  speechPollMs,
+  speechRunSummary,
+  VIDEO_KEPT_MS,
+  videoRunKey,
+  videoRunSummary,
   type QosDeploymentMetrics,
   type QosReviewVideo,
+  type QosSpeechResult,
   type QosSummary,
   type TargetChoice,
+  type TranscriptMark,
 } from "./qosData";
 
 const metrics = {
@@ -343,32 +355,6 @@ describe("video review helpers", () => {
     expect(reviewInput({ overall: 5 }, "   ")).toEqual({ overall: 5, comment: null });
   });
 
-  it("puts each video under its prompt, newest prompt first, keeping the newest-first order inside a prompt", () => {
-    const video = (video_id: string, prompt: string): QosReviewVideo => ({
-      video_id,
-      model_group: video_id,
-      created_at: "2026-10-30T09:00:00Z",
-      completed_at: "2026-10-30T09:02:00Z",
-      prompt,
-      reviews: 0,
-      overall: null,
-      my_review: null,
-    });
-
-    const groups = videosByPrompt([
-      video("ltx-new", "ball"),
-      video("wan-old", "gradient"),
-      video("minimax-new", "ball"),
-      video("ltx-old", "gradient"),
-    ]);
-
-    expect(groups.map((group) => [group.prompt, group.videos.map((each) => each.video_id)])).toEqual([
-      ["ball", ["ltx-new", "minimax-new"]],
-      ["gradient", ["wan-old", "ltx-old"]],
-    ]);
-    expect(videosByPrompt([])).toEqual([]);
-  });
-
   it("shows an average rating with one decimal and a missing one as a dash", () => {
     expect(formatScore(3.456)).toBe("3.5");
     expect(formatScore(null)).toBe("-");
@@ -399,6 +385,8 @@ describe("video evaluation helpers", () => {
       created_at: "2026-11-03T09:00:00Z",
       completed_at: null,
       prompt: "ball",
+      run: "run-1",
+      scheduled: true,
       reviews: 0,
       overall: null,
       my_review: null,
@@ -410,5 +398,203 @@ describe("video evaluation helpers", () => {
     expect(reviewPollMs([video("completed"), video("failed")], null, startedAt)).toBe(false);
     expect(reviewPollMs([], startedAt, startedAt + EVALUATION_START_POLL_MS - 1)).toBe(VIDEO_REVIEW_POLL_MS);
     expect(reviewPollMs([], startedAt, startedAt + EVALUATION_START_POLL_MS)).toBe(false);
+  });
+});
+
+const SENTENCE = "今天天气很好，我们一起去公园散步，顺便买些水果回家。";
+
+const probeVideo = (overrides: Partial<QosReviewVideo>): QosReviewVideo => ({
+  video_id: "video",
+  model_group: "LTX-2",
+  status: "completed",
+  created_at: "2026-11-04T09:00:00Z",
+  completed_at: "2026-11-04T09:02:00Z",
+  prompt: "ball",
+  run: "run-1",
+  scheduled: true,
+  reviews: 0,
+  overall: null,
+  my_review: null,
+  ai_review: null,
+  ...overrides,
+});
+
+const speechResult = (overrides: Partial<QosSpeechResult>): QosSpeechResult => ({
+  request_id: "call",
+  run: "run-1",
+  scheduled: false,
+  model_group: "IndexTTS-2",
+  modality: "speech",
+  created_at: "2026-11-04T09:00:00Z",
+  succeeded: true,
+  error: null,
+  latency_ms: 2000,
+  audio_seconds: 5,
+  text: SENTENCE,
+  transcript: null,
+  reviews: 0,
+  overall: null,
+  my_review: null,
+  ...overrides,
+});
+
+describe("probe runs", () => {
+  it("groups the probe's results by run, newest run first, each run's results ordered by model", () => {
+    const runs = probeRuns(
+      [
+        probeVideo({
+          video_id: "wan-late",
+          model_group: "Wan2_2-I2V-A14B",
+          run: "manual",
+          scheduled: false,
+          created_at: "2026-11-04T10:05:00Z",
+        }),
+        probeVideo({
+          video_id: "minimax",
+          model_group: "MiniMax-H3",
+          run: "manual",
+          scheduled: false,
+          created_at: "2026-11-04T10:00:00Z",
+        }),
+        probeVideo({ video_id: "ltx-new", run: "scheduled", created_at: "2026-11-04T10:02:00Z" }),
+        probeVideo({
+          video_id: "ltx",
+          model_group: "LTX-2",
+          run: "manual",
+          scheduled: false,
+          created_at: "2026-11-04T10:05:00Z",
+        }),
+      ],
+      videoRunKey,
+    );
+
+    expect(
+      runs.map((run) => [run.key, run.scheduled, run.startedAt, run.items.map((video) => video.video_id)]),
+    ).toEqual([
+      ["scheduled", true, "2026-11-04T10:02:00Z", ["ltx-new"]],
+      ["manual", false, "2026-11-04T10:00:00Z", ["ltx", "minimax", "wan-late"]],
+    ]);
+    expect(probeRuns([], videoRunKey)).toEqual([]);
+  });
+
+  it("keeps a video from before runs had ids together with the others of its prompt", () => {
+    const runs = probeRuns(
+      [
+        probeVideo({ video_id: "a", run: null, prompt: "ball" }),
+        probeVideo({ video_id: "b", run: null, prompt: "tea" }),
+        probeVideo({ video_id: "c", run: null, prompt: "ball" }),
+      ],
+      videoRunKey,
+    );
+
+    expect(runs.map((run) => run.items.map((video) => video.video_id).sort())).toEqual([["a", "c"], ["b"]]);
+  });
+
+  it("counts a video as expired once it is older than the provider keeps it", () => {
+    const created = Date.parse("2026-11-04T09:00:00Z");
+    const video = probeVideo({ created_at: "2026-11-04T09:00:00Z" });
+
+    expect(isExpired(video, created + VIDEO_KEPT_MS)).toBe(false);
+    expect(isExpired(video, created + VIDEO_KEPT_MS + 1)).toBe(true);
+  });
+
+  it("sums up a video run by its AI average and how many videos people rated", () => {
+    const aiReview = (overall: number) => ({
+      judge: "qwen",
+      frames: 4,
+      overall,
+      visual: overall,
+      detail: overall,
+      motion: overall,
+      alignment: overall,
+      physics: overall,
+      reasons: { visual: "", detail: "", motion: "", alignment: "", physics: "" },
+      checklist: [],
+      problems: [],
+      reviewed_at: "2026-11-04T09:05:00Z",
+    });
+
+    expect(
+      videoRunSummary([
+        probeVideo({ ai_review: aiReview(4), reviews: 2 }),
+        probeVideo({ ai_review: aiReview(1) }),
+        probeVideo({ status: "failed" }),
+      ]),
+    ).toEqual({ videos: 3, aiAverage: 2.5, rated: 1 });
+    expect(videoRunSummary([probeVideo({})]).aiAverage).toBeNull();
+  });
+});
+
+describe("character error rate", () => {
+  const shown: Record<TranscriptMark["kind"], (char: string) => string> = {
+    same: (char) => char,
+    unspoken: (char) => char,
+    wrong: (char) => `[${char}]`,
+    missing: (char) => `-${char}-`,
+  };
+  const marked = (reference: string, heard: string): string =>
+    (characterErrors(reference, heard)?.marks ?? []).map((mark) => shown[mark.kind](mark.char)).join("");
+
+  it("is zero for a transcript that only differs in punctuation, spaces or an added emoji", () => {
+    expect(characterErrors(SENTENCE, "今天天气很好,我们一起去公园散步 顺便买些水果回家😊")?.rate).toBe(0);
+    expect(marked(SENTENCE, "今天天气很好,我们一起去公园散步 顺便买些水果回家😊")).toBe(
+      "今天天气很好,我们一起去公园散步 顺便买些水果回家😊",
+    );
+  });
+
+  it("counts every substituted, extra and missed character against the spoken characters of the sentence", () => {
+    expect(characterErrors(SENTENCE, "今天天气很好，我们一起去公园散布，顺便买写水果回家。")?.rate).toBeCloseTo(
+      2 / 23,
+      10,
+    );
+    expect(characterErrors("天气很好", "天气真很好")?.rate).toBeCloseTo(1 / 4, 10);
+    expect(characterErrors("天气很好", "天很好")?.rate).toBeCloseTo(1 / 4, 10);
+    expect(characterErrors("天气很好", "")?.rate).toBe(1);
+  });
+
+  it("marks wrong characters in the transcript and puts missed ones where they belong", () => {
+    expect(marked(SENTENCE, "今天天气很好，我们一起去公园散布，顺便买写水果回家。")).toBe(
+      "今天天气很好，我们一起去公园散[布]，顺便买[写]水果回家。",
+    );
+    expect(marked("天气很好，回家", "天很好，回家了")).toBe("天-气-很好，回家[了]");
+  });
+
+  it("has no rate for a sentence without spoken characters", () => {
+    expect(characterErrors("，。 ", "你好")).toBeNull();
+  });
+});
+
+describe("speech runs", () => {
+  it("works out the real-time factor only for a succeeded reading of known length", () => {
+    expect(realTimeFactor(speechResult({ latency_ms: 2000, audio_seconds: 5 }))).toBeCloseTo(0.4, 10);
+    expect(realTimeFactor(speechResult({ audio_seconds: null }))).toBeNull();
+    expect(realTimeFactor(speechResult({ audio_seconds: 0 }))).toBeNull();
+    expect(realTimeFactor(speechResult({ succeeded: false }))).toBeNull();
+  });
+
+  it("sums up a speech run by its readings, how many of the playable ones people rated, and the average error rate", () => {
+    const summary = speechRunSummary([
+      speechResult({ request_id: "a", reviews: 1 }),
+      speechResult({ request_id: "b" }),
+      speechResult({ request_id: "c", succeeded: false, audio_seconds: null }),
+      speechResult({ request_id: "d", modality: "transcription", transcript: SENTENCE }),
+      speechResult({
+        request_id: "e",
+        modality: "transcription",
+        transcript: "今天天气很好，我们一起去公园散布，顺便买写水果回家。",
+      }),
+      speechResult({ request_id: "f", modality: "transcription", transcript: null }),
+    ]);
+
+    expect(summary).toEqual({ readings: 3, transcriptions: 3, rateable: 2, rated: 1, errorRate: 1 / 23 });
+    expect(speechRunSummary([speechResult({})]).errorRate).toBeNull();
+  });
+
+  it("refreshes the speech results for a few minutes after a run starts", () => {
+    const startedAt = 1_000_000;
+
+    expect(speechPollMs(startedAt, startedAt + SPEECH_START_POLL_MS - 1)).toBe(SPEECH_POLL_MS);
+    expect(speechPollMs(startedAt, startedAt + SPEECH_START_POLL_MS)).toBe(false);
+    expect(speechPollMs(null, startedAt)).toBe(false);
   });
 });

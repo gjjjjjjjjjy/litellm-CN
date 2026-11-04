@@ -59,12 +59,13 @@ const cellsOfRow = (text: string): (string | null)[] => {
 describe("QosMediaPanel", () => {
   beforeEach(() => {
     testQueryClient.clear();
+    window.localStorage.clear();
     vi.mocked(apiClient.get).mockReset();
     vi.mocked(apiClient.get).mockResolvedValue(media);
   });
 
   it("shows speech synthesis and transcription per model with audio length and real-time factor", async () => {
-    renderWithProviders(<QosMediaPanel accessToken="token" />);
+    renderWithProviders(<QosMediaPanel accessToken="token" modality="audio" />);
 
     await screen.findByText("IndexTTS-2");
     expect(cellsOfRow("IndexTTS-2")).toEqual([
@@ -87,10 +88,11 @@ describe("QosMediaPanel", () => {
       "694 ms / 733 ms",
       "0.19 / 0.20",
     ]);
+    expect(screen.queryByText("LTX-2")).not.toBeInTheDocument();
   });
 
   it("counts video tasks by outcome, including tasks that have no result yet", async () => {
-    renderWithProviders(<QosMediaPanel accessToken="token" />);
+    renderWithProviders(<QosMediaPanel accessToken="token" modality="video" />);
 
     await screen.findByText("LTX-2");
     expect(cellsOfRow("LTX-2")).toEqual([
@@ -105,28 +107,60 @@ describe("QosMediaPanel", () => {
       "85.20 s / 91.00 s",
       "3.00",
     ]);
+    expect(screen.queryByText("IndexTTS-2")).not.toBeInTheDocument();
   });
 
-  it("keeps how each table is measured hidden until its question mark is clicked", async () => {
+  it("folds a table down to its title when the title is clicked and keeps it folded next time", async () => {
     const user = userEvent.setup();
-    renderWithProviders(<QosMediaPanel accessToken="token" />);
+    const { unmount } = renderWithProviders(<QosMediaPanel accessToken="token" modality="audio" />);
+    await screen.findByText("IndexTTS-2");
+
+    await user.click(screen.getByRole("button", { name: "Speech synthesis and transcription" }));
+
+    expect(screen.queryByText("IndexTTS-2")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Speech synthesis and transcription" })).toHaveAttribute(
+      "aria-expanded",
+      "false",
+    );
+    unmount();
+    renderWithProviders(<QosMediaPanel accessToken="token" modality="audio" />);
+    expect(await screen.findByRole("button", { name: "Speech synthesis and transcription" })).toHaveAttribute(
+      "aria-expanded",
+      "false",
+    );
+    expect(screen.queryByText("IndexTTS-2")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Speech synthesis and transcription" }));
+    expect(await screen.findByText("IndexTTS-2")).toBeInTheDocument();
+  });
+
+  it("keeps how the speech table is measured hidden until its question mark is clicked", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<QosMediaPanel accessToken="token" modality="audio" />);
     await screen.findByText("IndexTTS-2");
 
     expect(screen.queryByText(/Below 1 is faster than real time/)).not.toBeInTheDocument();
-    expect(screen.queryByText(/nobody checked after they finished/)).not.toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "How speech synthesis and transcription are measured" }));
     const audioHelp = await screen.findByRole("dialog");
     expect(within(audioHelp).getByText("Real-time factor")).toBeInTheDocument();
     expect(within(audioHelp).getByText(/Below 1 is faster than real time/)).toBeInTheDocument();
     expect(within(audioHelp).queryByText("No result yet")).not.toBeInTheDocument();
+  });
+
+  it("keeps how the video table is measured hidden until its question mark is clicked", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<QosMediaPanel accessToken="token" modality="video" />);
+    await screen.findByText("LTX-2");
+
+    expect(screen.queryByText(/nobody checked after they finished/)).not.toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "How video generation is measured" }));
     expect(await screen.findByText(/nobody checked after they finished/)).toBeInTheDocument();
   });
 
   it("asks /qos/media for the last 24 hours by default", async () => {
-    renderWithProviders(<QosMediaPanel accessToken="token" />);
+    renderWithProviders(<QosMediaPanel accessToken="token" modality="audio" />);
     await screen.findByText("IndexTTS-2");
 
     const [path, options] = vi.mocked(apiClient.get).mock.calls[0];
@@ -137,7 +171,7 @@ describe("QosMediaPanel", () => {
 
   it("requests all retained history when All is selected", async () => {
     const user = userEvent.setup();
-    renderWithProviders(<QosMediaPanel accessToken="token" />);
+    renderWithProviders(<QosMediaPanel accessToken="token" modality="audio" />);
     await screen.findByText("IndexTTS-2");
 
     await user.click(screen.getByLabelText("Time range"));
@@ -149,19 +183,21 @@ describe("QosMediaPanel", () => {
 
   it("says when the time range has no audio or video traffic", async () => {
     vi.mocked(apiClient.get).mockResolvedValue({ ...media, audio: [], video: [] });
-    renderWithProviders(<QosMediaPanel accessToken="token" />);
+    const { unmount } = renderWithProviders(<QosMediaPanel accessToken="token" modality="audio" />);
 
     expect(
       await screen.findByText("No speech synthesis or transcription requests in this time range"),
     ).toBeInTheDocument();
-    expect(screen.getByText("No video tasks in this time range")).toBeInTheDocument();
+    unmount();
+    renderWithProviders(<QosMediaPanel accessToken="token" modality="video" />);
+    expect(await screen.findByText("No video tasks in this time range")).toBeInTheDocument();
   });
 
   it("shows the server's error message when loading fails", async () => {
     vi.mocked(apiClient.get).mockRejectedValue(
       new Error("Only users of this gateway can view service quality metrics"),
     );
-    renderWithProviders(<QosMediaPanel accessToken="token" />);
+    renderWithProviders(<QosMediaPanel accessToken="token" modality="video" />);
 
     expect(await screen.findByText("Could not load audio and video metrics")).toBeInTheDocument();
     expect(screen.getByText("Only users of this gateway can view service quality metrics")).toBeInTheDocument();
