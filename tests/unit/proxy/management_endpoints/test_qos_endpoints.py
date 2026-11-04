@@ -731,6 +731,7 @@ class TestHealthEndpoint:
                 "last_error": "Timeout exceeded",
                 "last_failure_at": "2026-10-23T01:58:49",
                 "last_checked_at": "2026-10-23T05:14:25",
+                "last_latency_ms": None,
             },
             {
                 "model_name": "Qwen3.8-27B",
@@ -797,6 +798,7 @@ class TestHealthEndpoint:
         assert response.status_code == 200
         node, default_base = response.json()["nodes"]
         assert node["availability"] == pytest.approx(8 / 9)
+        assert node["last_latency_ms"] is None
         assert (node["vendor"], node["api_base"], node["upstream_model"]) == (
             "moark",
             "https://ai.gitee.com/v1",

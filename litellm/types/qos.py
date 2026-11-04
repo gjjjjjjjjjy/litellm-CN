@@ -563,6 +563,7 @@ class QosHealthNode(LiteLLMBaseModel):
     last_error: str | None
     last_failure_at: UtcDatetime | None
     last_checked_at: UtcDatetime
+    last_latency_ms: float | None = None
 
 
 class QosHealthProbe(LiteLLMBaseModel):

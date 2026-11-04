@@ -21,6 +21,7 @@ const node = (model_name: string, latest_status: string) => ({
   last_error: null,
   last_failure_at: null,
   last_checked_at: "2026-10-26T00:00:00Z",
+  last_latency_ms: model_name === "Qwen3" ? null : 126.4,
 });
 
 const target = (model: string) => ({
@@ -80,6 +81,8 @@ describe("HomeBoard", () => {
     expect(within(cards[1]).getByText("Operational")).toBeInTheDocument();
     expect(within(cards[0]).getByText("80.00%")).toBeInTheDocument();
     expect(within(cards[1]).getByText("100.00%")).toBeInTheDocument();
+    expect(within(cards[1]).getByText("126 ms")).toBeInTheDocument();
+    expect(within(cards[0]).getByText("—")).toBeInTheDocument();
     expect(screen.queryByText("TTFT")).not.toBeInTheDocument();
     expect(within(cards[1]).getByRole("img", { name: "Moark (Gitee AI) logo" })).toHaveAttribute(
       "src",

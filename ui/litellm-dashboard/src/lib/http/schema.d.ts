@@ -43989,6 +43989,8 @@ export interface components {
              * Format: date-time
              */
             last_checked_at: string;
+            /** Last health probe response time in milliseconds; not an ICMP ping. */
+            last_latency_ms?: number | null;
             /** Last Error */
             last_error: string | null;
             /** Last Failure At */

@@ -164,6 +164,12 @@ const ChannelStatusCard = ({ card, now }: { card: ChannelCard; now: Date }) => {
           {card.health === undefined ? "-" : `${(card.health.availability * 100).toFixed(2)}%`}
         </p>
       </div>
+      <div className="mt-3 flex items-center justify-between gap-3 text-xs">
+        <span className="text-muted-foreground">Health check latency</span>
+        <span className="font-medium tabular-nums">
+          {card.health?.last_latency_ms == null ? "—" : `${Math.round(card.health.last_latency_ms)} ms`}
+        </span>
+      </div>
       <p
         className="mt-3 flex items-center gap-1.5 text-[11px] text-muted-foreground"
         title="Stable health checks are recorded hourly; manual checks are always recorded"

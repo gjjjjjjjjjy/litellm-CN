@@ -781,8 +781,11 @@ def _aggregate_health_check_results(
                         "healthy_count": 0,
                         "unhealthy_count": 0,
                         "error_message": None,
+                        "qos_probe_latency_ms": None,
                     }
                 model_results[key]["healthy_count"] += 1
+                if endpoint.get("qos_probe_latency_ms") is not None:
+                    model_results[key]["qos_probe_latency_ms"] = endpoint["qos_probe_latency_ms"]
 
     # Process unhealthy endpoints
     for endpoint in unhealthy_endpoints:
@@ -798,8 +801,11 @@ def _aggregate_health_check_results(
                         "healthy_count": 0,
                         "unhealthy_count": 0,
                         "error_message": None,
+                        "qos_probe_latency_ms": None,
                     }
                 model_results[key]["unhealthy_count"] += 1
+                if endpoint.get("qos_probe_latency_ms") is not None:
+                    model_results[key]["qos_probe_latency_ms"] = endpoint["qos_probe_latency_ms"]
                 # Use the first error message encountered
                 if not model_results[key]["error_message"] and error_message:
                     model_results[key]["error_message"] = str(error_message)[:500]
@@ -815,6 +821,7 @@ class _AggregatedHealthResult(TypedDict):
     healthy_count: ReadOnly[int]
     unhealthy_count: ReadOnly[int]
     error_message: ReadOnly[str | None]
+    qos_probe_latency_ms: ReadOnly[float | None]
 
 
 def _new_health_status(result: _AggregatedHealthResult) -> str:
@@ -884,8 +891,12 @@ async def _save_health_check_results_if_changed(
             healthy_count=result["healthy_count"],
             unhealthy_count=result["unhealthy_count"],
             error_message=result["error_message"],
-            response_time_ms=(time.time() - start_time) * 1000,
-            details=None,
+            response_time_ms=result.get("qos_probe_latency_ms"),
+            details=(
+                {"qos_probe_latency_ms": result["qos_probe_latency_ms"]}
+                if result.get("qos_probe_latency_ms") is not None
+                else None
+            ),
             checked_by=checked_by,
         )
         for result in to_write

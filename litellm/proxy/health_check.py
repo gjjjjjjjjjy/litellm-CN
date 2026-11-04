@@ -62,6 +62,7 @@ HEALTH_DISPLAY_PARAMS: Final = (
             "tpm",
             "rpm",
             "error",
+            "qos_probe_latency_ms",
             "raw_request_typed_dict",
             "x-ratelimit-remaining-requests",
             "x-ratelimit-remaining-tokens",
@@ -536,6 +537,7 @@ def _finalize_strategy_router_endpoints(
 
 
 async def _run_model_health_check(model: dict):
+    started = time.perf_counter()
     litellm_params = model["litellm_params"]
     model_info: Final = model.get("model_info", {})
 
@@ -551,7 +553,7 @@ async def _run_model_health_check(model: dict):
     )
     timeout: Final = model_info.get("health_check_timeout") or HEALTH_CHECK_TIMEOUT_SECONDS
 
-    return await run_with_timeout(
+    result = await run_with_timeout(
         litellm.ahealth_check(
             litellm_params,
             mode=mode,
@@ -560,6 +562,9 @@ async def _run_model_health_check(model: dict):
         ),
         timeout,
     )
+    if isinstance(result, dict):
+        return {**result, "qos_probe_latency_ms": (time.perf_counter() - started) * 1000}
+    return result
 
 
 async def _run_health_checks_with_bounded_concurrency(models: list, concurrency_limit: int) -> tuple[list, int]:
