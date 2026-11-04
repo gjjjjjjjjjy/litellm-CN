@@ -27,6 +27,14 @@ from litellm.proxy.management_endpoints.qos_summary import (
     QOS_MAX_WINDOW,
 )
 from litellm.proxy.management_endpoints.qos_trends import OVERALL_SQL, TREND_POINTS, TREND_SQL
+from litellm.proxy.management_endpoints.qos_video_reviews import (
+    AI_REVIEW_SUMMARY_SQL,
+    GENERATING_WINDOW,
+    RECORD_VIDEO_REVIEW_SQL,
+    REVIEW_SUMMARY_SQL,
+    REVIEW_VIDEOS_SQL,
+)
+from litellm.types.videos.utils import encode_video_id_with_provider
 
 NOW: Final = datetime(2026, 10, 22, 12, 0, 0)
 
@@ -671,9 +679,6 @@ class TestHealthEndpoint:
                 "last_error": None,
                 "last_failure_at": None,
                 "last_checked_at": checked_at,
-                "last_streamed_at": checked_at,
-                "last_ttft_ms": 250.0,
-                "last_latency_ms": 1000.0,
             }
             for node in ("node-a", "node-b")
         ]
@@ -710,8 +715,7 @@ class TestHealthEndpoint:
             assert response.status_code == 200
             assert prisma.db.query_raw.await_count == 3
             nodes: Final = response.json()["nodes"]
-            assert len(nodes) == len(models)
-            assert all((node["last_ttft_ms"], node["last_latency_ms"]) == (250.0, 1000.0) for node in nodes)
+            assert [(node["model_id"], node["availability"]) for node in nodes] == [("node-a", 1.0), ("node-b", 1.0)]
         else:
             assert response.status_code == 500
             assert response.json()["detail"] == "Health checks completed but results could not be saved"
@@ -895,3 +899,288 @@ class TestBenchmarkDeletion:
         sql, since, run_id = prisma.db.query_raw.await_args.args
         assert (sql, run_id) == (BENCHMARK_DELETE_SQL, "qos-run-1")
         assert datetime.now(timezone.utc).replace(tzinfo=None) - since >= QOS_MAX_WINDOW
+
+
+_REVIEW: Final = {
+    "overall": 4,
+    "visual": 5,
+    "detail": 2,
+    "motion": 3,
+    "alignment": None,
+    "physics": 4,
+    "audio": None,
+    "comment": "smooth, but the cat floats",
+    "reviewed_at": "2026-10-22T11:30:00Z",
+}
+
+_AI_REVIEW: Final = {
+    "judge": "qwen3.8-27b",
+    "frames": 5,
+    "overall": 4,
+    "visual": 4,
+    "detail": 3,
+    "motion": 4,
+    "alignment": 5,
+    "physics": 3,
+    "reasons": {
+        "visual": "清晰",
+        "detail": "草叶有些糊",
+        "motion": "连贯",
+        "alignment": "要求都满足",
+        "physics": "球没有影子",
+    },
+    "checklist": [{"requirement": "红色皮球从左向右滚动", "met": True, "evidence": "第 1 到 4 秒球一路向右"}],
+    "problems": [{"second": 3.0, "problem": "球的影子消失"}],
+    "reviewed_at": "2026-10-22T11:40:00Z",
+}
+
+
+def _video_router(model: str) -> MagicMock:
+    llm_router: Final = MagicMock()
+    llm_router.resolve_model_name_from_model_id = MagicMock(return_value=model)
+    llm_router.get_model_list = MagicMock(
+        return_value=[
+            {
+                "model_name": model,
+                "litellm_params": {
+                    "model": f"moark/{model}",
+                    "api_key": "sk-moark",
+                    "api_base": "https://ai.gitee.com/v1",
+                },
+            }
+        ]
+    )
+    return llm_router
+
+
+class TestVideoReviews:
+    @pytest.mark.parametrize(
+        "role",
+        (None, LitellmUserRoles.INTERNAL_USER, LitellmUserRoles.INTERNAL_USER_VIEW_ONLY, LitellmUserRoles.ORG_ADMIN),
+    )
+    @pytest.mark.parametrize(
+        ("method", "path"),
+        (
+            ("get", "/qos/videos"),
+            ("get", "/qos/videos/content?video_id=video-1"),
+            ("put", "/qos/videos/review?video_id=video-1"),
+        ),
+    )
+    def test_only_proxy_admins_can_watch_and_rate_videos(
+        self, role: LitellmUserRoles | None, method: str, path: str
+    ) -> None:
+        prisma: Final = MagicMock()
+        prisma.db.query_raw = AsyncMock()
+        fetch: Final = AsyncMock()
+        client: Final = _client(role)
+        with (
+            patch("litellm.proxy.proxy_server.prisma_client", prisma),
+            patch("litellm.proxy.proxy_server.llm_router", MagicMock()),
+            patch("litellm.avideo_content", fetch),
+        ):
+            response: Final = client.put(path, json={"overall": 3}) if method == "put" else client.get(path)
+        assert response.status_code == 403
+        assert response.json()["detail"] == "Only proxy admins can review the probe's videos and audio"
+        prisma.db.query_raw.assert_not_awaited()
+        fetch.assert_not_awaited()
+
+    def test_lists_the_probes_videos_with_the_callers_review_the_ai_review_and_each_models_averages(self) -> None:
+        prisma: Final = MagicMock()
+        summary_row: Final = {
+            "model_group": "LTX-2",
+            "videos": 1,
+            "reviews": 2,
+            "overall": 3.5,
+            "visual": 5.0,
+            "detail": 2.5,
+            "motion": 3.0,
+            "alignment": None,
+            "physics": 4.0,
+            "audio": None,
+        }
+        ai_summary_row: Final = {
+            "model_group": "LTX-2",
+            "videos": 1,
+            "overall": 4.0,
+            "visual": 4.0,
+            "detail": 3.0,
+            "motion": 4.0,
+            "alignment": 5.0,
+            "physics": 3.0,
+        }
+        finished_row: Final = {
+            "video_id": "video-1",
+            "created_at": NOW,
+            "model_group": "LTX-2",
+            "prompt": "颜色缓慢流动的渐变",
+            "run": "20261022-090000-a1b2c3",
+            "scheduled": True,
+            "reviews": {"default_user_id": _REVIEW, "another-admin": {**_REVIEW, "overall": 3, "comment": None}},
+            "ai_review": _AI_REVIEW,
+            "completed_at": NOW + timedelta(minutes=2),
+            "status": "completed",
+        }
+        generating_row: Final = {
+            "video_id": "video-2",
+            "created_at": NOW,
+            "model_group": "Wan2_2-I2V-A14B",
+            "prompt": "颜色缓慢流动的渐变",
+            "run": None,
+            "scheduled": False,
+            "reviews": {},
+            "ai_review": None,
+            "completed_at": None,
+            "status": "generating",
+        }
+        prisma.db.query_raw = AsyncMock(side_effect=[[summary_row], [ai_summary_row], [finished_row, generating_row]])
+        before: Final = datetime.now(timezone.utc).replace(tzinfo=None)
+
+        with patch("litellm.proxy.proxy_server.prisma_client", prisma):
+            response: Final = _client(LitellmUserRoles.PROXY_ADMIN).get(
+                "/qos/videos", params={"start_time": "2026-10-22T00:00:00", "end_time": "2026-10-22T12:00:00"}
+            )
+
+        after: Final = datetime.now(timezone.utc).replace(tzinfo=None)
+        assert response.status_code == 200, response.text
+        body: Final = response.json()
+        assert (body["summary"], body["ai_summary"]) == ([summary_row], [ai_summary_row])
+        finished, generating = body["videos"]
+        assert (finished["video_id"], finished["status"], finished["reviews"], finished["overall"]) == (
+            "video-1",
+            "completed",
+            2,
+            3.5,
+        )
+        assert (finished["my_review"], finished["ai_review"]) == (_REVIEW, _AI_REVIEW)
+        assert (generating["status"], generating["completed_at"], generating["ai_review"]) == ("generating", None, None)
+        assert [(video["run"], video["scheduled"]) for video in body["videos"]] == [
+            ("20261022-090000-a1b2c3", True),
+            (None, False),
+        ]
+        summary_call, ai_summary_call, videos_call = (call.args for call in prisma.db.query_raw.await_args_list)
+        assert (summary_call[0], ai_summary_call[0], videos_call[0]) == (
+            REVIEW_SUMMARY_SQL,
+            AI_REVIEW_SUMMARY_SQL,
+            REVIEW_VIDEOS_SQL,
+        )
+        window: Final = (datetime(2026, 10, 22, 0), datetime(2026, 10, 22, 12))
+        assert summary_call[1:] == ai_summary_call[1:] == videos_call[1:3] == window
+        assert before - GENERATING_WINDOW <= videos_call[3] <= after - GENERATING_WINDOW, (
+            "a video without a result is listed only while the probe may still be waiting for it"
+        )
+
+    @pytest.mark.parametrize("role", (LitellmUserRoles.PROXY_ADMIN, LitellmUserRoles.PROXY_ADMIN_VIEW_ONLY))
+    def test_saving_a_review_records_it_under_the_caller_and_returns_it(self, role: LitellmUserRoles) -> None:
+        prisma: Final = MagicMock()
+        prisma.db.query_raw = AsyncMock(return_value=[{"request_id": "video-1"}])
+
+        with patch("litellm.proxy.proxy_server.prisma_client", prisma):
+            response: Final = _client(role).put(
+                "/qos/videos/review?video_id=video-1",
+                json={"overall": 4, "detail": 1, "motion": 2, "comment": "jittery hands"},
+            )
+
+        assert response.status_code == 200, response.text
+        saved: Final = response.json()
+        assert (saved["overall"], saved["detail"], saved["motion"], saved["visual"], saved["comment"]) == (
+            4,
+            1,
+            2,
+            None,
+            "jittery hands",
+        )
+        ((sql, video_id, reviewer, stored),) = (call.args for call in prisma.db.query_raw.await_args_list)
+        assert (sql, video_id, reviewer) == (RECORD_VIDEO_REVIEW_SQL, "video-1", "default_user_id")
+        assert json.loads(stored) == saved
+
+    @pytest.mark.parametrize(
+        "review",
+        (
+            {"overall": 0},
+            {"overall": 6},
+            {"overall": 3, "physics": 9},
+            {"overall": 3, "detail": 0},
+            {"overall": 3, "comment": "x" * 501},
+            {"visual": 4},
+            {"overall": 3, "sharpness": 4},
+        ),
+    )
+    def test_rejects_ratings_outside_one_to_five_and_overlong_comments_before_writing(
+        self, review: dict[str, object]
+    ) -> None:
+        prisma: Final = MagicMock()
+        prisma.db.query_raw = AsyncMock()
+        with patch("litellm.proxy.proxy_server.prisma_client", prisma):
+            response: Final = _client(LitellmUserRoles.PROXY_ADMIN).put(
+                "/qos/videos/review?video_id=video-1", json=review
+            )
+        assert response.status_code == 422
+        prisma.db.query_raw.assert_not_awaited()
+
+    def test_a_review_of_a_video_the_probe_did_not_make_is_not_found(self) -> None:
+        prisma: Final = MagicMock()
+        prisma.db.query_raw = AsyncMock(return_value=[])
+        with patch("litellm.proxy.proxy_server.prisma_client", prisma):
+            response: Final = _client(LitellmUserRoles.PROXY_ADMIN).put(
+                "/qos/videos/review?video_id=not-a-video", json={"overall": 3}
+            )
+        assert response.status_code == 404
+
+    def test_plays_a_video_with_the_credentials_of_the_deployment_that_made_it(self) -> None:
+        video_id: Final = encode_video_id_with_provider("TASK-1", "moark", "LTX-2")
+        llm_router: Final = _video_router("LTX-2")
+        fetch: Final = AsyncMock(return_value=b"\x00\x00\x00\x18ftypisom")
+
+        with patch("litellm.proxy.proxy_server.llm_router", llm_router), patch("litellm.avideo_content", fetch):
+            response: Final = _client(LitellmUserRoles.PROXY_ADMIN).get(
+                "/qos/videos/content", params={"video_id": video_id}
+            )
+
+        assert response.status_code == 200, response.text
+        assert (response.headers["content-type"], response.content) == ("video/mp4", b"\x00\x00\x00\x18ftypisom")
+        llm_router.resolve_model_name_from_model_id.assert_called_once_with("LTX-2")
+        llm_router.get_model_list.assert_called_once_with(model_name="LTX-2")
+        fetch.assert_awaited_once_with(
+            video_id=video_id, custom_llm_provider="moark", api_key="sk-moark", api_base="https://ai.gitee.com/v1"
+        )
+
+    @pytest.mark.parametrize(("model", "deployments"), (("LTX-2", None), ("LTX-2", []), (None, None)))
+    def test_a_video_whose_model_was_removed_cannot_be_played(
+        self, model: str | None, deployments: list[object] | None
+    ) -> None:
+        llm_router: Final = MagicMock()
+        llm_router.resolve_model_name_from_model_id = MagicMock(return_value=model)
+        llm_router.get_model_list = MagicMock(return_value=deployments)
+        fetch: Final = AsyncMock()
+
+        with patch("litellm.proxy.proxy_server.llm_router", llm_router), patch("litellm.avideo_content", fetch):
+            response: Final = _client(LitellmUserRoles.PROXY_ADMIN).get(
+                "/qos/videos/content", params={"video_id": encode_video_id_with_provider("TASK-1", "moark", "LTX-2")}
+            )
+
+        assert response.status_code == 404
+        fetch.assert_not_awaited()
+
+    def test_reports_why_the_provider_could_not_return_the_video(self) -> None:
+        fetch: Final = AsyncMock(side_effect=RuntimeError("the result file has expired"))
+
+        with (
+            patch("litellm.proxy.proxy_server.llm_router", _video_router("LTX-2")),
+            patch("litellm.avideo_content", fetch),
+        ):
+            response: Final = _client(LitellmUserRoles.PROXY_ADMIN).get(
+                "/qos/videos/content", params={"video_id": encode_video_id_with_provider("TASK-1", "moark", "LTX-2")}
+            )
+
+        assert response.status_code == 502
+        assert response.json()["detail"] == "Could not fetch the video: the result file has expired"
+
+    def test_a_video_id_with_slashes_and_plus_signs_reaches_the_database_intact(self) -> None:
+        prisma: Final = MagicMock()
+        prisma.db.query_raw = AsyncMock(return_value=[{"request_id": "video_a/b+c=="}])
+        with patch("litellm.proxy.proxy_server.prisma_client", prisma):
+            response: Final = _client(LitellmUserRoles.PROXY_ADMIN).put(
+                "/qos/videos/review", params={"video_id": "video_a/b+c=="}, json={"overall": 3}
+            )
+        assert response.status_code == 200, response.text
+        assert prisma.db.query_raw.await_args.args[1] == "video_a/b+c=="

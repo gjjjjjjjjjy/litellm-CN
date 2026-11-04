@@ -14,9 +14,6 @@ const node = (model_name: string, latest_status: string, vendor = "moark") => ({
   last_error: null,
   last_failure_at: null,
   last_checked_at: "2026-10-26T00:00:00Z",
-  last_ttft_ms: null,
-  last_latency_ms: null,
-  last_streamed_at: null,
 });
 
 describe("model status", () => {

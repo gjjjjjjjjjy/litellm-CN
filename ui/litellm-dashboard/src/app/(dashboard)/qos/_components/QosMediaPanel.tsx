@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTitle, PopoverTrigger } from "@/components/ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { extractErrorMessage } from "@/utils/errorUtils";
+import CollapsibleSection from "./CollapsibleSection";
 import {
   AUDIO_MODALITY_LABELS,
   formatAudioLength,
@@ -150,7 +151,13 @@ function MetricHelp({ title, definitions }: { title: string; definitions: readon
   );
 }
 
-export default function QosMediaPanel({ accessToken }: { accessToken: string | null }) {
+export default function QosMediaPanel({
+  accessToken,
+  modality,
+}: {
+  accessToken: string | null;
+  modality: "audio" | "video";
+}) {
   const [range, setRange] = React.useState<QosRange>("24h");
   const mediaQuery = useQosMedia(accessToken, range, false);
   const media = mediaQuery.data;
@@ -159,7 +166,7 @@ export default function QosMediaPanel({ accessToken }: { accessToken: string | n
     <div className="flex flex-col gap-6">
       <div className="flex flex-wrap items-end gap-3">
         <div className="flex flex-col gap-1">
-          <label htmlFor="qos-media-range" className="text-sm text-muted-foreground">
+          <label htmlFor={`qos-${modality}-range`} className="text-sm text-muted-foreground">
             Time range
           </label>
           <Select
@@ -169,7 +176,7 @@ export default function QosMediaPanel({ accessToken }: { accessToken: string | n
               if (value !== null && isQosRange(value)) setRange(value);
             }}
           >
-            <SelectTrigger id="qos-media-range" className="w-44">
+            <SelectTrigger id={`qos-${modality}-range`} className="w-44">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -194,33 +201,37 @@ export default function QosMediaPanel({ accessToken }: { accessToken: string | n
         </Alert>
       )}
 
-      <section className="flex flex-col gap-2">
-        <div className="flex items-center gap-1.5">
-          <h3 className="text-base font-semibold">Speech synthesis and transcription</h3>
-          <MetricHelp title="How speech synthesis and transcription are measured" definitions={AUDIO_DEFINITIONS} />
-        </div>
-        <DataTable
-          data={media === undefined ? [] : [...media.audio]}
-          columns={audioColumns}
-          getRowId={(metrics) => `${metrics.model_group}:${metrics.modality}`}
-          isLoading={mediaQuery.isLoading}
-          noDataMessage="No speech synthesis or transcription requests in this time range"
-        />
-      </section>
-
-      <section className="flex flex-col gap-2">
-        <div className="flex items-center gap-1.5">
-          <h3 className="text-base font-semibold">Video generation</h3>
-          <MetricHelp title="How video generation is measured" definitions={VIDEO_DEFINITIONS} />
-        </div>
-        <DataTable
-          data={media === undefined ? [] : [...media.video]}
-          columns={videoColumns}
-          getRowId={(metrics) => metrics.model_group}
-          isLoading={mediaQuery.isLoading}
-          noDataMessage="No video tasks in this time range"
-        />
-      </section>
+      {modality === "audio" ? (
+        <CollapsibleSection
+          id="audio.metrics"
+          title="Speech synthesis and transcription"
+          help={
+            <MetricHelp title="How speech synthesis and transcription are measured" definitions={AUDIO_DEFINITIONS} />
+          }
+        >
+          <DataTable
+            data={media === undefined ? [] : [...media.audio]}
+            columns={audioColumns}
+            getRowId={(metrics) => `${metrics.model_group}:${metrics.modality}`}
+            isLoading={mediaQuery.isLoading}
+            noDataMessage="No speech synthesis or transcription requests in this time range"
+          />
+        </CollapsibleSection>
+      ) : (
+        <CollapsibleSection
+          id="video.metrics"
+          title="Video generation"
+          help={<MetricHelp title="How video generation is measured" definitions={VIDEO_DEFINITIONS} />}
+        >
+          <DataTable
+            data={media === undefined ? [] : [...media.video]}
+            columns={videoColumns}
+            getRowId={(metrics) => metrics.model_group}
+            isLoading={mediaQuery.isLoading}
+            noDataMessage="No video tasks in this time range"
+          />
+        </CollapsibleSection>
+      )}
     </div>
   );
 }

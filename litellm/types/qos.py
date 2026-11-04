@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
-from typing import Annotated, Final, Literal
+from typing import Annotated, Final, Literal, TypeAlias
 
-from pydantic import AfterValidator, ConfigDict, Field, model_validator
+from pydantic import AfterValidator, ConfigDict, Field, StringConstraints, model_validator
 from typing_extensions import Self
 
 from litellm.types.llms.base import LiteLLMBaseModel
@@ -55,6 +55,7 @@ class QosMedia(LiteLLMBaseModel):
     run_ms: float | None = None
     task_price: float | None = None
     task_currency: str | None = None
+    prompt: str | None = None
 
 
 class QosResponseChecks(LiteLLMBaseModel):
@@ -139,6 +140,264 @@ class QosMediaResponse(LiteLLMBaseModel):
     end_time: UtcDatetime
     audio: tuple[QosAudioMetrics, ...]
     video: tuple[QosVideoMetrics, ...]
+
+
+ReviewScore: TypeAlias = Annotated[int, Field(ge=1, le=5)]
+
+
+class QosVideoReviewInput(LiteLLMBaseModel):
+    """One reviewer's ratings of a generated video, 1 (bad) to 5 (good); only the overall rating is required."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    overall: ReviewScore
+    visual: ReviewScore | None = None
+    detail: ReviewScore | None = None
+    motion: ReviewScore | None = None
+    alignment: ReviewScore | None = None
+    physics: ReviewScore | None = None
+    audio: ReviewScore | None = None
+    comment: Annotated[str, Field(max_length=500)] | None = None
+
+
+class QosVideoReview(QosVideoReviewInput):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    reviewed_at: UtcDatetime
+
+
+ReviewText: TypeAlias = Annotated[str, Field(max_length=500)]
+
+
+class QosVideoAiReasons(LiteLLMBaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    visual: ReviewText = ""
+    detail: ReviewText = ""
+    motion: ReviewText = ""
+    alignment: ReviewText = ""
+    physics: ReviewText = ""
+
+
+class QosVideoAiCheck(LiteLLMBaseModel):
+    """One requirement the judge read out of the prompt, and whether the stills meet it."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    requirement: ReviewText
+    met: bool
+    evidence: ReviewText = ""
+
+
+class QosVideoAiProblem(LiteLLMBaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    second: float = Field(ge=0)
+    problem: ReviewText
+
+
+class QosVideoAiScore(LiteLLMBaseModel):
+    """A vision model's ratings of a video from one still per second, 1 (bad) to 5 (good); it hears no sound."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    judge: str = Field(min_length=1, max_length=200, description="The model that rated the stills")
+    frames: int = Field(ge=1, description="How many stills, one per second, the judge saw")
+    overall: ReviewScore
+    visual: ReviewScore
+    detail: ReviewScore
+    motion: ReviewScore
+    alignment: ReviewScore
+    physics: ReviewScore
+    reasons: QosVideoAiReasons
+    checklist: tuple[QosVideoAiCheck, ...] = Field(default=(), max_length=30)
+    problems: tuple[QosVideoAiProblem, ...] = Field(default=(), max_length=30)
+
+
+class QosVideoAiReview(QosVideoAiScore):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    reviewed_at: UtcDatetime
+
+
+QosReviewVideoStatus: TypeAlias = Literal["generating", "completed", "failed"]
+
+
+class QosReviewVideo(LiteLLMBaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    video_id: str
+    model_group: str
+    status: QosReviewVideoStatus
+    created_at: UtcDatetime
+    completed_at: UtcDatetime | None = Field(description="When the provider reported the video done; None until then")
+    prompt: str = Field(description="The prompt the probe gave every model in its run")
+    run: str | None = Field(description="The probe run that made the video; None for videos older than run ids")
+    scheduled: bool = Field(description="Whether the run was one of the probe's daily scheduled runs")
+    reviews: int
+    overall: float | None = Field(description="Average overall rating of this video")
+    my_review: QosVideoReview | None
+    ai_review: QosVideoAiReview | None
+
+
+class QosVideoReviewSummary(LiteLLMBaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    model_group: str
+    videos: int
+    reviews: int
+    overall: float | None
+    visual: float | None
+    detail: float | None
+    motion: float | None
+    alignment: float | None
+    physics: float | None
+    audio: float | None
+
+
+class QosVideoAiSummary(LiteLLMBaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    model_group: str
+    videos: int
+    overall: float
+    visual: float
+    detail: float
+    motion: float
+    alignment: float
+    physics: float
+
+
+class QosVideoReviewsResponse(LiteLLMBaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    start_time: UtcDatetime
+    end_time: UtcDatetime
+    summary: tuple[QosVideoReviewSummary, ...]
+    ai_summary: tuple[QosVideoAiSummary, ...]
+    videos: tuple[QosReviewVideo, ...]
+
+
+PROBE_PROMPT_MAX_CHARS: Final = 500
+
+
+class QosVideoEvaluationRequest(LiteLLMBaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    prompt: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=PROBE_PROMPT_MAX_CHARS)]
+
+
+class QosVideoEvaluationStarted(LiteLLMBaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    prompt: str
+    models: tuple[str, ...] = Field(description="The video models the probe is generating with")
+
+
+class QosVideoEvaluationPrompt(LiteLLMBaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    prompt: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=PROBE_PROMPT_MAX_CHARS)]
+
+
+class QosUsedPrompt(LiteLLMBaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    prompt: str
+    last_used: UtcDatetime
+    videos: int
+
+
+class QosProbeModel(LiteLLMBaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    model_group: str
+    image_to_video: bool
+    last_price: float | None = Field(description="What the provider charged for this model's latest finished video")
+    currency: str | None
+
+
+class QosVideoEvaluationOptions(LiteLLMBaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    available: bool = Field(description="Whether the gateway knows a media probe to run evaluations on")
+    models: tuple[QosProbeModel, ...]
+    prompts: tuple[QosUsedPrompt, ...] = Field(description="Prompts earlier probe runs used, most recent first")
+
+
+QosSpeechModality: TypeAlias = Literal["speech", "transcription"]
+
+
+class QosSpeechReviewInput(LiteLLMBaseModel):
+    """One reviewer's rating of a speech model's reading of the probe's sentence, 1 (bad) to 5 (good)."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    overall: ReviewScore
+
+
+class QosSpeechReview(QosSpeechReviewInput):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    reviewed_at: UtcDatetime
+
+
+class QosSpeechTranscript(LiteLLMBaseModel):
+    """What a transcription model heard in the probe's recording, as the probe reports it."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    text: Annotated[str, Field(max_length=2000)]
+
+
+class QosSpeechResult(LiteLLMBaseModel):
+    """One speech or transcription request of a probe run."""
+
+    model_config = ConfigDict(frozen=True)
+
+    request_id: str
+    run: str
+    scheduled: bool = Field(description="Whether the run was one of the probe's daily scheduled runs")
+    model_group: str
+    modality: QosSpeechModality
+    created_at: UtcDatetime
+    succeeded: bool
+    error: str | None = Field(description="Why the request failed, as the gateway logged it")
+    latency_ms: float
+    audio_seconds: float | None = Field(description="Length of the audio read out or transcribed, when known")
+    text: str = Field(description="The sentence the speech models read, which the recording also says")
+    transcript: str | None = Field(description="What a transcription model heard; None until the probe reports it")
+    reviews: int
+    overall: float | None = Field(description="Average rating of this reading")
+    my_review: QosSpeechReview | None
+
+
+class QosSpeechEvaluationsResponse(LiteLLMBaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    start_time: UtcDatetime
+    end_time: UtcDatetime
+    results: tuple[QosSpeechResult, ...]
+
+
+class QosSpeechProbeModel(LiteLLMBaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    model_group: str
+    modality: QosSpeechModality
+
+
+class QosSpeechEvaluationOptions(LiteLLMBaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    available: bool = Field(description="Whether the gateway knows a media probe to run evaluations on")
+    models: tuple[QosSpeechProbeModel, ...]
+
+
+class QosSpeechEvaluationStarted(LiteLLMBaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    models: tuple[str, ...] = Field(description="The speech and transcription models the probe is testing")
 
 
 QOS_BENCHMARK_MAX_REQUESTS: Final = 5000
@@ -304,9 +563,6 @@ class QosHealthNode(LiteLLMBaseModel):
     last_error: str | None
     last_failure_at: UtcDatetime | None
     last_checked_at: UtcDatetime
-    last_ttft_ms: float | None = None
-    last_latency_ms: float | None = None
-    last_streamed_at: UtcDatetime | None = None
 
 
 class QosHealthProbe(LiteLLMBaseModel):

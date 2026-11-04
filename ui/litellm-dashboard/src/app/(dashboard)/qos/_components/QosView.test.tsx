@@ -96,10 +96,22 @@ const media = {
   video: [],
 };
 
+const videoReviews = {
+  start_time: "2026-10-22T11:00:00Z",
+  end_time: "2026-10-22T12:00:00Z",
+  summary: [],
+  ai_summary: [],
+  videos: [],
+};
+
+const speechEvaluations = { start_time: "2026-10-22T11:00:00Z", end_time: "2026-10-22T12:00:00Z", results: [] };
+
 const respondWith = (summaryBody: unknown) => async (path: string) => {
   if (path === "/qos/trends") return trends;
   if (path === "/qos/health") return health;
   if (path === "/qos/media") return media;
+  if (path === "/qos/videos") return videoReviews;
+  if (path === "/qos/speech/evaluations") return speechEvaluations;
   return summaryBody;
 };
 
@@ -108,6 +120,7 @@ const summaryCalls = () => vi.mocked(apiClient.get).mock.calls.filter(([path]) =
 describe("QosView", () => {
   beforeEach(() => {
     testQueryClient.clear();
+    window.localStorage.clear();
     vi.mocked(apiClient.get).mockReset();
     vi.mocked(apiClient.get).mockImplementation(respondWith(summary));
   });
@@ -183,16 +196,46 @@ describe("QosView", () => {
     expect(Date.parse(String(query?.end_time)) - Date.parse(String(query?.start_time))).toBe(7 * 24 * 60 * 60 * 1000);
   });
 
-  it("opens the audio and video tab and shows the speech metrics from /qos/media", async () => {
+  it("opens the audio tab with the speech metrics from /qos/media and the speech evaluation below them", async () => {
     const user = userEvent.setup();
     renderWithProviders(<QosView accessToken="token" />);
     await within(await screen.findByRole("table")).findByText("qwen3-max");
 
-    await user.click(screen.getByRole("tab", { name: "Audio and video" }));
+    await user.click(screen.getByRole("tab", { name: "Audio" }));
 
     expect(await screen.findByText("IndexTTS-2")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Speech synthesis and transcription" })).toBeInTheDocument();
-    expect(vi.mocked(apiClient.get).mock.calls.some(([path]) => path === "/qos/media")).toBe(true);
+    expect(screen.queryByRole("heading", { name: "Video generation" })).not.toBeInTheDocument();
+    const evaluation = await screen.findByRole("region", { name: "Speech evaluation" });
+    expect(
+      await within(evaluation).findByText("No evaluations were started by hand in this time range"),
+    ).toBeInTheDocument();
+    expect(vi.mocked(apiClient.get).mock.calls.some(([path]) => path === "/qos/speech/evaluations")).toBe(true);
+  });
+
+  it("opens the video tab with the video metrics and the video review below them", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<QosView accessToken="token" />);
+    await within(await screen.findByRole("table")).findByText("qwen3-max");
+    expect(screen.queryByRole("tab", { name: "Video review" })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("tab", { name: "Video" }));
+
+    const review = await screen.findByRole("region", { name: "Video review" });
+    expect(within(review).getByRole("heading", { name: "Ratings per model" })).toBeInTheDocument();
+    expect(
+      await within(review).findByText("No evaluations were started by hand in this time range"),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Video generation" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Speech synthesis and transcription" })).not.toBeInTheDocument();
+    expect(vi.mocked(apiClient.get).mock.calls.some(([path]) => path === "/qos/videos")).toBe(true);
+  });
+
+  it.each(["reviews", "media"])("opens an old ?tab=%s link on the video tab", async (oldTab) => {
+    renderWithProviders(<QosView accessToken="token" />, { searchParams: `?tab=${oldTab}` });
+
+    expect(await screen.findByRole("tab", { name: "Video", selected: true })).toBeInTheDocument();
+    expect(await screen.findByRole("region", { name: "Video review" })).toBeInTheDocument();
   });
 
   it("shows the server's error message when loading fails", async () => {

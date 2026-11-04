@@ -41,6 +41,7 @@ from litellm.proxy._types import UserAPIKeyAuth
 from litellm.proxy.common_request_processing import ProxyBaseLLMRequestProcessing
 from litellm.proxy.utils import ProxyLogging
 from litellm.router import Router
+from litellm.types.videos.main import VideoObject
 from litellm.types.videos.utils import (
     encode_character_id_with_provider,
     encode_video_id_with_provider,
@@ -307,6 +308,27 @@ async def test_status__header_provider_beats_decoded_id(harness):
     assert data["custom_llm_provider"] == "bedrock"
     # ... but the model is still resolved from the decoded model_id.
     assert data["model"] == "azure-sora"
+
+
+@pytest.mark.asyncio
+async def test_status__answers_under_the_polled_id_so_the_next_poll_reaches_the_same_deployment(harness):
+    harness.base_process.return_value = VideoObject(
+        id=encode_video_id_with_provider("video_orig123", "azure", None), object="video", status="in_progress"
+    )
+
+    resp = await call_status(harness, AZURE_VIDEO_ID)
+
+    assert (resp.id, resp.status) == (AZURE_VIDEO_ID, "in_progress")
+
+
+@pytest.mark.asyncio
+async def test_status__plain_id_gets_the_provider_encoded_id_back(harness):
+    encoded = encode_video_id_with_provider("video_plain", "openai", None)
+    harness.base_process.return_value = VideoObject(id=encoded, object="video", status="queued")
+
+    resp = await call_status(harness, "video_plain")
+
+    assert resp.id == encoded
 
 
 # =========================================================================== #

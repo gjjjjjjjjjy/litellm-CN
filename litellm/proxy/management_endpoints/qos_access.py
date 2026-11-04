@@ -28,6 +28,8 @@ def require_admin(user_api_key_dict: UserAPIKeyAuth) -> None:
 def require_content_reader(user_api_key_dict: UserAPIKeyAuth) -> None:
     if user_api_key_dict.user_role not in (LitellmUserRoles.PROXY_ADMIN, LitellmUserRoles.PROXY_ADMIN_VIEW_ONLY):
         raise HTTPException(status_code=403, detail="Only proxy admins can view benchmark question and response text")
+
+
 def require_image_writer(user_api_key_dict: UserAPIKeyAuth) -> str:
     if user_api_key_dict.user_role not in (
         LitellmUserRoles.PROXY_ADMIN,
@@ -36,3 +38,8 @@ def require_image_writer(user_api_key_dict: UserAPIKeyAuth) -> str:
     ) or not user_api_key_dict.user_id:
         raise HTTPException(status_code=403, detail="A signed-in user with write access is required for image tests")
     return user_api_key_dict.user_id
+
+
+def require_media_reviewer(user_api_key_dict: UserAPIKeyAuth) -> None:
+    if user_api_key_dict.user_role not in (LitellmUserRoles.PROXY_ADMIN, LitellmUserRoles.PROXY_ADMIN_VIEW_ONLY):
+        raise HTTPException(status_code=403, detail="Only proxy admins can review the probe's videos and audio")

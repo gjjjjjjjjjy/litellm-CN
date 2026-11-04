@@ -263,7 +263,7 @@ export const formatAudioLength = (seconds: number): string => {
   return `${(seconds / 3600).toFixed(1)} h`;
 };
 
-const formatFactor = (value: number | null | undefined): string =>
+export const formatFactor = (value: number | null | undefined): string =>
   value === null || value === undefined ? "-" : value.toFixed(2);
 
 export const formatFactorPercentiles = (percentiles: QosPercentiles): string =>
@@ -273,3 +273,253 @@ export const formatPrice = (value: number | null): string => (value === null ? "
 
 export const videosWithoutResult = (metrics: QosVideoMetrics): number =>
   metrics.submitted - metrics.failed_submissions - metrics.succeeded - metrics.failed - metrics.cancelled;
+
+export type QosVideoReviewsResponse = components["schemas"]["QosVideoReviewsResponse"];
+export type QosReviewVideo = components["schemas"]["QosReviewVideo"];
+export type QosVideoReview = components["schemas"]["QosVideoReview"];
+export type QosVideoReviewInput = components["schemas"]["QosVideoReviewInput"];
+export type QosVideoReviewSummary = components["schemas"]["QosVideoReviewSummary"];
+
+export type ReviewDimension = "overall" | "visual" | "detail" | "motion" | "alignment" | "physics" | "audio";
+
+export const REVIEW_DIMENSIONS: readonly ReviewDimension[] = [
+  "overall",
+  "visual",
+  "detail",
+  "motion",
+  "alignment",
+  "physics",
+  "audio",
+];
+
+export const REVIEW_DIMENSION_LABELS: Readonly<Record<ReviewDimension, string>> = {
+  overall: "Overall",
+  visual: "Visual quality",
+  detail: "Video detail",
+  motion: "Motion",
+  alignment: "Prompt alignment",
+  physics: "Physics and common sense",
+  audio: "Sound",
+};
+
+export const formatScore = (value: number | null | undefined): string =>
+  value === null || value === undefined ? "-" : value.toFixed(1);
+
+export type ReviewScores = Readonly<Partial<Record<ReviewDimension, number>>>;
+
+export const reviewScores = (review: QosVideoReview | null | undefined): ReviewScores =>
+  review === null || review === undefined
+    ? {}
+    : Object.fromEntries(
+        REVIEW_DIMENSIONS.flatMap((dimension) => {
+          const score = review[dimension];
+          return score === null || score === undefined ? [] : [[dimension, score] as const];
+        }),
+      );
+
+export const reviewInput = (scores: ReviewScores, comment: string): QosVideoReviewInput | null => {
+  const overall = scores.overall;
+  if (overall === undefined) return null;
+  const trimmed = comment.trim();
+  return { ...scores, overall, comment: trimmed === "" ? null : trimmed };
+};
+
+export type QosVideoAiReview = components["schemas"]["QosVideoAiReview"];
+export type QosVideoAiSummary = components["schemas"]["QosVideoAiSummary"];
+export type QosVideoEvaluationOptions = components["schemas"]["QosVideoEvaluationOptions"];
+export type QosVideoEvaluationStarted = components["schemas"]["QosVideoEvaluationStarted"];
+export type QosVideoEvaluationPrompt = components["schemas"]["QosVideoEvaluationPrompt"];
+export type QosProbeModel = components["schemas"]["QosProbeModel"];
+
+export type AiDimension = Exclude<ReviewDimension, "audio">;
+
+export const AI_DIMENSIONS: readonly AiDimension[] = ["overall", "visual", "detail", "motion", "alignment", "physics"];
+
+export const VIDEO_REVIEW_POLL_MS = 30_000;
+export const EVALUATION_START_POLL_MS = 10 * 60_000;
+
+export const reviewPollMs = (
+  videos: readonly QosReviewVideo[],
+  evaluationStartedAt: number | null,
+  now: number,
+): number | false =>
+  videos.some((video) => video.status === "generating") ||
+  (evaluationStartedAt !== null && now - evaluationStartedAt < EVALUATION_START_POLL_MS)
+    ? VIDEO_REVIEW_POLL_MS
+    : false;
+
+export type EvaluationCost = {
+  readonly total: number;
+  readonly currency: string;
+  readonly unpriced: readonly string[];
+};
+
+export const evaluationCost = (models: readonly QosProbeModel[]): EvaluationCost | null => {
+  const priced = models.filter((model) => model.last_price !== null);
+  if (priced.length === 0) return null;
+  return {
+    total: priced.reduce((sum, model) => sum + (model.last_price ?? 0), 0),
+    currency: [...new Set(priced.map((model) => model.currency ?? ""))].join(" / "),
+    unpriced: models.filter((model) => model.last_price === null).map((model) => model.model_group),
+  };
+};
+
+export type QosSpeechEvaluationsResponse = components["schemas"]["QosSpeechEvaluationsResponse"];
+export type QosSpeechResult = components["schemas"]["QosSpeechResult"];
+export type QosSpeechReview = components["schemas"]["QosSpeechReview"];
+export type QosSpeechEvaluationOptions = components["schemas"]["QosSpeechEvaluationOptions"];
+export type QosSpeechEvaluationStarted = components["schemas"]["QosSpeechEvaluationStarted"];
+
+export interface RunMember {
+  readonly created_at: string;
+  readonly scheduled: boolean;
+  readonly model_group: string;
+}
+
+export interface ProbeRun<T extends RunMember> {
+  readonly key: string;
+  readonly scheduled: boolean;
+  readonly startedAt: string;
+  readonly items: readonly T[];
+}
+
+/** The probe's runs, newest first, each with its items ordered by model so runs line up side by side. */
+export const probeRuns = <T extends RunMember>(
+  items: readonly T[],
+  runOf: (item: T) => string,
+): readonly ProbeRun<T>[] =>
+  [...new Set(items.map(runOf))]
+    .map((key) => {
+      const members = items.filter((item) => runOf(item) === key);
+      const startedAt = members
+        .map((member) => member.created_at)
+        .reduce((earliest, created) => (Date.parse(created) < Date.parse(earliest) ? created : earliest));
+      return {
+        key,
+        scheduled: members.some((member) => member.scheduled),
+        startedAt,
+        items: [...members].sort((left, right) => left.model_group.localeCompare(right.model_group)),
+      };
+    })
+    .sort((left, right) => Date.parse(right.startedAt) - Date.parse(left.startedAt));
+
+export const videoRunKey = (video: QosReviewVideo): string => video.run ?? `prompt:${video.prompt}`;
+
+export const SCHEDULED_RUNS_SHOWN = 3;
+export const VIDEO_KEPT_MS = 24 * 60 * 60_000;
+
+/** Whether the provider has likely deleted a video's file; it keeps them about a day. */
+export const isExpired = (video: QosReviewVideo, now: number): boolean =>
+  now - Date.parse(video.created_at) > VIDEO_KEPT_MS;
+
+const average = (values: readonly number[]): number | null =>
+  values.length === 0 ? null : values.reduce((sum, value) => sum + value, 0) / values.length;
+
+export interface VideoRunSummary {
+  readonly videos: number;
+  readonly aiAverage: number | null;
+  readonly rated: number;
+}
+
+export const videoRunSummary = (videos: readonly QosReviewVideo[]): VideoRunSummary => ({
+  videos: videos.length,
+  aiAverage: average(videos.flatMap((video) => (video.ai_review === null ? [] : [video.ai_review.overall]))),
+  rated: videos.filter((video) => video.reviews > 0).length,
+});
+
+export const realTimeFactor = (result: QosSpeechResult): number | null =>
+  result.succeeded && result.audio_seconds !== null && result.audio_seconds > 0
+    ? result.latency_ms / (result.audio_seconds * 1000)
+    : null;
+
+export type TranscriptMark = {
+  readonly char: string;
+  readonly kind: "same" | "wrong" | "missing" | "unspoken";
+};
+
+export interface CharacterErrors {
+  readonly rate: number;
+  readonly marks: readonly TranscriptMark[];
+}
+
+const SPOKEN = /[\p{L}\p{N}\p{M}]/u;
+const isSpoken = (char: string): boolean => SPOKEN.test(char);
+
+const editCost = (reference: readonly string[], heard: readonly string[]): readonly (readonly number[])[] => {
+  const cost = Array.from({ length: reference.length + 1 }, (_, i) =>
+    Array.from({ length: heard.length + 1 }, (_, j) => (i === 0 || j === 0 ? i + j : 0)),
+  );
+  for (let i = 1; i <= reference.length; i += 1) {
+    for (let j = 1; j <= heard.length; j += 1) {
+      const substitution = reference[i - 1] === heard[j - 1] ? 0 : 1;
+      cost[i][j] = Math.min(cost[i - 1][j - 1] + substitution, cost[i - 1][j] + 1, cost[i][j - 1] + 1);
+    }
+  }
+  return cost;
+};
+
+const alignment = (reference: readonly string[], heard: readonly string[]): readonly TranscriptMark[] => {
+  const cost = editCost(reference, heard);
+  const walk = (i: number, j: number, after: readonly TranscriptMark[]): readonly TranscriptMark[] => {
+    if (i === 0 && j === 0) return after;
+    if (i > 0 && j > 0 && cost[i][j] === cost[i - 1][j - 1] + (reference[i - 1] === heard[j - 1] ? 0 : 1)) {
+      const kind = reference[i - 1] === heard[j - 1] ? "same" : "wrong";
+      return walk(i - 1, j - 1, [{ char: heard[j - 1], kind }, ...after]);
+    }
+    if (j > 0 && cost[i][j] === cost[i][j - 1] + 1)
+      return walk(i, j - 1, [{ char: heard[j - 1], kind: "wrong" }, ...after]);
+    return walk(i - 1, j, [{ char: reference[i - 1], kind: "missing" }, ...after]);
+  };
+  return walk(reference.length, heard.length, []);
+};
+
+/** How a transcript differs from the sentence, counting letters and digits only, so punctuation, spaces and the
+ * emoji some models add are not errors. The marks follow the transcript, with missed characters where they belong. */
+export const characterErrors = (reference: string, heard: string): CharacterErrors | null => {
+  const spokenReference = [...reference].filter(isSpoken);
+  if (spokenReference.length === 0) return null;
+  const heardChars = [...heard];
+  const steps = alignment(spokenReference, heardChars.filter(isSpoken));
+  const errors = steps.filter((step) => step.kind !== "same").length;
+  const placed = heardChars.reduce<{ readonly marks: readonly TranscriptMark[]; readonly next: number }>(
+    ({ marks, next }, char) => {
+      if (!isSpoken(char)) return { marks: [...marks, { char, kind: "unspoken" }], next };
+      const missed = steps.slice(next).findIndex((step) => step.kind !== "missing");
+      const upTo = next + missed + 1;
+      return { marks: [...marks, ...steps.slice(next, upTo)], next: upTo };
+    },
+    { marks: [], next: 0 },
+  );
+  return { rate: errors / spokenReference.length, marks: [...placed.marks, ...steps.slice(placed.next)] };
+};
+
+export interface SpeechRunSummary {
+  readonly readings: number;
+  readonly transcriptions: number;
+  readonly rateable: number;
+  readonly rated: number;
+  readonly errorRate: number | null;
+}
+
+export const speechRunSummary = (results: readonly QosSpeechResult[]): SpeechRunSummary => {
+  const readings = results.filter((result) => result.modality === "speech");
+  const transcriptions = results.filter((result) => result.modality === "transcription");
+  return {
+    readings: readings.length,
+    transcriptions: transcriptions.length,
+    rateable: readings.filter((result) => result.succeeded).length,
+    rated: readings.filter((result) => result.reviews > 0).length,
+    errorRate: average(
+      transcriptions.flatMap((result) => {
+        const errors = result.transcript === null ? null : characterErrors(result.text, result.transcript);
+        return errors === null ? [] : [errors.rate];
+      }),
+    ),
+  };
+};
+
+export const SPEECH_POLL_MS = 10_000;
+export const SPEECH_START_POLL_MS = 4 * 60_000;
+
+export const speechPollMs = (evaluationStartedAt: number | null, now: number): number | false =>
+  evaluationStartedAt !== null && now - evaluationStartedAt < SPEECH_START_POLL_MS ? SPEECH_POLL_MS : false;

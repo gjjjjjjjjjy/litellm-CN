@@ -11,6 +11,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
+import respx
 from pydantic import TypeAdapter
 from typing_extensions import NotRequired, ReadOnly, TypedDict
 
@@ -26,11 +27,14 @@ from litellm.constants import (
     SESSION_ID_OMITTED_METADATA_KEY,
     UNKNOWN_MODEL_SPEND_LOG_MODEL,
 )
+from litellm.integrations.custom_logger import CustomLogger
 from litellm.litellm_core_utils.litellm_logging import StandardLoggingPayloadSetup
+from litellm.litellm_core_utils.logging_worker import GLOBAL_LOGGING_WORKER
 from litellm.litellm_core_utils.safe_json_dumps import safe_dumps
 from litellm.llms.base_llm.ocr.transformation import OCRResponse, OCRUsageInfo
 from litellm.proxy._types import SpendLogsMetadataFields, SpendLogsPayload, UserAPIKeyAuth
 from litellm.proxy.litellm_pre_call_utils import LiteLLMProxyRequestSetup
+from litellm.proxy.management_endpoints.qos_media import QOS_MEDIA_PROBE_TAG
 from litellm.proxy.route_llm_request import ProxyModelNotFoundError
 from litellm.proxy.spend_tracking import spend_tracking_utils
 from litellm.proxy.spend_tracking.spend_tracking_utils import (
@@ -149,14 +153,15 @@ def test_get_logging_payload_only_keeps_a_first_token_time_for_streamed_calls(st
     assert payload["completionStartTime"] == (first_token_time if stream else end_time)
 
 
-def _logged_qos_media(call_type: str, response_obj: object) -> object:
+def _logged_qos_media(call_type: str, response_obj: object, tags: tuple[str, ...] = ()) -> object:
     now: Final = datetime.datetime.now(timezone.utc)
+    metadata: Final = {"user_api_key": "test-key", "qos_media": {"audio_seconds": 999}, "tags": list(tags)}
     payload: Final = get_logging_payload(
         kwargs={
             "model": "moark/IndexTTS-2",
             "call_type": call_type,
             "input": "你好",
-            "litellm_params": {"metadata": {"user_api_key": "test-key", "qos_media": {"audio_seconds": 999}}},
+            "litellm_params": {"metadata": metadata},
         },
         response_obj=response_obj,
         start_time=now,
@@ -191,6 +196,48 @@ def test_video_status_polls_get_one_spend_log_row_per_state_so_the_finished_stat
     assert poll_ids == ["video_abc_in_progress", "video_abc_in_progress", "video_abc_completed"]
     assert get_spend_logs_id("avideo_generation", {"id": "video_abc", "status": "queued"}, {}) == "video_abc"
     assert get_spend_logs_id("avideo_status", {}, {"litellm_call_id": "call-1"}) == "call-1", "a failed poll"
+
+
+class _SpendLogRows(CustomLogger):
+    def __init__(self) -> None:
+        super().__init__()
+        self.rows: tuple[SpendLogsPayload, ...] = ()
+
+    async def async_log_success_event(
+        self,
+        kwargs: dict[str, object],
+        response_obj: object,
+        start_time: datetime.datetime,
+        end_time: datetime.datetime,
+    ) -> None:
+        self.rows = (*self.rows, get_logging_payload(kwargs, response_obj, start_time, end_time))
+
+
+@respx.mock
+async def test_get_logging_payload_keeps_the_prompt_only_of_a_video_the_scheduled_probe_created(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("litellm.disable_aiohttp_transport", True)
+    respx.post(path__regex=r"/async/videos/generations$").mock(
+        return_value=httpx.Response(200, json={"task_id": "TASK-1", "status": "waiting"})
+    )
+    spend_logs: Final = _SpendLogRows()
+    monkeypatch.setattr("litellm.callbacks", [spend_logs])
+    router: Final = litellm.Router(
+        model_list=[{"model_name": "LTX-2", "litellm_params": {"model": "moark/LTX-2", "api_key": "moark-test-key"}}]
+    )
+
+    for tags in ([QOS_MEDIA_PROBE_TAG], []):
+        await router.avideo_generation(model="LTX-2", prompt="红色皮球滚过草地", metadata={"tags": tags})
+        await asyncio.sleep(0)
+        await GLOBAL_LOGGING_WORKER.flush()
+
+    assert tuple(
+        TypeAdapter(dict[str, object]).validate_json(row["metadata"]).get("qos_media") for row in spend_logs.rows
+    ) == (
+        {"task_id": "TASK-1", "task_status": "waiting", "prompt": "红色皮球滚过草地"},
+        {"task_id": "TASK-1", "task_status": "waiting"},
+    )
 
 
 def test_get_logging_payload_drops_a_client_supplied_qos_media_on_calls_it_does_not_measure() -> None:
@@ -662,9 +709,7 @@ def test_small_request_no_truncation():
 
     # Verify the content was NOT truncated
     assert sanitized["messages"][0]["content"] == small_content
-    assert (
-        len(sanitized["messages"][0]["content"]) == MAX_STRING_LENGTH_PROMPT_IN_DB - 100
-    )
+    assert len(sanitized["messages"][0]["content"]) == MAX_STRING_LENGTH_PROMPT_IN_DB - 100
 
 
 def test_configurable_string_length_env_var(monkeypatch):
