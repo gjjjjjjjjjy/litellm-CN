@@ -2,7 +2,8 @@
 Video review: the videos the probe made, to watch and rate by hand, with a vision model's ratings beside them.
 
 Only videos the probe made are reviewed, on its schedule or from the review tab: every model in a run got the same
-prompt, so their ratings compare, and theirs is the only prompt the gateway stores. Ratings live on the video's
+prompt, so their ratings compare, and theirs is the only prompt the gateway stores. The probe names its run in each
+request's spend log metadata (`qos_probe_run`), so a run's videos are shown together. Ratings live on the video's
 creation spend log row, by hand under `qos_video_reviews` with one entry per reviewer and the vision model's under
 `qos_video_ai_review`, so they age out with the rest of service quality data and need no table of their own.
 """
@@ -35,6 +36,8 @@ QOS_VIDEO_AI_REVIEW_KEY: Final = "qos_video_ai_review"
 REVIEW_VIDEO_LIMIT: Final = 200
 GENERATING_WINDOW: Final = timedelta(hours=3)
 PROBE_MADE: Final = f"metadata -> '{QOS_MEDIA_KEY}' ->> 'prompt' IS NOT NULL"
+PROBE_RUN: Final = "metadata -> 'spend_logs_metadata' ->> 'qos_probe_run'"
+PROBE_SCHEDULED: Final = "COALESCE((metadata -> 'spend_logs_metadata' ->> 'qos_probe_scheduled')::boolean, false)"
 CREATED: Final = sql_list(VIDEO_CREATE_CALL_TYPES)
 
 REVIEW_VIDEOS_SQL: Final = f"""
@@ -42,6 +45,8 @@ WITH created AS (
     SELECT request_id AS video_id, "startTime" AS created_at, COALESCE(model_group, '') AS model_group,
         metadata -> '{QOS_MEDIA_KEY}' ->> 'task_id' AS task_id,
         metadata -> '{QOS_MEDIA_KEY}' ->> 'prompt' AS prompt,
+        {PROBE_RUN} AS run,
+        {PROBE_SCHEDULED} AS scheduled,
         COALESCE(metadata -> '{QOS_VIDEO_REVIEWS_KEY}', '{{}}'::jsonb) AS reviews,
         metadata -> '{QOS_VIDEO_AI_REVIEW_KEY}' AS ai_review
     FROM "LiteLLM_SpendLogs"
@@ -59,7 +64,8 @@ ended AS (
         AND metadata -> '{QOS_MEDIA_KEY}' ->> 'task_status' IN ('success', 'failure', 'cancelled')
     GROUP BY 1
 )
-SELECT created.video_id, created.created_at, created.model_group, created.prompt, created.reviews,
+SELECT created.video_id, created.created_at, created.model_group, created.prompt, created.run, created.scheduled,
+    created.reviews,
     created.ai_review, ended.completed_at,
     CASE
         WHEN ended.completed_at IS NOT NULL THEN 'completed'
@@ -136,6 +142,8 @@ class ReviewVideoRow(LiteLLMBaseModel):
     created_at: datetime
     model_group: str
     prompt: str
+    run: str | None
+    scheduled: bool
     reviews: Mapping[str, QosVideoReview]
     ai_review: QosVideoAiReview | None
     completed_at: datetime | None
@@ -172,6 +180,8 @@ def review_video(row: ReviewVideoRow, reviewer: str) -> QosReviewVideo:
         created_at=row.created_at,
         completed_at=row.completed_at,
         prompt=row.prompt,
+        run=row.run,
+        scheduled=row.scheduled,
         reviews=len(overall),
         overall=sum(overall) / len(overall) if overall else None,
         my_review=row.reviews.get(reviewer),

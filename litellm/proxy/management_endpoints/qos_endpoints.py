@@ -4,7 +4,7 @@ from collections.abc import Mapping
 from copy import deepcopy
 from datetime import datetime, timedelta
 from functools import partial
-from typing import TYPE_CHECKING, Annotated, Final
+from typing import Annotated, Final
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from pydantic import ConfigDict, TypeAdapter
@@ -17,7 +17,7 @@ from litellm.proxy.management_endpoints.qos_access import (
     require_admin,
     require_content_reader,
     require_reader,
-    require_video_reviewer,
+    require_media_reviewer,
 )
 from litellm.proxy.management_endpoints.qos_benchmark import QOS_RUN_PREFIX, concurrency_of, new_run_id, start_benchmark
 from litellm.proxy.management_endpoints.qos_deployments import (
@@ -60,8 +60,6 @@ from litellm.proxy.management_endpoints.qos_summary import (
     BENCHMARK_RUNS,
     BENCHMARK_RUNS_SQL,
     DEPLOYMENT_SUMMARY_SQL,
-    HISTORY_START_ROWS,
-    HISTORY_START_SQL,
     INTERFERENCE_ROWS,
     MODEL_GROUP_SUMMARY_SQL,
     QOS_MAX_WINDOW,
@@ -72,6 +70,7 @@ from litellm.proxy.management_endpoints.qos_summary import (
     deployment_metrics,
     group_metrics,
     level_interference,
+    metrics_window,
     query_rows,
     resolve_window,
     utc_now,
@@ -122,31 +121,12 @@ from litellm.types.qos import (
 )
 from litellm.types.videos.utils import decode_video_id_with_provider
 
-if TYPE_CHECKING:
-    from litellm.proxy.utils import PrismaClient
-
 router: Final = APIRouter()
 
 SETTINGS: Final = TypeAdapter(Mapping[str, object])
 RESPONSE_CHECK_RECORD_ATTEMPTS: Final = 30
 RESPONSE_CHECK_RETRY_SECONDS: Final = 5.0
 _RUN_ID: Final = re.compile(rf"{QOS_RUN_PREFIX}[A-Za-z0-9.-]+")
-
-
-async def _metrics_window(
-    prisma_client: "PrismaClient",
-    start_time: datetime | None,
-    end_time: datetime | None,
-    all_time: bool,
-) -> tuple[datetime, datetime]:
-    now: Final = utc_now()
-    if not all_time:
-        return resolve_window(start_time, end_time, now)
-    if start_time is not None:
-        raise HTTPException(status_code=400, detail="all_time and start_time cannot be combined")
-    end: Final = as_utc_naive(now if end_time is None else end_time)
-    (history,) = HISTORY_START_ROWS.validate_python(await query_rows(prisma_client, HISTORY_START_SQL, end))
-    return (end if history.start_time is None else as_utc_naive(history.start_time)), end
 
 
 @router.get(
@@ -171,7 +151,7 @@ async def get_qos_summary(
     if prisma_client is None:
         raise HTTPException(status_code=500, detail=CommonProxyErrors.db_not_connected_error.value)
 
-    start, end = await _metrics_window(prisma_client, start_time, end_time, all_time)
+    start, end = await metrics_window(prisma_client, start_time, end_time, all_time)
     groups: Final = deployment_model_groups(llm_router)
     group_rows: Final = SUMMARY_ROWS.validate_python(
         await query_rows(prisma_client, MODEL_GROUP_SUMMARY_SQL, start, end, model_group, tag, groups)
@@ -370,7 +350,7 @@ async def get_qos_trends(
     require_reader(user_api_key_dict)
     if prisma_client is None:
         raise HTTPException(status_code=500, detail=CommonProxyErrors.db_not_connected_error.value)
-    start, end = await _metrics_window(prisma_client, start_time, end_time, all_time)
+    start, end = await metrics_window(prisma_client, start_time, end_time, all_time)
     window: Final = end - start
     bucket: Final = bucket_seconds(window)
     if all_time and start == end:
@@ -428,7 +408,7 @@ async def get_qos_media(
     require_reader(user_api_key_dict)
     if prisma_client is None:
         raise HTTPException(status_code=500, detail=CommonProxyErrors.db_not_connected_error.value)
-    start, end = await _metrics_window(prisma_client, start_time, end_time, all_time)
+    start, end = await metrics_window(prisma_client, start_time, end_time, all_time)
     modalities: Final = deployment_modalities(llm_router)
     groups: Final = deployment_model_groups(llm_router)
     audio_rows: Final = AUDIO_ROWS.validate_python(
@@ -469,10 +449,10 @@ async def get_qos_videos(
     """
     from litellm.proxy.proxy_server import prisma_client
 
-    require_video_reviewer(user_api_key_dict)
+    require_media_reviewer(user_api_key_dict)
     if prisma_client is None:
         raise HTTPException(status_code=500, detail=CommonProxyErrors.db_not_connected_error.value)
-    start, end = await _metrics_window(prisma_client, start_time, end_time, all_time)
+    start, end = await metrics_window(prisma_client, start_time, end_time, all_time)
     summary: Final = REVIEW_SUMMARY_ROWS.validate_python(
         await query_rows(prisma_client, REVIEW_SUMMARY_SQL, start, end)
     )
@@ -506,7 +486,7 @@ async def get_qos_video_content(
     """The MP4 of a finished video, fetched with the gateway's own credentials for the model that made it."""
     from litellm.proxy.proxy_server import llm_router
 
-    require_video_reviewer(user_api_key_dict)
+    require_media_reviewer(user_api_key_dict)
     decoded: Final = decode_video_id_with_provider(video_id)
     model: Final = None if llm_router is None else llm_router.resolve_model_name_from_model_id(decoded.get("model_id"))
     deployments: Final = None if llm_router is None or model is None else llm_router.get_model_list(model_name=model)
@@ -539,7 +519,7 @@ async def put_qos_video_review(
     """Save the caller's ratings of a video, replacing the ratings they gave it before."""
     from litellm.proxy.proxy_server import prisma_client
 
-    require_video_reviewer(user_api_key_dict)
+    require_media_reviewer(user_api_key_dict)
     if prisma_client is None:
         raise HTTPException(status_code=500, detail=CommonProxyErrors.db_not_connected_error.value)
     saved: Final = QosVideoReview.model_validate({**review.model_dump(), "reviewed_at": utc_now()})
@@ -603,7 +583,7 @@ async def get_qos_health(
     require_reader(user_api_key_dict)
     if prisma_client is None:
         raise HTTPException(status_code=500, detail=CommonProxyErrors.db_not_connected_error.value)
-    start, end = await _metrics_window(prisma_client, start_time, end_time, all_time)
+    start, end = await metrics_window(prisma_client, start_time, end_time, all_time)
     history: Final = HEALTH_HISTORY_ROWS.validate_python(
         await query_rows(prisma_client, HEALTH_HISTORY_SQL, start, end)
     )

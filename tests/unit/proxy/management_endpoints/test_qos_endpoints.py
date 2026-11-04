@@ -984,7 +984,7 @@ class TestVideoReviews:
         ):
             response: Final = client.put(path, json={"overall": 3}) if method == "put" else client.get(path)
         assert response.status_code == 403
-        assert response.json()["detail"] == "Only proxy admins can watch and rate generated videos"
+        assert response.json()["detail"] == "Only proxy admins can review the probe's videos and audio"
         prisma.db.query_raw.assert_not_awaited()
         fetch.assert_not_awaited()
 
@@ -1017,6 +1017,8 @@ class TestVideoReviews:
             "created_at": NOW,
             "model_group": "LTX-2",
             "prompt": "颜色缓慢流动的渐变",
+            "run": "20261022-090000-a1b2c3",
+            "scheduled": True,
             "reviews": {"default_user_id": _REVIEW, "another-admin": {**_REVIEW, "overall": 3, "comment": None}},
             "ai_review": _AI_REVIEW,
             "completed_at": NOW + timedelta(minutes=2),
@@ -1027,6 +1029,8 @@ class TestVideoReviews:
             "created_at": NOW,
             "model_group": "Wan2_2-I2V-A14B",
             "prompt": "颜色缓慢流动的渐变",
+            "run": None,
+            "scheduled": False,
             "reviews": {},
             "ai_review": None,
             "completed_at": None,
@@ -1053,6 +1057,10 @@ class TestVideoReviews:
         )
         assert (finished["my_review"], finished["ai_review"]) == (_REVIEW, _AI_REVIEW)
         assert (generating["status"], generating["completed_at"], generating["ai_review"]) == ("generating", None, None)
+        assert [(video["run"], video["scheduled"]) for video in body["videos"]] == [
+            ("20261022-090000-a1b2c3", True),
+            (None, False),
+        ]
         summary_call, ai_summary_call, videos_call = (call.args for call in prisma.db.query_raw.await_args_list)
         assert (summary_call[0], ai_summary_call[0], videos_call[0]) == (
             REVIEW_SUMMARY_SQL,

@@ -6,21 +6,27 @@ The gateway forwards a run to the probe named by QOS_MEDIA_PROBE_URL and keeps t
 generating a run takes hours and rating needs video decoding, both of which belong in the probe's own container.
 """
 
-import os
-from collections.abc import Mapping
-from dataclasses import dataclass
 from datetime import timedelta
 from types import MappingProxyType
-from typing import Annotated, Final, TypeVar
+from typing import Annotated, Final
 
-import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import ConfigDict, JsonValue, TypeAdapter, ValidationError
+from pydantic import ConfigDict, TypeAdapter
 
 from litellm.proxy._types import CommonProxyErrors, UserAPIKeyAuth
 from litellm.proxy.auth.user_api_key_auth import user_api_key_auth
-from litellm.proxy.management_endpoints.qos_access import require_admin, require_video_reviewer
+from litellm.proxy.management_endpoints.qos_access import require_admin, require_media_reviewer
 from litellm.proxy.management_endpoints.qos_media import QOS_MEDIA_KEY, VIDEO_STATUS_CALL_TYPES
+from litellm.proxy.management_endpoints.qos_media_probe import (
+    MediaProbe,
+    ProbedDeployment,
+    ProbeSpec,
+    ask_probe,
+    first_of_each,
+    listed_deployments,
+    media_probe,
+    probe_answer,
+)
 from litellm.proxy.management_endpoints.qos_sql import sql_list
 from litellm.proxy.management_endpoints.qos_summary import QOS_MAX_WINDOW, as_utc_naive, query_rows, utc_now
 from litellm.proxy.management_endpoints.qos_video_reviews import (
@@ -43,7 +49,6 @@ from litellm.types.qos import (
 
 router: Final = APIRouter()
 
-MEDIA_PROBE_URL_ENV: Final = "QOS_MEDIA_PROBE_URL"
 USED_PROMPT_LIMIT: Final = 20
 AVOIDED_PROMPTS: Final = 10
 PRICE_WINDOW: Final = timedelta(days=7)
@@ -79,57 +84,8 @@ class LatestPrice(LiteLLMBaseModel):
     currency: str | None
 
 
-class ProbeSpec(LiteLLMBaseModel):
-    model_config = ConfigDict(frozen=True, extra="ignore")
-
-    image: bool = False
-
-
-class ProbedModelInfo(LiteLLMBaseModel):
-    model_config = ConfigDict(frozen=True, extra="ignore")
-
-    mode: str | None = None
-    qos_probe: ProbeSpec | None = None
-
-
-class ProbedDeployment(LiteLLMBaseModel):
-    model_config = ConfigDict(frozen=True, extra="ignore")
-
-    model_name: str
-    model_info: ProbedModelInfo = ProbedModelInfo()
-
-
 USED_PROMPT_ROWS: Final = TypeAdapter(tuple[QosUsedPrompt, ...])
 LATEST_PRICE_ROWS: Final = TypeAdapter(tuple[LatestPrice, ...])
-DEPLOYMENTS: Final = TypeAdapter(tuple[ProbedDeployment, ...])
-_Answer = TypeVar("_Answer", bound=LiteLLMBaseModel)
-
-
-@dataclass(frozen=True, slots=True)
-class MediaProbe:
-    """The probe's run API, which only the gateway can reach."""
-
-    base_url: str
-    token: str
-    transport: httpx.AsyncBaseTransport | None = None
-
-    async def post(self, path: str, body: Mapping[str, JsonValue], timeout: float) -> httpx.Response:
-        async with httpx.AsyncClient(base_url=self.base_url, transport=self.transport, timeout=timeout) as client:
-            return await client.post(path, json=body, headers={"Authorization": f"Bearer {self.token}"})
-
-
-def media_probe() -> MediaProbe | None:
-    from litellm.proxy.proxy_server import master_key
-
-    url: Final = os.environ.get(MEDIA_PROBE_URL_ENV, "").strip().rstrip("/")
-    return MediaProbe(base_url=url, token=master_key) if url and master_key else None
-
-
-def _first_of_each(deployments: tuple[ProbedDeployment, ...]) -> tuple[ProbedDeployment, ...]:
-    names: Final = tuple(deployment.model_name for deployment in deployments)
-    return tuple(
-        deployment for index, deployment in enumerate(deployments) if deployment.model_name not in names[:index]
-    )
 
 
 def _probe_model(name: str, spec: ProbeSpec, price: LatestPrice | None) -> QosProbeModel:
@@ -147,33 +103,10 @@ def probe_models(
     price_of: Final = MappingProxyType({price.model_group: price for price in prices})
     probed: Final = tuple(
         (deployment.model_name, deployment.model_info.qos_probe)
-        for deployment in _first_of_each(deployments)
+        for deployment in first_of_each(deployments)
         if deployment.model_info.mode == "video_generation"
     )
     return tuple(_probe_model(name, spec, price_of.get(name)) for name, spec in probed if spec is not None)
-
-
-async def _ask_probe(probe: MediaProbe | None, path: str, body: Mapping[str, JsonValue], timeout: float) -> bytes:
-    if probe is None:
-        raise HTTPException(
-            status_code=503, detail=f"No media probe is set up; set {MEDIA_PROBE_URL_ENV} on the gateway"
-        )
-    try:
-        response: Final = await probe.post(path, body, timeout)
-    except httpx.HTTPError as error:
-        raise HTTPException(status_code=502, detail=f"Could not reach the media probe: {error!r}") from error
-    if response.status_code >= 400:
-        raise HTTPException(
-            status_code=502, detail=f"The media probe answered {response.status_code}: {response.text[:300]}"
-        )
-    return response.content
-
-
-def _probe_answer(answer: type[_Answer], content: bytes) -> _Answer:
-    try:
-        return answer.model_validate_json(content)
-    except ValidationError as error:
-        raise HTTPException(status_code=502, detail=f"The media probe's answer is not readable: {error}") from error
 
 
 @router.get(
@@ -187,9 +120,9 @@ async def get_qos_video_evaluation_options(
     probe: Annotated[MediaProbe | None, Depends(media_probe)],
 ) -> QosVideoEvaluationOptions:
     """What an evaluation run offers: the models the probe generates with, their latest price, and earlier prompts."""
-    from litellm.proxy.proxy_server import llm_router, prisma_client
+    from litellm.proxy.proxy_server import prisma_client
 
-    require_video_reviewer(user_api_key_dict)
+    require_media_reviewer(user_api_key_dict)
     if prisma_client is None:
         raise HTTPException(status_code=500, detail=CommonProxyErrors.db_not_connected_error.value)
     now: Final = utc_now()
@@ -199,9 +132,8 @@ async def get_qos_video_evaluation_options(
     prices: Final = LATEST_PRICE_ROWS.validate_python(
         await query_rows(prisma_client, LATEST_PRICES_SQL, as_utc_naive(now - PRICE_WINDOW))
     )
-    deployments: Final = DEPLOYMENTS.validate_python((llm_router.get_model_list() if llm_router else None) or ())
     return QosVideoEvaluationOptions(
-        available=probe is not None, models=probe_models(deployments, prices), prompts=prompts
+        available=probe is not None, models=probe_models(listed_deployments(), prices), prompts=prompts
     )
 
 
@@ -226,10 +158,10 @@ async def write_qos_video_evaluation_prompt(
         if prisma_client is not None
         else ()
     )
-    content: Final = await _ask_probe(
+    content: Final = await ask_probe(
         probe, "/prompts", {"avoid": [used.prompt for used in recent[:AVOIDED_PROMPTS]]}, PROMPT_TIMEOUT_SECONDS
     )
-    return _probe_answer(QosVideoEvaluationPrompt, content)
+    return probe_answer(QosVideoEvaluationPrompt, content)
 
 
 @router.post(
@@ -245,8 +177,8 @@ async def start_qos_video_evaluation(
 ) -> QosVideoEvaluationStarted:
     """Have the probe generate the prompt's videos on every model it probes now, rating each as it finishes."""
     require_admin(user_api_key_dict)
-    content: Final = await _ask_probe(probe, "/evaluations", {"prompt": evaluation.prompt}, START_TIMEOUT_SECONDS)
-    return _probe_answer(QosVideoEvaluationStarted, content)
+    content: Final = await ask_probe(probe, "/evaluations", {"prompt": evaluation.prompt}, START_TIMEOUT_SECONDS)
+    return probe_answer(QosVideoEvaluationStarted, content)
 
 
 @router.put(

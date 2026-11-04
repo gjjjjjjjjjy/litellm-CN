@@ -40,6 +40,6 @@ def require_image_writer(user_api_key_dict: UserAPIKeyAuth) -> str:
     return user_api_key_dict.user_id
 
 
-def require_video_reviewer(user_api_key_dict: UserAPIKeyAuth) -> None:
+def require_media_reviewer(user_api_key_dict: UserAPIKeyAuth) -> None:
     if user_api_key_dict.user_role not in (LitellmUserRoles.PROXY_ADMIN, LitellmUserRoles.PROXY_ADMIN_VIEW_ONLY):
-        raise HTTPException(status_code=403, detail="Only proxy admins can watch and rate generated videos")
+        raise HTTPException(status_code=403, detail="Only proxy admins can review the probe's videos and audio")

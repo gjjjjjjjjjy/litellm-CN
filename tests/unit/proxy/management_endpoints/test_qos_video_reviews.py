@@ -13,6 +13,8 @@ def _row(reviews: dict[str, QosVideoReview]) -> ReviewVideoRow:
         created_at=CREATED,
         model_group="LTX-2",
         prompt="固定镜头：阳光下的绿色草地上，一个红色皮球从画面左侧向右滚动，蓝天上飘着白云",
+        run="20261029-090000-a1b2c3",
+        scheduled=True,
         reviews=reviews,
         ai_review=None,
         completed_at=CREATED + timedelta(minutes=2),

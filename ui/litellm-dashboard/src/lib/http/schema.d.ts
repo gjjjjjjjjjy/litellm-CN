@@ -14338,6 +14338,109 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/qos/images/config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Image Config */
+        get: operations["image_config_qos_images_config_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/qos/images/home-summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Image Home Summary */
+        get: operations["image_home_summary_qos_images_home_summary_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/qos/images/runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Image Runs */
+        get: operations["list_image_runs_qos_images_runs_get"];
+        put?: never;
+        /** Start Image Run */
+        post: operations["start_image_run_qos_images_runs_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/qos/images/runs/{run_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Image Run */
+        get: operations["get_image_run_qos_images_runs__run_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/qos/images/runs/{run_id}/items/{item_id}/image": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Image File */
+        get: operations["get_image_file_qos_images_runs__run_id__items__item_id__image_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/qos/images/runs/{run_id}/items/{item_id}/rating": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Rate Image */
+        put: operations["rate_image_qos_images_runs__run_id__items__item_id__rating_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/qos/media": {
         parameters: {
             query?: never;
@@ -14351,6 +14454,130 @@ export interface paths {
          */
         get: operations["get_qos_media_qos_media_get"];
         put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/qos/speech/audio": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Qos Speech Audio
+         * @description The audio a speech model returned in a probe run, as the probe kept it.
+         */
+        get: operations["get_qos_speech_audio_qos_speech_audio_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/qos/speech/evaluations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Qos Speech Evaluations
+         * @description Every speech and transcription request of the probe's runs in the window, newest first.
+         */
+        get: operations["get_qos_speech_evaluations_qos_speech_evaluations_get"];
+        put?: never;
+        /**
+         * Start Qos Speech Evaluation
+         * @description Have every probed speech model read the sentence and every transcription model transcribe its recording now.
+         */
+        post: operations["start_qos_speech_evaluation_qos_speech_evaluations_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/qos/speech/evaluations/options": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Qos Speech Evaluation Options
+         * @description The speech and transcription models a run would test.
+         */
+        get: operations["get_qos_speech_evaluation_options_qos_speech_evaluations_options_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/qos/speech/evaluations/transcript": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Put Qos Speech Transcript
+         * @description Keep what a transcription model heard in the probe's recording; 404 until the request has been logged.
+         */
+        put: operations["put_qos_speech_transcript_qos_speech_evaluations_transcript_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/qos/speech/recording": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Qos Speech Recording
+         * @description The recording of the sentence that every transcription model gets.
+         */
+        get: operations["get_qos_speech_recording_qos_speech_recording_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/qos/speech/review": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Put Qos Speech Review
+         * @description Save the caller's rating of how a speech model read the sentence, replacing their earlier rating.
+         */
+        put: operations["put_qos_speech_review_qos_speech_review_put"];
         post?: never;
         delete?: never;
         options?: never;
@@ -34410,6 +34637,215 @@ export interface components {
         } & {
             [key: string]: unknown;
         };
+        /** ImageHomeSummary */
+        ImageHomeSummary: {
+            /** Estimated Cost Cny */
+            estimated_cost_cny: number;
+            /** Failed */
+            failed: number;
+            /** Mean Quality Score */
+            mean_quality_score: number | null;
+            /** Models */
+            models: string[];
+            /** P95 E2E S */
+            p95_e2e_s: number | null;
+            /** Pending */
+            pending: number;
+            /** Rated */
+            rated: number;
+            /** Requests */
+            requests: number;
+            /** Runs */
+            runs: number;
+            /** Successful */
+            successful: number;
+            /**
+             * Window Ended At
+             * Format: date-time
+             */
+            window_ended_at: string;
+            /**
+             * Window Started At
+             * Format: date-time
+             */
+            window_started_at: string;
+        };
+        /** ImageItem */
+        ImageItem: {
+            /** Check */
+            check: string;
+            /** Cost Cny */
+            cost_cny?: number | null;
+            /** E2E S */
+            e2e_s?: number | null;
+            /** Error */
+            error?: string | null;
+            /** Id */
+            id: string;
+            /** Image File */
+            image_file?: string | null;
+            /** Negative Prompt */
+            negative_prompt?: string | null;
+            /** Prompt */
+            prompt: string;
+            /** Prompt Id */
+            prompt_id: string;
+            /** Queue S */
+            queue_s?: number | null;
+            rating?: components["schemas"]["ImageRating-Output"] | null;
+            /** Response S */
+            response_s?: number | null;
+            /** Run S */
+            run_s?: number | null;
+            /** Seed */
+            seed: number;
+            /**
+             * Status
+             * @default pending
+             * @enum {string}
+             */
+            status: "pending" | "success" | "failure";
+            /** Task Id */
+            task_id?: string | null;
+        };
+        /** ImagePlan */
+        ImagePlan: {
+            /**
+             * Concurrency
+             * @default 1
+             */
+            concurrency: number;
+            /** Max Cost Cny */
+            max_cost_cny: number;
+            /** Model */
+            model: string;
+            /** Prompts */
+            prompts: components["schemas"]["ImagePrompt"][];
+            /** Seeds */
+            seeds: number[];
+            /**
+             * Size
+             * @default 1024x1024
+             * @constant
+             */
+            size: "1024x1024";
+        };
+        /** ImagePrompt */
+        ImagePrompt: {
+            /**
+             * Check
+             * @default
+             */
+            check: string;
+            /** Id */
+            id: string;
+            /** Negative Prompt */
+            negative_prompt?: string | null;
+            /** Text */
+            text: string;
+        };
+        /** ImageRating */
+        "ImageRating-Input": {
+            /** Artifacts */
+            artifacts?: boolean | null;
+            /**
+             * Defect Tags
+             * @default []
+             */
+            defect_tags: ("count" | "spatial" | "text" | "hands" | "perspective" | "fusion" | "artifacts" | "style" | "other")[];
+            /** Hard Conditions Passed */
+            hard_conditions_passed?: boolean | null;
+            /** Image Quality */
+            image_quality?: number | null;
+            /**
+             * Notes
+             * @default
+             */
+            notes: string;
+            /** Prompt Adherence */
+            prompt_adherence: number;
+            /** Structure Correctness */
+            structure_correctness?: number | null;
+            /** Text Accuracy */
+            text_accuracy?: number | null;
+            /** Text Applicable */
+            text_applicable?: boolean | null;
+            /** Text Correct */
+            text_correct?: boolean | null;
+            /** Visual Appeal */
+            visual_appeal?: number | null;
+        };
+        /** ImageRating */
+        "ImageRating-Output": {
+            /** Artifacts */
+            artifacts?: boolean | null;
+            /**
+             * Defect Tags
+             * @default []
+             */
+            defect_tags: ("count" | "spatial" | "text" | "hands" | "perspective" | "fusion" | "artifacts" | "style" | "other")[];
+            /** Hard Conditions Passed */
+            hard_conditions_passed?: boolean | null;
+            /** Image Quality */
+            image_quality?: number | null;
+            /**
+             * Notes
+             * @default
+             */
+            notes: string;
+            /** Prompt Adherence */
+            prompt_adherence: number;
+            /** Quality Score */
+            readonly quality_score: number | null;
+            /** Structure Correctness */
+            structure_correctness?: number | null;
+            /** Text Accuracy */
+            text_accuracy?: number | null;
+            /** Text Applicable */
+            text_applicable?: boolean | null;
+            /** Text Correct */
+            text_correct?: boolean | null;
+            /** Visual Appeal */
+            visual_appeal?: number | null;
+        };
+        /** ImageRun */
+        ImageRun: {
+            /** Concurrency */
+            concurrency: number;
+            /** Estimated Cost Cny */
+            estimated_cost_cny: number;
+            /** Finished At */
+            finished_at?: string | null;
+            /** Id */
+            id: string;
+            /** Items */
+            items: components["schemas"]["ImageItem"][];
+            /** Model */
+            model: string;
+            /** Owner User Id */
+            owner_user_id?: string | null;
+            /** Personal Kind */
+            personal_kind?: ("sync" | "qwen_async") | null;
+            /** Size */
+            size: string;
+            /**
+             * Started At
+             * Format: date-time
+             */
+            started_at: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "running" | "complete" | "interrupted";
+            /**
+             * Supports Seed
+             * @default true
+             */
+            supports_seed: boolean;
+            /** Unit Cost Cny */
+            unit_cost_cny: number;
+        };
         /** ImageURLListItem */
         ImageURLListItem: {
             image_url: components["schemas"]["ImageURLObject"];
@@ -43827,12 +44263,150 @@ export interface components {
             /** Reviews */
             reviews: number;
             /**
+             * Run
+             * @description The probe run that made the video; None for videos older than run ids
+             */
+            run: string | null;
+            /**
+             * Scheduled
+             * @description Whether the run was one of the probe's daily scheduled runs
+             */
+            scheduled: boolean;
+            /**
              * Status
              * @enum {string}
              */
             status: "generating" | "completed" | "failed";
             /** Video Id */
             video_id: string;
+        };
+        /** QosSpeechEvaluationOptions */
+        QosSpeechEvaluationOptions: {
+            /**
+             * Available
+             * @description Whether the gateway knows a media probe to run evaluations on
+             */
+            available: boolean;
+            /** Models */
+            models: components["schemas"]["QosSpeechProbeModel"][];
+        };
+        /** QosSpeechEvaluationStarted */
+        QosSpeechEvaluationStarted: {
+            /**
+             * Models
+             * @description The speech and transcription models the probe is testing
+             */
+            models: string[];
+        };
+        /** QosSpeechEvaluationsResponse */
+        QosSpeechEvaluationsResponse: {
+            /**
+             * End Time
+             * Format: date-time
+             */
+            end_time: string;
+            /** Results */
+            results: components["schemas"]["QosSpeechResult"][];
+            /**
+             * Start Time
+             * Format: date-time
+             */
+            start_time: string;
+        };
+        /** QosSpeechProbeModel */
+        QosSpeechProbeModel: {
+            /**
+             * Modality
+             * @enum {string}
+             */
+            modality: "speech" | "transcription";
+            /** Model Group */
+            model_group: string;
+        };
+        /**
+         * QosSpeechResult
+         * @description One speech or transcription request of a probe run.
+         */
+        QosSpeechResult: {
+            /**
+             * Audio Seconds
+             * @description Length of the audio read out or transcribed, when known
+             */
+            audio_seconds: number | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Error
+             * @description Why the request failed, as the gateway logged it
+             */
+            error: string | null;
+            /** Latency Ms */
+            latency_ms: number;
+            /**
+             * Modality
+             * @enum {string}
+             */
+            modality: "speech" | "transcription";
+            /** Model Group */
+            model_group: string;
+            my_review: components["schemas"]["QosSpeechReview"] | null;
+            /**
+             * Overall
+             * @description Average rating of this reading
+             */
+            overall: number | null;
+            /** Request Id */
+            request_id: string;
+            /** Reviews */
+            reviews: number;
+            /** Run */
+            run: string;
+            /**
+             * Scheduled
+             * @description Whether the run was one of the probe's daily scheduled runs
+             */
+            scheduled: boolean;
+            /** Succeeded */
+            succeeded: boolean;
+            /**
+             * Text
+             * @description The sentence the speech models read, which the recording also says
+             */
+            text: string;
+            /**
+             * Transcript
+             * @description What a transcription model heard; None until the probe reports it
+             */
+            transcript: string | null;
+        };
+        /** QosSpeechReview */
+        QosSpeechReview: {
+            /** Overall */
+            overall: number;
+            /**
+             * Reviewed At
+             * Format: date-time
+             */
+            reviewed_at: string;
+        };
+        /**
+         * QosSpeechReviewInput
+         * @description One reviewer's rating of a speech model's reading of the probe's sentence, 1 (bad) to 5 (good).
+         */
+        QosSpeechReviewInput: {
+            /** Overall */
+            overall: number;
+        };
+        /**
+         * QosSpeechTranscript
+         * @description What a transcription model heard in the probe's recording, as the probe reports it.
+         */
+        QosSpeechTranscript: {
+            /** Text */
+            text: string;
         };
         /** QosSummaryResponse */
         QosSummaryResponse: {
@@ -52696,7 +53270,7 @@ export interface components {
              */
             max_tokens: number | null;
             /** Mode */
-            mode: ("embedding" | "chat" | "completion") | null;
+            mode: ("embedding" | "chat" | "completion" | "image_generation") | null;
             /**
              * Output Cost Per Token
              * @default 0
@@ -73387,6 +73961,211 @@ export interface operations {
             };
         };
     };
+    image_config_qos_images_config_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    image_home_summary_qos_images_home_summary_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImageHomeSummary"];
+                };
+            };
+        };
+    };
+    list_image_runs_qos_images_runs_get: {
+        parameters: {
+            query?: {
+                range?: ("15m" | "1h" | "6h" | "24h" | "7d") | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImageRun"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    start_image_run_qos_images_runs_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ImagePlan"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImageRun"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_image_run_qos_images_runs__run_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImageRun"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_image_file_qos_images_runs__run_id__items__item_id__image_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+                item_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    rate_image_qos_images_runs__run_id__items__item_id__rating_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+                item_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ImageRating-Input"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImageRun"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_qos_media_qos_media_get: {
         parameters: {
             query?: {
@@ -73410,6 +74189,202 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["QosMediaResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_qos_speech_audio_qos_speech_audio_get: {
+        parameters: {
+            query: {
+                /** @description The gateway's id of the speech request */
+                request_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_qos_speech_evaluations_qos_speech_evaluations_get: {
+        parameters: {
+            query?: {
+                /** @description ISO 8601, defaults to 24 hours before end_time */
+                start_time?: string | null;
+                /** @description ISO 8601, defaults to now */
+                end_time?: string | null;
+                /** @description Include all retained history; cannot be combined with start_time */
+                all_time?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QosSpeechEvaluationsResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    start_qos_speech_evaluation_qos_speech_evaluations_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QosSpeechEvaluationStarted"];
+                };
+            };
+        };
+    };
+    get_qos_speech_evaluation_options_qos_speech_evaluations_options_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QosSpeechEvaluationOptions"];
+                };
+            };
+        };
+    };
+    put_qos_speech_transcript_qos_speech_evaluations_transcript_put: {
+        parameters: {
+            query: {
+                /** @description The gateway's id of the transcription request */
+                request_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["QosSpeechTranscript"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QosSpeechTranscript"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_qos_speech_recording_qos_speech_recording_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    put_qos_speech_review_qos_speech_review_put: {
+        parameters: {
+            query: {
+                /** @description The gateway's id of the speech request */
+                request_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["QosSpeechReviewInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QosSpeechReview"];
                 };
             };
             /** @description Validation Error */

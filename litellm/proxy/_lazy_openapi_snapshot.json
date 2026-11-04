@@ -53575,6 +53575,731 @@
           "title": "HTTPValidationError",
           "type": "object"
         },
+        "ImageHomeSummary": {
+          "properties": {
+            "estimated_cost_cny": {
+              "title": "Estimated Cost Cny",
+              "type": "number"
+            },
+            "failed": {
+              "title": "Failed",
+              "type": "integer"
+            },
+            "mean_quality_score": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Mean Quality Score"
+            },
+            "models": {
+              "items": {
+                "type": "string"
+              },
+              "title": "Models",
+              "type": "array"
+            },
+            "p95_e2e_s": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "P95 E2E S"
+            },
+            "pending": {
+              "title": "Pending",
+              "type": "integer"
+            },
+            "rated": {
+              "title": "Rated",
+              "type": "integer"
+            },
+            "requests": {
+              "title": "Requests",
+              "type": "integer"
+            },
+            "runs": {
+              "title": "Runs",
+              "type": "integer"
+            },
+            "successful": {
+              "title": "Successful",
+              "type": "integer"
+            },
+            "window_ended_at": {
+              "format": "date-time",
+              "title": "Window Ended At",
+              "type": "string"
+            },
+            "window_started_at": {
+              "format": "date-time",
+              "title": "Window Started At",
+              "type": "string"
+            }
+          },
+          "required": [
+            "window_started_at",
+            "window_ended_at",
+            "runs",
+            "requests",
+            "successful",
+            "failed",
+            "pending",
+            "p95_e2e_s",
+            "estimated_cost_cny",
+            "rated",
+            "mean_quality_score",
+            "models"
+          ],
+          "title": "ImageHomeSummary",
+          "type": "object"
+        },
+        "ImageItem": {
+          "properties": {
+            "check": {
+              "title": "Check",
+              "type": "string"
+            },
+            "cost_cny": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cost Cny"
+            },
+            "e2e_s": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "E2E S"
+            },
+            "error": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Error"
+            },
+            "id": {
+              "title": "Id",
+              "type": "string"
+            },
+            "image_file": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Image File"
+            },
+            "negative_prompt": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Negative Prompt"
+            },
+            "prompt": {
+              "title": "Prompt",
+              "type": "string"
+            },
+            "prompt_id": {
+              "title": "Prompt Id",
+              "type": "string"
+            },
+            "queue_s": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Queue S"
+            },
+            "rating": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/ImageRating-Output"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "response_s": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Response S"
+            },
+            "run_s": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Run S"
+            },
+            "seed": {
+              "title": "Seed",
+              "type": "integer"
+            },
+            "status": {
+              "default": "pending",
+              "enum": [
+                "pending",
+                "success",
+                "failure"
+              ],
+              "title": "Status",
+              "type": "string"
+            },
+            "task_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Task Id"
+            }
+          },
+          "required": [
+            "id",
+            "prompt_id",
+            "prompt",
+            "check",
+            "seed"
+          ],
+          "title": "ImageItem",
+          "type": "object"
+        },
+        "ImagePlan": {
+          "properties": {
+            "concurrency": {
+              "default": 1,
+              "maximum": 4.0,
+              "minimum": 1.0,
+              "title": "Concurrency",
+              "type": "integer"
+            },
+            "max_cost_cny": {
+              "exclusiveMinimum": 0.0,
+              "maximum": 100.0,
+              "title": "Max Cost Cny",
+              "type": "number"
+            },
+            "model": {
+              "maxLength": 128,
+              "minLength": 1,
+              "title": "Model",
+              "type": "string"
+            },
+            "prompts": {
+              "items": {
+                "$ref": "#/components/schemas/ImagePrompt"
+              },
+              "maxItems": 16,
+              "minItems": 1,
+              "title": "Prompts",
+              "type": "array"
+            },
+            "seeds": {
+              "items": {
+                "type": "integer"
+              },
+              "maxItems": 4,
+              "minItems": 1,
+              "title": "Seeds",
+              "type": "array"
+            },
+            "size": {
+              "const": "1024x1024",
+              "default": "1024x1024",
+              "title": "Size",
+              "type": "string"
+            }
+          },
+          "required": [
+            "model",
+            "prompts",
+            "seeds",
+            "max_cost_cny"
+          ],
+          "title": "ImagePlan",
+          "type": "object"
+        },
+        "ImagePrompt": {
+          "properties": {
+            "check": {
+              "default": "",
+              "maxLength": 500,
+              "title": "Check",
+              "type": "string"
+            },
+            "id": {
+              "maxLength": 64,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9_-]+$",
+              "title": "Id",
+              "type": "string"
+            },
+            "negative_prompt": {
+              "anyOf": [
+                {
+                  "maxLength": 1000,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Negative Prompt"
+            },
+            "text": {
+              "maxLength": 4000,
+              "minLength": 1,
+              "title": "Text",
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "text"
+          ],
+          "title": "ImagePrompt",
+          "type": "object"
+        },
+        "ImageRating-Input": {
+          "properties": {
+            "artifacts": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Artifacts"
+            },
+            "defect_tags": {
+              "default": [],
+              "items": {
+                "enum": [
+                  "count",
+                  "spatial",
+                  "text",
+                  "hands",
+                  "perspective",
+                  "fusion",
+                  "artifacts",
+                  "style",
+                  "other"
+                ],
+                "type": "string"
+              },
+              "title": "Defect Tags",
+              "type": "array"
+            },
+            "hard_conditions_passed": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Hard Conditions Passed"
+            },
+            "image_quality": {
+              "anyOf": [
+                {
+                  "maximum": 5.0,
+                  "minimum": 1.0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Image Quality"
+            },
+            "notes": {
+              "default": "",
+              "maxLength": 1000,
+              "title": "Notes",
+              "type": "string"
+            },
+            "prompt_adherence": {
+              "maximum": 5.0,
+              "minimum": 1.0,
+              "title": "Prompt Adherence",
+              "type": "integer"
+            },
+            "structure_correctness": {
+              "anyOf": [
+                {
+                  "maximum": 5.0,
+                  "minimum": 1.0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Structure Correctness"
+            },
+            "text_accuracy": {
+              "anyOf": [
+                {
+                  "maximum": 5.0,
+                  "minimum": 1.0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Text Accuracy"
+            },
+            "text_applicable": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Text Applicable"
+            },
+            "text_correct": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Text Correct"
+            },
+            "visual_appeal": {
+              "anyOf": [
+                {
+                  "maximum": 5.0,
+                  "minimum": 1.0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Visual Appeal"
+            }
+          },
+          "required": [
+            "prompt_adherence"
+          ],
+          "title": "ImageRating",
+          "type": "object"
+        },
+        "ImageRating-Output": {
+          "properties": {
+            "artifacts": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Artifacts"
+            },
+            "defect_tags": {
+              "default": [],
+              "items": {
+                "enum": [
+                  "count",
+                  "spatial",
+                  "text",
+                  "hands",
+                  "perspective",
+                  "fusion",
+                  "artifacts",
+                  "style",
+                  "other"
+                ],
+                "type": "string"
+              },
+              "title": "Defect Tags",
+              "type": "array"
+            },
+            "hard_conditions_passed": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Hard Conditions Passed"
+            },
+            "image_quality": {
+              "anyOf": [
+                {
+                  "maximum": 5.0,
+                  "minimum": 1.0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Image Quality"
+            },
+            "notes": {
+              "default": "",
+              "maxLength": 1000,
+              "title": "Notes",
+              "type": "string"
+            },
+            "prompt_adherence": {
+              "maximum": 5.0,
+              "minimum": 1.0,
+              "title": "Prompt Adherence",
+              "type": "integer"
+            },
+            "quality_score": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "readOnly": true,
+              "title": "Quality Score"
+            },
+            "structure_correctness": {
+              "anyOf": [
+                {
+                  "maximum": 5.0,
+                  "minimum": 1.0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Structure Correctness"
+            },
+            "text_accuracy": {
+              "anyOf": [
+                {
+                  "maximum": 5.0,
+                  "minimum": 1.0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Text Accuracy"
+            },
+            "text_applicable": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Text Applicable"
+            },
+            "text_correct": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Text Correct"
+            },
+            "visual_appeal": {
+              "anyOf": [
+                {
+                  "maximum": 5.0,
+                  "minimum": 1.0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Visual Appeal"
+            }
+          },
+          "required": [
+            "prompt_adherence",
+            "quality_score"
+          ],
+          "title": "ImageRating",
+          "type": "object"
+        },
+        "ImageRun": {
+          "properties": {
+            "concurrency": {
+              "title": "Concurrency",
+              "type": "integer"
+            },
+            "estimated_cost_cny": {
+              "title": "Estimated Cost Cny",
+              "type": "number"
+            },
+            "finished_at": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Finished At"
+            },
+            "id": {
+              "title": "Id",
+              "type": "string"
+            },
+            "items": {
+              "items": {
+                "$ref": "#/components/schemas/ImageItem"
+              },
+              "title": "Items",
+              "type": "array"
+            },
+            "model": {
+              "title": "Model",
+              "type": "string"
+            },
+            "owner_user_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Owner User Id"
+            },
+            "personal_kind": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "sync",
+                    "qwen_async"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Personal Kind"
+            },
+            "size": {
+              "title": "Size",
+              "type": "string"
+            },
+            "started_at": {
+              "format": "date-time",
+              "title": "Started At",
+              "type": "string"
+            },
+            "status": {
+              "enum": [
+                "running",
+                "complete",
+                "interrupted"
+              ],
+              "title": "Status",
+              "type": "string"
+            },
+            "supports_seed": {
+              "default": true,
+              "title": "Supports Seed",
+              "type": "boolean"
+            },
+            "unit_cost_cny": {
+              "title": "Unit Cost Cny",
+              "type": "number"
+            }
+          },
+          "required": [
+            "id",
+            "model",
+            "status",
+            "started_at",
+            "concurrency",
+            "size",
+            "unit_cost_cny",
+            "estimated_cost_cny",
+            "items"
+          ],
+          "title": "ImageRun",
+          "type": "object"
+        },
         "QosActivityResponse": {
           "properties": {
             "events": {
@@ -55192,6 +55917,23 @@
               "title": "Reviews",
               "type": "integer"
             },
+            "run": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The probe run that made the video; None for videos older than run ids",
+              "title": "Run"
+            },
+            "scheduled": {
+              "description": "Whether the run was one of the probe's daily scheduled runs",
+              "title": "Scheduled",
+              "type": "boolean"
+            },
             "status": {
               "enum": [
                 "generating",
@@ -55213,12 +55955,287 @@
             "created_at",
             "completed_at",
             "prompt",
+            "run",
+            "scheduled",
             "reviews",
             "overall",
             "my_review",
             "ai_review"
           ],
           "title": "QosReviewVideo",
+          "type": "object"
+        },
+        "QosSpeechEvaluationOptions": {
+          "properties": {
+            "available": {
+              "description": "Whether the gateway knows a media probe to run evaluations on",
+              "title": "Available",
+              "type": "boolean"
+            },
+            "models": {
+              "items": {
+                "$ref": "#/components/schemas/QosSpeechProbeModel"
+              },
+              "title": "Models",
+              "type": "array"
+            }
+          },
+          "required": [
+            "available",
+            "models"
+          ],
+          "title": "QosSpeechEvaluationOptions",
+          "type": "object"
+        },
+        "QosSpeechEvaluationStarted": {
+          "properties": {
+            "models": {
+              "description": "The speech and transcription models the probe is testing",
+              "items": {
+                "type": "string"
+              },
+              "title": "Models",
+              "type": "array"
+            }
+          },
+          "required": [
+            "models"
+          ],
+          "title": "QosSpeechEvaluationStarted",
+          "type": "object"
+        },
+        "QosSpeechEvaluationsResponse": {
+          "properties": {
+            "end_time": {
+              "format": "date-time",
+              "title": "End Time",
+              "type": "string"
+            },
+            "results": {
+              "items": {
+                "$ref": "#/components/schemas/QosSpeechResult"
+              },
+              "title": "Results",
+              "type": "array"
+            },
+            "start_time": {
+              "format": "date-time",
+              "title": "Start Time",
+              "type": "string"
+            }
+          },
+          "required": [
+            "start_time",
+            "end_time",
+            "results"
+          ],
+          "title": "QosSpeechEvaluationsResponse",
+          "type": "object"
+        },
+        "QosSpeechProbeModel": {
+          "properties": {
+            "modality": {
+              "enum": [
+                "speech",
+                "transcription"
+              ],
+              "title": "Modality",
+              "type": "string"
+            },
+            "model_group": {
+              "title": "Model Group",
+              "type": "string"
+            }
+          },
+          "required": [
+            "model_group",
+            "modality"
+          ],
+          "title": "QosSpeechProbeModel",
+          "type": "object"
+        },
+        "QosSpeechResult": {
+          "description": "One speech or transcription request of a probe run.",
+          "properties": {
+            "audio_seconds": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Length of the audio read out or transcribed, when known",
+              "title": "Audio Seconds"
+            },
+            "created_at": {
+              "format": "date-time",
+              "title": "Created At",
+              "type": "string"
+            },
+            "error": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Why the request failed, as the gateway logged it",
+              "title": "Error"
+            },
+            "latency_ms": {
+              "title": "Latency Ms",
+              "type": "number"
+            },
+            "modality": {
+              "enum": [
+                "speech",
+                "transcription"
+              ],
+              "title": "Modality",
+              "type": "string"
+            },
+            "model_group": {
+              "title": "Model Group",
+              "type": "string"
+            },
+            "my_review": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/QosSpeechReview"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "overall": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Average rating of this reading",
+              "title": "Overall"
+            },
+            "request_id": {
+              "title": "Request Id",
+              "type": "string"
+            },
+            "reviews": {
+              "title": "Reviews",
+              "type": "integer"
+            },
+            "run": {
+              "title": "Run",
+              "type": "string"
+            },
+            "scheduled": {
+              "description": "Whether the run was one of the probe's daily scheduled runs",
+              "title": "Scheduled",
+              "type": "boolean"
+            },
+            "succeeded": {
+              "title": "Succeeded",
+              "type": "boolean"
+            },
+            "text": {
+              "description": "The sentence the speech models read, which the recording also says",
+              "title": "Text",
+              "type": "string"
+            },
+            "transcript": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "What a transcription model heard; None until the probe reports it",
+              "title": "Transcript"
+            }
+          },
+          "required": [
+            "request_id",
+            "run",
+            "scheduled",
+            "model_group",
+            "modality",
+            "created_at",
+            "succeeded",
+            "error",
+            "latency_ms",
+            "audio_seconds",
+            "text",
+            "transcript",
+            "reviews",
+            "overall",
+            "my_review"
+          ],
+          "title": "QosSpeechResult",
+          "type": "object"
+        },
+        "QosSpeechReview": {
+          "additionalProperties": false,
+          "properties": {
+            "overall": {
+              "maximum": 5.0,
+              "minimum": 1.0,
+              "title": "Overall",
+              "type": "integer"
+            },
+            "reviewed_at": {
+              "format": "date-time",
+              "title": "Reviewed At",
+              "type": "string"
+            }
+          },
+          "required": [
+            "overall",
+            "reviewed_at"
+          ],
+          "title": "QosSpeechReview",
+          "type": "object"
+        },
+        "QosSpeechReviewInput": {
+          "additionalProperties": false,
+          "description": "One reviewer's rating of a speech model's reading of the probe's sentence, 1 (bad) to 5 (good).",
+          "properties": {
+            "overall": {
+              "maximum": 5.0,
+              "minimum": 1.0,
+              "title": "Overall",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "overall"
+          ],
+          "title": "QosSpeechReviewInput",
+          "type": "object"
+        },
+        "QosSpeechTranscript": {
+          "additionalProperties": false,
+          "description": "What a transcription model heard in the probe's recording, as the probe reports it.",
+          "properties": {
+            "text": {
+              "maxLength": 2000,
+              "title": "Text",
+              "type": "string"
+            }
+          },
+          "required": [
+            "text"
+          ],
+          "title": "QosSpeechTranscript",
           "type": "object"
         },
         "QosSummaryResponse": {
@@ -56955,6 +57972,336 @@
           ]
         }
       },
+      "/qos/images/config": {
+        "get": {
+          "operationId": "image_config_qos_images_config_get",
+          "responses": {
+            "200": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "additionalProperties": true,
+                    "title": "Response Image Config Qos Images Config Get",
+                    "type": "object"
+                  }
+                }
+              },
+              "description": "Successful Response"
+            }
+          },
+          "security": [
+            {
+              "APIKeyHeader": []
+            }
+          ],
+          "summary": "Image Config",
+          "tags": [
+            "qos"
+          ]
+        }
+      },
+      "/qos/images/home-summary": {
+        "get": {
+          "operationId": "image_home_summary_qos_images_home_summary_get",
+          "responses": {
+            "200": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/ImageHomeSummary"
+                  }
+                }
+              },
+              "description": "Successful Response"
+            }
+          },
+          "security": [
+            {
+              "APIKeyHeader": []
+            }
+          ],
+          "summary": "Image Home Summary",
+          "tags": [
+            "qos"
+          ]
+        }
+      },
+      "/qos/images/runs": {
+        "get": {
+          "operationId": "list_image_runs_qos_images_runs_get",
+          "parameters": [
+            {
+              "in": "query",
+              "name": "range",
+              "required": false,
+              "schema": {
+                "anyOf": [
+                  {
+                    "enum": [
+                      "15m",
+                      "1h",
+                      "6h",
+                      "24h",
+                      "7d"
+                    ],
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Range"
+              }
+            }
+          ],
+          "responses": {
+            "200": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "items": {
+                      "$ref": "#/components/schemas/ImageRun"
+                    },
+                    "title": "Response List Image Runs Qos Images Runs Get",
+                    "type": "array"
+                  }
+                }
+              },
+              "description": "Successful Response"
+            },
+            "422": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/HTTPValidationError"
+                  }
+                }
+              },
+              "description": "Validation Error"
+            }
+          },
+          "security": [
+            {
+              "APIKeyHeader": []
+            }
+          ],
+          "summary": "List Image Runs",
+          "tags": [
+            "qos"
+          ]
+        },
+        "post": {
+          "operationId": "start_image_run_qos_images_runs_post",
+          "requestBody": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImagePlan"
+                }
+              }
+            },
+            "required": true
+          },
+          "responses": {
+            "200": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/ImageRun"
+                  }
+                }
+              },
+              "description": "Successful Response"
+            },
+            "422": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/HTTPValidationError"
+                  }
+                }
+              },
+              "description": "Validation Error"
+            }
+          },
+          "security": [
+            {
+              "APIKeyHeader": []
+            }
+          ],
+          "summary": "Start Image Run",
+          "tags": [
+            "qos"
+          ]
+        }
+      },
+      "/qos/images/runs/{run_id}": {
+        "get": {
+          "operationId": "get_image_run_qos_images_runs__run_id__get",
+          "parameters": [
+            {
+              "in": "path",
+              "name": "run_id",
+              "required": true,
+              "schema": {
+                "title": "Run Id",
+                "type": "string"
+              }
+            }
+          ],
+          "responses": {
+            "200": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/ImageRun"
+                  }
+                }
+              },
+              "description": "Successful Response"
+            },
+            "422": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/HTTPValidationError"
+                  }
+                }
+              },
+              "description": "Validation Error"
+            }
+          },
+          "security": [
+            {
+              "APIKeyHeader": []
+            }
+          ],
+          "summary": "Get Image Run",
+          "tags": [
+            "qos"
+          ]
+        }
+      },
+      "/qos/images/runs/{run_id}/items/{item_id}/image": {
+        "get": {
+          "operationId": "get_image_file_qos_images_runs__run_id__items__item_id__image_get",
+          "parameters": [
+            {
+              "in": "path",
+              "name": "run_id",
+              "required": true,
+              "schema": {
+                "title": "Run Id",
+                "type": "string"
+              }
+            },
+            {
+              "in": "path",
+              "name": "item_id",
+              "required": true,
+              "schema": {
+                "title": "Item Id",
+                "type": "string"
+              }
+            }
+          ],
+          "responses": {
+            "200": {
+              "content": {
+                "application/json": {
+                  "schema": {}
+                }
+              },
+              "description": "Successful Response"
+            },
+            "422": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/HTTPValidationError"
+                  }
+                }
+              },
+              "description": "Validation Error"
+            }
+          },
+          "security": [
+            {
+              "APIKeyHeader": []
+            }
+          ],
+          "summary": "Get Image File",
+          "tags": [
+            "qos"
+          ]
+        }
+      },
+      "/qos/images/runs/{run_id}/items/{item_id}/rating": {
+        "put": {
+          "operationId": "rate_image_qos_images_runs__run_id__items__item_id__rating_put",
+          "parameters": [
+            {
+              "in": "path",
+              "name": "run_id",
+              "required": true,
+              "schema": {
+                "title": "Run Id",
+                "type": "string"
+              }
+            },
+            {
+              "in": "path",
+              "name": "item_id",
+              "required": true,
+              "schema": {
+                "title": "Item Id",
+                "type": "string"
+              }
+            }
+          ],
+          "requestBody": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImageRating-Input"
+                }
+              }
+            },
+            "required": true
+          },
+          "responses": {
+            "200": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/ImageRun"
+                  }
+                }
+              },
+              "description": "Successful Response"
+            },
+            "422": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/HTTPValidationError"
+                  }
+                }
+              },
+              "description": "Validation Error"
+            }
+          },
+          "security": [
+            {
+              "APIKeyHeader": []
+            }
+          ],
+          "summary": "Rate Image",
+          "tags": [
+            "qos"
+          ]
+        }
+      },
       "/qos/media": {
         "get": {
           "description": "Speech and transcription latency against audio length, and how video tasks end, queue and run.",
@@ -57039,6 +58386,333 @@
             }
           ],
           "summary": "Get Qos Media",
+          "tags": [
+            "qos"
+          ]
+        }
+      },
+      "/qos/speech/audio": {
+        "get": {
+          "description": "The audio a speech model returned in a probe run, as the probe kept it.",
+          "operationId": "get_qos_speech_audio_qos_speech_audio_get",
+          "parameters": [
+            {
+              "description": "The gateway's id of the speech request",
+              "in": "query",
+              "name": "request_id",
+              "required": true,
+              "schema": {
+                "description": "The gateway's id of the speech request",
+                "pattern": "^[A-Za-z0-9_-]{1,128}$",
+                "title": "Request Id",
+                "type": "string"
+              }
+            }
+          ],
+          "responses": {
+            "200": {
+              "description": "Successful Response"
+            },
+            "422": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/HTTPValidationError"
+                  }
+                }
+              },
+              "description": "Validation Error"
+            }
+          },
+          "security": [
+            {
+              "APIKeyHeader": []
+            }
+          ],
+          "summary": "Get Qos Speech Audio",
+          "tags": [
+            "qos"
+          ]
+        }
+      },
+      "/qos/speech/evaluations": {
+        "get": {
+          "description": "Every speech and transcription request of the probe's runs in the window, newest first.",
+          "operationId": "get_qos_speech_evaluations_qos_speech_evaluations_get",
+          "parameters": [
+            {
+              "description": "ISO 8601, defaults to 24 hours before end_time",
+              "in": "query",
+              "name": "start_time",
+              "required": false,
+              "schema": {
+                "anyOf": [
+                  {
+                    "format": "date-time",
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "ISO 8601, defaults to 24 hours before end_time",
+                "title": "Start Time"
+              }
+            },
+            {
+              "description": "ISO 8601, defaults to now",
+              "in": "query",
+              "name": "end_time",
+              "required": false,
+              "schema": {
+                "anyOf": [
+                  {
+                    "format": "date-time",
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "ISO 8601, defaults to now",
+                "title": "End Time"
+              }
+            },
+            {
+              "description": "Include all retained history; cannot be combined with start_time",
+              "in": "query",
+              "name": "all_time",
+              "required": false,
+              "schema": {
+                "default": false,
+                "description": "Include all retained history; cannot be combined with start_time",
+                "title": "All Time",
+                "type": "boolean"
+              }
+            }
+          ],
+          "responses": {
+            "200": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/QosSpeechEvaluationsResponse"
+                  }
+                }
+              },
+              "description": "Successful Response"
+            },
+            "422": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/HTTPValidationError"
+                  }
+                }
+              },
+              "description": "Validation Error"
+            }
+          },
+          "security": [
+            {
+              "APIKeyHeader": []
+            }
+          ],
+          "summary": "Get Qos Speech Evaluations",
+          "tags": [
+            "qos"
+          ]
+        },
+        "post": {
+          "description": "Have every probed speech model read the sentence and every transcription model transcribe its recording now.",
+          "operationId": "start_qos_speech_evaluation_qos_speech_evaluations_post",
+          "responses": {
+            "200": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/QosSpeechEvaluationStarted"
+                  }
+                }
+              },
+              "description": "Successful Response"
+            }
+          },
+          "security": [
+            {
+              "APIKeyHeader": []
+            }
+          ],
+          "summary": "Start Qos Speech Evaluation",
+          "tags": [
+            "qos"
+          ]
+        }
+      },
+      "/qos/speech/evaluations/options": {
+        "get": {
+          "description": "The speech and transcription models a run would test.",
+          "operationId": "get_qos_speech_evaluation_options_qos_speech_evaluations_options_get",
+          "responses": {
+            "200": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/QosSpeechEvaluationOptions"
+                  }
+                }
+              },
+              "description": "Successful Response"
+            }
+          },
+          "security": [
+            {
+              "APIKeyHeader": []
+            }
+          ],
+          "summary": "Get Qos Speech Evaluation Options",
+          "tags": [
+            "qos"
+          ]
+        }
+      },
+      "/qos/speech/evaluations/transcript": {
+        "put": {
+          "description": "Keep what a transcription model heard in the probe's recording; 404 until the request has been logged.",
+          "operationId": "put_qos_speech_transcript_qos_speech_evaluations_transcript_put",
+          "parameters": [
+            {
+              "description": "The gateway's id of the transcription request",
+              "in": "query",
+              "name": "request_id",
+              "required": true,
+              "schema": {
+                "description": "The gateway's id of the transcription request",
+                "minLength": 1,
+                "title": "Request Id",
+                "type": "string"
+              }
+            }
+          ],
+          "requestBody": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QosSpeechTranscript"
+                }
+              }
+            },
+            "required": true
+          },
+          "responses": {
+            "200": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/QosSpeechTranscript"
+                  }
+                }
+              },
+              "description": "Successful Response"
+            },
+            "422": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/HTTPValidationError"
+                  }
+                }
+              },
+              "description": "Validation Error"
+            }
+          },
+          "security": [
+            {
+              "APIKeyHeader": []
+            }
+          ],
+          "summary": "Put Qos Speech Transcript",
+          "tags": [
+            "qos"
+          ]
+        }
+      },
+      "/qos/speech/recording": {
+        "get": {
+          "description": "The recording of the sentence that every transcription model gets.",
+          "operationId": "get_qos_speech_recording_qos_speech_recording_get",
+          "responses": {
+            "200": {
+              "description": "Successful Response"
+            }
+          },
+          "security": [
+            {
+              "APIKeyHeader": []
+            }
+          ],
+          "summary": "Get Qos Speech Recording",
+          "tags": [
+            "qos"
+          ]
+        }
+      },
+      "/qos/speech/review": {
+        "put": {
+          "description": "Save the caller's rating of how a speech model read the sentence, replacing their earlier rating.",
+          "operationId": "put_qos_speech_review_qos_speech_review_put",
+          "parameters": [
+            {
+              "description": "The gateway's id of the speech request",
+              "in": "query",
+              "name": "request_id",
+              "required": true,
+              "schema": {
+                "description": "The gateway's id of the speech request",
+                "minLength": 1,
+                "title": "Request Id",
+                "type": "string"
+              }
+            }
+          ],
+          "requestBody": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QosSpeechReviewInput"
+                }
+              }
+            },
+            "required": true
+          },
+          "responses": {
+            "200": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/QosSpeechReview"
+                  }
+                }
+              },
+              "description": "Successful Response"
+            },
+            "422": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/HTTPValidationError"
+                  }
+                }
+              },
+              "description": "Validation Error"
+            }
+          },
+          "security": [
+            {
+              "APIKeyHeader": []
+            }
+          ],
+          "summary": "Put Qos Speech Review",
           "tags": [
             "qos"
           ]
@@ -58269,6 +59943,667 @@
           "summary": "Get Qos News",
           "tags": [
             "qos_home"
+          ]
+        }
+      }
+    }
+  },
+  "qos_speech_evaluations": {
+    "components": {
+      "schemas": {
+        "HTTPValidationError": {
+          "properties": {
+            "detail": {
+              "items": {
+                "$ref": "#/components/schemas/ValidationError"
+              },
+              "title": "Detail",
+              "type": "array"
+            }
+          },
+          "title": "HTTPValidationError",
+          "type": "object"
+        },
+        "QosSpeechEvaluationOptions": {
+          "properties": {
+            "available": {
+              "description": "Whether the gateway knows a media probe to run evaluations on",
+              "title": "Available",
+              "type": "boolean"
+            },
+            "models": {
+              "items": {
+                "$ref": "#/components/schemas/QosSpeechProbeModel"
+              },
+              "title": "Models",
+              "type": "array"
+            }
+          },
+          "required": [
+            "available",
+            "models"
+          ],
+          "title": "QosSpeechEvaluationOptions",
+          "type": "object"
+        },
+        "QosSpeechEvaluationStarted": {
+          "properties": {
+            "models": {
+              "description": "The speech and transcription models the probe is testing",
+              "items": {
+                "type": "string"
+              },
+              "title": "Models",
+              "type": "array"
+            }
+          },
+          "required": [
+            "models"
+          ],
+          "title": "QosSpeechEvaluationStarted",
+          "type": "object"
+        },
+        "QosSpeechEvaluationsResponse": {
+          "properties": {
+            "end_time": {
+              "format": "date-time",
+              "title": "End Time",
+              "type": "string"
+            },
+            "results": {
+              "items": {
+                "$ref": "#/components/schemas/QosSpeechResult"
+              },
+              "title": "Results",
+              "type": "array"
+            },
+            "start_time": {
+              "format": "date-time",
+              "title": "Start Time",
+              "type": "string"
+            }
+          },
+          "required": [
+            "start_time",
+            "end_time",
+            "results"
+          ],
+          "title": "QosSpeechEvaluationsResponse",
+          "type": "object"
+        },
+        "QosSpeechProbeModel": {
+          "properties": {
+            "modality": {
+              "enum": [
+                "speech",
+                "transcription"
+              ],
+              "title": "Modality",
+              "type": "string"
+            },
+            "model_group": {
+              "title": "Model Group",
+              "type": "string"
+            }
+          },
+          "required": [
+            "model_group",
+            "modality"
+          ],
+          "title": "QosSpeechProbeModel",
+          "type": "object"
+        },
+        "QosSpeechResult": {
+          "description": "One speech or transcription request of a probe run.",
+          "properties": {
+            "audio_seconds": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Length of the audio read out or transcribed, when known",
+              "title": "Audio Seconds"
+            },
+            "created_at": {
+              "format": "date-time",
+              "title": "Created At",
+              "type": "string"
+            },
+            "error": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Why the request failed, as the gateway logged it",
+              "title": "Error"
+            },
+            "latency_ms": {
+              "title": "Latency Ms",
+              "type": "number"
+            },
+            "modality": {
+              "enum": [
+                "speech",
+                "transcription"
+              ],
+              "title": "Modality",
+              "type": "string"
+            },
+            "model_group": {
+              "title": "Model Group",
+              "type": "string"
+            },
+            "my_review": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/QosSpeechReview"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "overall": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Average rating of this reading",
+              "title": "Overall"
+            },
+            "request_id": {
+              "title": "Request Id",
+              "type": "string"
+            },
+            "reviews": {
+              "title": "Reviews",
+              "type": "integer"
+            },
+            "run": {
+              "title": "Run",
+              "type": "string"
+            },
+            "scheduled": {
+              "description": "Whether the run was one of the probe's daily scheduled runs",
+              "title": "Scheduled",
+              "type": "boolean"
+            },
+            "succeeded": {
+              "title": "Succeeded",
+              "type": "boolean"
+            },
+            "text": {
+              "description": "The sentence the speech models read, which the recording also says",
+              "title": "Text",
+              "type": "string"
+            },
+            "transcript": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "What a transcription model heard; None until the probe reports it",
+              "title": "Transcript"
+            }
+          },
+          "required": [
+            "request_id",
+            "run",
+            "scheduled",
+            "model_group",
+            "modality",
+            "created_at",
+            "succeeded",
+            "error",
+            "latency_ms",
+            "audio_seconds",
+            "text",
+            "transcript",
+            "reviews",
+            "overall",
+            "my_review"
+          ],
+          "title": "QosSpeechResult",
+          "type": "object"
+        },
+        "QosSpeechReview": {
+          "additionalProperties": false,
+          "properties": {
+            "overall": {
+              "maximum": 5.0,
+              "minimum": 1.0,
+              "title": "Overall",
+              "type": "integer"
+            },
+            "reviewed_at": {
+              "format": "date-time",
+              "title": "Reviewed At",
+              "type": "string"
+            }
+          },
+          "required": [
+            "overall",
+            "reviewed_at"
+          ],
+          "title": "QosSpeechReview",
+          "type": "object"
+        },
+        "QosSpeechReviewInput": {
+          "additionalProperties": false,
+          "description": "One reviewer's rating of a speech model's reading of the probe's sentence, 1 (bad) to 5 (good).",
+          "properties": {
+            "overall": {
+              "maximum": 5.0,
+              "minimum": 1.0,
+              "title": "Overall",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "overall"
+          ],
+          "title": "QosSpeechReviewInput",
+          "type": "object"
+        },
+        "QosSpeechTranscript": {
+          "additionalProperties": false,
+          "description": "What a transcription model heard in the probe's recording, as the probe reports it.",
+          "properties": {
+            "text": {
+              "maxLength": 2000,
+              "title": "Text",
+              "type": "string"
+            }
+          },
+          "required": [
+            "text"
+          ],
+          "title": "QosSpeechTranscript",
+          "type": "object"
+        },
+        "ValidationError": {
+          "properties": {
+            "ctx": {
+              "title": "Context",
+              "type": "object"
+            },
+            "input": {
+              "title": "Input"
+            },
+            "loc": {
+              "items": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "integer"
+                  }
+                ]
+              },
+              "title": "Location",
+              "type": "array"
+            },
+            "msg": {
+              "title": "Message",
+              "type": "string"
+            },
+            "type": {
+              "title": "Error Type",
+              "type": "string"
+            }
+          },
+          "required": [
+            "loc",
+            "msg",
+            "type"
+          ],
+          "title": "ValidationError",
+          "type": "object"
+        }
+      }
+    },
+    "paths": {
+      "/qos/speech/audio": {
+        "get": {
+          "description": "The audio a speech model returned in a probe run, as the probe kept it.",
+          "operationId": "get_qos_speech_audio_qos_speech_audio_get_2",
+          "parameters": [
+            {
+              "description": "The gateway's id of the speech request",
+              "in": "query",
+              "name": "request_id",
+              "required": true,
+              "schema": {
+                "description": "The gateway's id of the speech request",
+                "pattern": "^[A-Za-z0-9_-]{1,128}$",
+                "title": "Request Id",
+                "type": "string"
+              }
+            }
+          ],
+          "responses": {
+            "200": {
+              "description": "Successful Response"
+            },
+            "422": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/HTTPValidationError"
+                  }
+                }
+              },
+              "description": "Validation Error"
+            }
+          },
+          "security": [
+            {
+              "APIKeyHeader": []
+            }
+          ],
+          "summary": "Get Qos Speech Audio",
+          "tags": [
+            "qos_speech_evaluations"
+          ]
+        }
+      },
+      "/qos/speech/evaluations": {
+        "get": {
+          "description": "Every speech and transcription request of the probe's runs in the window, newest first.",
+          "operationId": "get_qos_speech_evaluations_qos_speech_evaluations_get_2",
+          "parameters": [
+            {
+              "description": "ISO 8601, defaults to 24 hours before end_time",
+              "in": "query",
+              "name": "start_time",
+              "required": false,
+              "schema": {
+                "anyOf": [
+                  {
+                    "format": "date-time",
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "ISO 8601, defaults to 24 hours before end_time",
+                "title": "Start Time"
+              }
+            },
+            {
+              "description": "ISO 8601, defaults to now",
+              "in": "query",
+              "name": "end_time",
+              "required": false,
+              "schema": {
+                "anyOf": [
+                  {
+                    "format": "date-time",
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "ISO 8601, defaults to now",
+                "title": "End Time"
+              }
+            },
+            {
+              "description": "Include all retained history; cannot be combined with start_time",
+              "in": "query",
+              "name": "all_time",
+              "required": false,
+              "schema": {
+                "default": false,
+                "description": "Include all retained history; cannot be combined with start_time",
+                "title": "All Time",
+                "type": "boolean"
+              }
+            }
+          ],
+          "responses": {
+            "200": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/QosSpeechEvaluationsResponse"
+                  }
+                }
+              },
+              "description": "Successful Response"
+            },
+            "422": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/HTTPValidationError"
+                  }
+                }
+              },
+              "description": "Validation Error"
+            }
+          },
+          "security": [
+            {
+              "APIKeyHeader": []
+            }
+          ],
+          "summary": "Get Qos Speech Evaluations",
+          "tags": [
+            "qos_speech_evaluations"
+          ]
+        },
+        "post": {
+          "description": "Have every probed speech model read the sentence and every transcription model transcribe its recording now.",
+          "operationId": "start_qos_speech_evaluation_qos_speech_evaluations_post_2",
+          "responses": {
+            "200": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/QosSpeechEvaluationStarted"
+                  }
+                }
+              },
+              "description": "Successful Response"
+            }
+          },
+          "security": [
+            {
+              "APIKeyHeader": []
+            }
+          ],
+          "summary": "Start Qos Speech Evaluation",
+          "tags": [
+            "qos_speech_evaluations"
+          ]
+        }
+      },
+      "/qos/speech/evaluations/options": {
+        "get": {
+          "description": "The speech and transcription models a run would test.",
+          "operationId": "get_qos_speech_evaluation_options_qos_speech_evaluations_options_get_2",
+          "responses": {
+            "200": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/QosSpeechEvaluationOptions"
+                  }
+                }
+              },
+              "description": "Successful Response"
+            }
+          },
+          "security": [
+            {
+              "APIKeyHeader": []
+            }
+          ],
+          "summary": "Get Qos Speech Evaluation Options",
+          "tags": [
+            "qos_speech_evaluations"
+          ]
+        }
+      },
+      "/qos/speech/evaluations/transcript": {
+        "put": {
+          "description": "Keep what a transcription model heard in the probe's recording; 404 until the request has been logged.",
+          "operationId": "put_qos_speech_transcript_qos_speech_evaluations_transcript_put_2",
+          "parameters": [
+            {
+              "description": "The gateway's id of the transcription request",
+              "in": "query",
+              "name": "request_id",
+              "required": true,
+              "schema": {
+                "description": "The gateway's id of the transcription request",
+                "minLength": 1,
+                "title": "Request Id",
+                "type": "string"
+              }
+            }
+          ],
+          "requestBody": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QosSpeechTranscript"
+                }
+              }
+            },
+            "required": true
+          },
+          "responses": {
+            "200": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/QosSpeechTranscript"
+                  }
+                }
+              },
+              "description": "Successful Response"
+            },
+            "422": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/HTTPValidationError"
+                  }
+                }
+              },
+              "description": "Validation Error"
+            }
+          },
+          "security": [
+            {
+              "APIKeyHeader": []
+            }
+          ],
+          "summary": "Put Qos Speech Transcript",
+          "tags": [
+            "qos_speech_evaluations"
+          ]
+        }
+      },
+      "/qos/speech/recording": {
+        "get": {
+          "description": "The recording of the sentence that every transcription model gets.",
+          "operationId": "get_qos_speech_recording_qos_speech_recording_get_2",
+          "responses": {
+            "200": {
+              "description": "Successful Response"
+            }
+          },
+          "security": [
+            {
+              "APIKeyHeader": []
+            }
+          ],
+          "summary": "Get Qos Speech Recording",
+          "tags": [
+            "qos_speech_evaluations"
+          ]
+        }
+      },
+      "/qos/speech/review": {
+        "put": {
+          "description": "Save the caller's rating of how a speech model read the sentence, replacing their earlier rating.",
+          "operationId": "put_qos_speech_review_qos_speech_review_put_2",
+          "parameters": [
+            {
+              "description": "The gateway's id of the speech request",
+              "in": "query",
+              "name": "request_id",
+              "required": true,
+              "schema": {
+                "description": "The gateway's id of the speech request",
+                "minLength": 1,
+                "title": "Request Id",
+                "type": "string"
+              }
+            }
+          ],
+          "requestBody": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QosSpeechReviewInput"
+                }
+              }
+            },
+            "required": true
+          },
+          "responses": {
+            "200": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/QosSpeechReview"
+                  }
+                }
+              },
+              "description": "Successful Response"
+            },
+            "422": {
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/HTTPValidationError"
+                  }
+                }
+              },
+              "description": "Validation Error"
+            }
+          },
+          "security": [
+            {
+              "APIKeyHeader": []
+            }
+          ],
+          "summary": "Put Qos Speech Review",
+          "tags": [
+            "qos_speech_evaluations"
           ]
         }
       }

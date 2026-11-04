@@ -301,6 +301,23 @@ def resolve_window(
     return start, end
 
 
+async def metrics_window(
+    prisma_client: "PrismaClient",
+    start_time: datetime | None,
+    end_time: datetime | None,
+    all_time: bool,
+) -> tuple[datetime, datetime]:
+    """The window a request asks for, or with all_time everything from the oldest retained request."""
+    now: Final = utc_now()
+    if not all_time:
+        return resolve_window(start_time, end_time, now)
+    if start_time is not None:
+        raise HTTPException(status_code=400, detail="all_time and start_time cannot be combined")
+    end: Final = as_utc_naive(now if end_time is None else end_time)
+    (history,) = HISTORY_START_ROWS.validate_python(await query_rows(prisma_client, HISTORY_START_SQL, end))
+    return (end if history.start_time is None else as_utc_naive(history.start_time)), end
+
+
 def group_metrics(row: QosSummaryRow) -> QosModelGroupMetrics:
     active_seconds: Final = (row.last_response_at - row.first_request_at).total_seconds()
     return QosModelGroupMetrics(

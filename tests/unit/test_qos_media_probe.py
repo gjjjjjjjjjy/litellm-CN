@@ -41,9 +41,28 @@ _MODEL_INFO: Final = {
             },
         },
         {"model_name": "Unprobed-Video", "model_info": {"mode": "video_generation"}},
+        {
+            "model_name": "IndexTTS-2",
+            "model_info": {
+                "mode": "audio_speech",
+                "qos_probe": {"params": {"prompt_audio_url": "https://voice/a.wav"}},
+            },
+        },
         {"model_name": "IndexTTS-2", "model_info": {"mode": "audio_speech", "qos_probe": {}}},
+        {"model_name": "Broken-TTS", "model_info": {"mode": "audio_speech", "qos_probe": {}}},
+        {
+            "model_name": "SenseVoiceSmall",
+            "model_info": {"mode": "audio_transcription", "qos_probe": {"params": {"language": "zh"}}},
+        },
+        {"model_name": "Unprobed-ASR", "model_info": {"mode": "audio_transcription"}},
     ]
 }
+_SPEECH_MODELS: Final = ("IndexTTS-2", "Broken-TTS")
+_TRANSCRIPTION_MODEL: Final = "SenseVoiceSmall"
+_WAV: Final = b"RIFF\x24\x00\x00\x00WAVEfmt "
+_HEARD: Final = "今天天气很好，我们一起去公园散步，顺便买写水果回家。"
+_RUN: Final = media_probe.Run("20261104-101200-abc123", scheduled=False)
+_NO_SPEECH: Final = media_probe.SpeechKit(Path("/nonexistent"), None)
 _RED: Final = (220, 20, 20)
 _GREEN: Final = (20, 200, 20)
 _BLUE: Final = (20, 20, 220)
@@ -101,19 +120,55 @@ def _fields(request: httpx.Request) -> dict[str, bytes]:
 class _Gateway:
     """Answers the probe like the gateway, except a status names another id, as the gateway once did."""
 
-    def __init__(self, judge_answer: str = json.dumps(_VERDICT, ensure_ascii=False), content_failures: int = 0) -> None:
+    def __init__(
+        self,
+        judge_answer: str = json.dumps(_VERDICT, ensure_ascii=False),
+        content_failures: int = 0,
+        unlogged_transcripts: int = 1,
+    ) -> None:
         self.judge_answer = judge_answer
         self.content_failures = content_failures
+        self.unlogged_transcripts = unlogged_transcripts
         self.created: dict[str, dict[str, bytes]] = {}
         self.events: list[str] = []
         self.polled: list[str] = []
         self.judged: list[dict[str, object]] = []
         self.scores: dict[str, dict[str, object]] = {}
+        self.spoken: list[dict[str, object]] = []
+        self.heard: dict[str, dict[str, bytes]] = {}
+        self.transcripts: dict[str, dict[str, object]] = {}
+        self.runs: dict[str, dict[str, object]] = {}
+
+    def _speech(self, request: httpx.Request) -> httpx.Response | None:
+        path: Final = request.url.path
+        if path == "/v1/audio/speech":
+            body: Final = json.loads(request.content)
+            self.spoken.append(body)
+            self.runs[f"speech {body['model']}"] = json.loads(request.headers[media_probe.RUN_METADATA_HEADER])
+            if body["model"] == "Broken-TTS":
+                return httpx.Response(400, json={"error": "the resource pack does not cover this model"})
+            return httpx.Response(200, content=_WAV, headers={"x-litellm-call-id": f"call-{body['model']}"})
+        if path == "/v1/audio/transcriptions":
+            fields: Final = _fields(request)
+            model: Final = fields["model"].decode()
+            self.heard[model] = fields
+            self.runs[f"transcription {model}"] = json.loads(request.headers[media_probe.RUN_METADATA_HEADER])
+            return httpx.Response(200, json={"text": _HEARD}, headers={"x-litellm-call-id": f"call-{model}"})
+        if path == "/qos/speech/evaluations/transcript":
+            self.unlogged_transcripts -= 1
+            if self.unlogged_transcripts >= 0:
+                return httpx.Response(404, json={"detail": "not logged yet"})
+            self.transcripts[request.url.params["request_id"]] = json.loads(request.content)
+            return httpx.Response(200, json={})
+        return None
 
     def handle(self, request: httpx.Request) -> httpx.Response:
         path: Final = request.url.path
         if path == "/model/info":
             return httpx.Response(200, json=_MODEL_INFO)
+        speech: Final = self._speech(request)
+        if speech is not None:
+            return speech
         if path == "/qos/videos/content":
             self.content_failures -= 1
             return (
@@ -131,6 +186,7 @@ class _Gateway:
             fields: Final = _fields(request)
             model: Final = fields["model"].decode()
             self.created[model] = fields
+            self.runs[f"video {model}"] = json.loads(request.headers[media_probe.RUN_METADATA_HEADER])
             self.events.append(f"submitted {model}")
             return httpx.Response(200, json={"id": f"video_{model}", "status": "queued"})
         done: Final = path in self.polled
@@ -145,9 +201,9 @@ class _Gateway:
         return httpx.Client(transport=httpx.MockTransport(self.handle), base_url="http://gateway")
 
 
-def _probe_run(gateway: _Gateway, judge: str | None = None) -> _Gateway:
+def _probe_run(gateway: _Gateway, judge: str | None = None, kit: media_probe.SpeechKit = _NO_SPEECH) -> _Gateway:
     with gateway.client() as client:
-        media_probe.run_once(client, dry_run=False, sleep=lambda seconds: None, judge=judge)
+        media_probe.run_once(client, dry_run=False, sleep=lambda seconds: None, judge=judge, kit=kit)
     return gateway
 
 
@@ -171,7 +227,9 @@ def test_any_other_prompt_starts_the_image_models_from_the_text_models_first_fra
     gateway: Final = _Gateway()
 
     with gateway.client() as client:
-        outcomes: Final = media_probe.evaluate(client, _STREET, media_probe.listed_probes(client), lambda _: None, None)
+        outcomes: Final = media_probe.evaluate(
+            client, _STREET, media_probe.listed_probes(client), lambda _: None, None, _RUN
+        )
 
     assert gateway.events[:2] == [f"submitted {_TEXT_MODEL}", f"finished {_TEXT_MODEL}"]
     assert {fields["prompt"].decode() for fields in gateway.created.values()} == {_STREET}
@@ -191,7 +249,7 @@ def test_with_no_finished_text_video_the_image_models_are_skipped_rather_than_gi
     )
 
     with gateway.client() as client:
-        outcomes: Final = media_probe.evaluate(client, _STREET, image_only, lambda _: None, None)
+        outcomes: Final = media_probe.evaluate(client, _STREET, image_only, lambda _: None, None, _RUN)
 
     assert gateway.created == {}
     assert {outcome.status for outcome in outcomes} == {"skipped: no finished text-to-video video to start from"}
@@ -202,7 +260,9 @@ def test_a_failed_fetch_of_the_text_video_is_tried_again_before_the_image_models
     naps: Final[list[float]] = []
 
     with gateway.client() as client:
-        outcomes: Final = media_probe.evaluate(client, _STREET, media_probe.listed_probes(client), naps.append, None)
+        outcomes: Final = media_probe.evaluate(
+            client, _STREET, media_probe.listed_probes(client), naps.append, None, _RUN
+        )
 
     assert media_probe.DOWNLOAD_RETRY_SECONDS in naps
     assert sorted(gateway.created) == sorted((*_IMAGE_MODELS, _TEXT_MODEL))
@@ -213,7 +273,9 @@ def test_when_the_text_video_cannot_be_fetched_the_image_models_are_skipped_and_
     gateway: Final = _Gateway(content_failures=media_probe.DOWNLOAD_ATTEMPTS)
 
     with gateway.client() as client:
-        outcomes: Final = media_probe.evaluate(client, _STREET, media_probe.listed_probes(client), lambda _: None, None)
+        outcomes: Final = media_probe.evaluate(
+            client, _STREET, media_probe.listed_probes(client), lambda _: None, None, _RUN
+        )
 
     assert sorted(gateway.created) == [_TEXT_MODEL]
     image_statuses: Final = [outcome.status for outcome in outcomes if outcome.model in _IMAGE_MODELS]
@@ -265,7 +327,7 @@ def test_a_judge_answer_without_json_leaves_the_video_unrated_without_stopping_t
 
     with gateway.client() as client:
         outcomes: Final = media_probe.evaluate(
-            client, media_probe.PROBE_PROMPT, media_probe.listed_probes(client), lambda _: None, "qwen-test"
+            client, media_probe.PROBE_PROMPT, media_probe.listed_probes(client), lambda _: None, "qwen-test", _RUN
         )
 
     assert gateway.scores == {}
@@ -278,12 +340,18 @@ def _respond(path: str, authorization: str, body: bytes, started: list[str]) -> 
         started.append(prompt)
         return (_TEXT_MODEL, *_IMAGE_MODELS)
 
+    def start_speech() -> tuple[str, ...]:
+        started.append("speech")
+        return ("IndexTTS-2", _TRANSCRIPTION_MODEL)
+
     def write(avoid: tuple[str, ...]) -> str:
         if avoid == ("broken",):
             raise httpx.ConnectError("writer unreachable")
         return f"a prompt unlike {len(avoid)} others"
 
-    return media_probe.respond(path, authorization, body, api_key="sk-master", start=start, write=write)
+    return media_probe.respond(
+        path, authorization, body, api_key="sk-master", start=start, start_speech=start_speech, write=write
+    )
 
 
 @pytest.mark.parametrize(
@@ -307,6 +375,8 @@ def _respond(path: str, authorization: str, body: bytes, started: list[str]) -> 
             {"prompt": "a prompt unlike 2 others"},
         ),
         ("/prompts", "Bearer sk-master", json.dumps({"avoid": ["broken"]}).encode(), 502, None),
+        ("/speech-evaluations", "Bearer sk-master", b"", 202, {"models": ["IndexTTS-2", _TRANSCRIPTION_MODEL]}),
+        ("/speech-evaluations", "Bearer sk-someone-else", b"", 401, None),
         ("/elsewhere", "Bearer sk-master", b"{}", 404, None),
     ),
 )
@@ -320,7 +390,7 @@ def test_the_probe_answers_only_the_gateway_and_only_for_runs_and_prompts(
     assert answered_status == status
     if payload is not None:
         assert answered == payload
-    assert started == ([_STREET] if status == 202 else [])
+    assert started == ([] if status != 202 else ["speech"] if path == "/speech-evaluations" else [_STREET])
 
 
 def test_a_new_prompt_is_asked_for_unlike_the_recent_ones_and_comes_back_without_quotes() -> None:
@@ -441,3 +511,118 @@ def test_a_judge_still_is_sent_as_a_jpeg_data_url() -> None:
 
     assert url.startswith("data:image/jpeg;base64,")
     assert _dominant(Image.open(io.BytesIO(base64.b64decode(url.split(",", 1)[1])))) == "red"
+
+
+def _speech_run(gateway: _Gateway, kit: media_probe.SpeechKit, naps: list[float]) -> dict[str, str]:
+    with gateway.client() as client:
+        probes: Final = media_probe.speech_probes_from(media_probe.listed_models(client))
+        outcomes: Final = media_probe.evaluate_speech(client, probes, _RUN, kit, naps.append)
+    return {outcome.model: outcome.status for outcome in outcomes}
+
+
+def test_a_scheduled_run_names_itself_on_every_video_speech_and_transcription_request(tmp_path: Path) -> None:
+    runs: Final = _probe_run(_Gateway(), kit=media_probe.SpeechKit(tmp_path, _WAV)).runs
+
+    assert sorted(runs) == sorted(
+        (
+            *(f"video {model}" for model in (*_IMAGE_MODELS, _TEXT_MODEL)),
+            *(f"speech {model}" for model in _SPEECH_MODELS),
+            f"transcription {_TRANSCRIPTION_MODEL}",
+        )
+    )
+    assert len({run["qos_probe_run"] for run in runs.values()}) == 1
+    assert {run["qos_probe_scheduled"] for run in runs.values()} == {True}
+    assert {run.get("qos_probe_text") for key, run in runs.items() if not key.startswith("video")} == {
+        media_probe.SPEECH_TEXT
+    }
+
+
+def test_every_speech_model_group_reads_the_sentence_once_and_its_audio_is_kept_under_the_gateways_id(
+    tmp_path: Path,
+) -> None:
+    gateway: Final = _Gateway()
+
+    statuses: Final = _speech_run(gateway, media_probe.SpeechKit(tmp_path, _WAV), [])
+
+    assert sorted(body["model"] for body in gateway.spoken) == sorted(_SPEECH_MODELS)
+    assert {body["input"] for body in gateway.spoken} == {media_probe.SPEECH_TEXT}
+    (index_tts,) = (body for body in gateway.spoken if body["model"] == "IndexTTS-2")
+    assert index_tts["prompt_audio_url"] == "https://voice/a.wav"
+    assert [(path.name, path.read_bytes()) for path in tmp_path.iterdir()] == [("call-IndexTTS-2", _WAV)]
+    assert statuses["IndexTTS-2"] == "spoke"
+    assert statuses["Broken-TTS"].startswith("failed 400")
+
+
+def test_a_transcription_model_hears_the_recording_and_what_it_heard_is_kept_once_the_gateway_logged_it(
+    tmp_path: Path,
+) -> None:
+    gateway: Final = _Gateway(unlogged_transcripts=2)
+    naps: Final[list[float]] = []
+
+    statuses: Final = _speech_run(gateway, media_probe.SpeechKit(tmp_path, _WAV), naps)
+
+    fields: Final = gateway.heard[_TRANSCRIPTION_MODEL]
+    assert (fields["file"], fields["language"]) == (_WAV, b"zh")
+    assert gateway.transcripts == {f"call-{_TRANSCRIPTION_MODEL}": {"text": _HEARD}}
+    assert naps == [media_probe.TRANSCRIPT_RETRY_SECONDS] * 3
+    assert statuses[_TRANSCRIPTION_MODEL].endswith("transcript kept")
+
+
+def test_a_transcript_the_gateway_never_logs_is_given_up_on_without_stopping_the_run(tmp_path: Path) -> None:
+    gateway: Final = _Gateway(unlogged_transcripts=media_probe.TRANSCRIPT_ATTEMPTS)
+
+    statuses: Final = _speech_run(gateway, media_probe.SpeechKit(tmp_path, _WAV), [])
+
+    assert gateway.transcripts == {}
+    assert statuses[_TRANSCRIPTION_MODEL].endswith("transcript not kept: the gateway never wrote the request down")
+    assert statuses["IndexTTS-2"] == "spoke"
+
+
+def test_without_the_recording_transcription_models_are_skipped_and_speech_models_still_read(tmp_path: Path) -> None:
+    gateway: Final = _Gateway()
+
+    statuses: Final = _speech_run(gateway, media_probe.SpeechKit(tmp_path, None), [])
+
+    assert gateway.heard == {}
+    assert statuses[_TRANSCRIPTION_MODEL] == "skipped: no recording to transcribe"
+    assert statuses["IndexTTS-2"] == "spoke"
+
+
+@pytest.mark.parametrize(
+    ("path", "authorization", "status", "content"),
+    (
+        ("/audio/call-IndexTTS-2", "Bearer sk-master", 200, _WAV),
+        ("/recording", "Bearer sk-master", 200, b"RIFF the recording"),
+        ("/audio/call-IndexTTS-2", "Bearer sk-someone-else", 401, b""),
+        ("/recording", "", 401, b""),
+        ("/audio/call-missing", "Bearer sk-master", 404, b""),
+        ("/audio/../secret", "Bearer sk-master", 404, b""),
+        ("/audio/", "Bearer sk-master", 404, b""),
+        ("/secret", "Bearer sk-master", 404, b""),
+    ),
+)
+def test_the_probe_hands_kept_audio_only_to_the_gateway_and_only_from_its_audio_folder(
+    tmp_path: Path, path: str, authorization: str, status: int, content: bytes
+) -> None:
+    audio_dir: Final = tmp_path / "audio"
+    audio_dir.mkdir()
+    (audio_dir / "call-IndexTTS-2").write_bytes(_WAV)
+    (tmp_path / "secret").write_bytes(b"not audio")
+    kit: Final = media_probe.SpeechKit(audio_dir, b"RIFF the recording")
+
+    assert media_probe.audio_file(path, authorization, "sk-master", kit) == (status, content)
+
+
+@pytest.mark.parametrize(
+    ("audio", "kind"),
+    (
+        (_WAV, "audio/wav"),
+        (b"ID3\x04rest", "audio/mpeg"),
+        (b"\xff\xfb\x90\x00", "audio/mpeg"),
+        (b"OggS\x00", "audio/ogg"),
+        (b'{"error": 1}', "application/octet-stream"),
+        (b"", "application/octet-stream"),
+    ),
+)
+def test_kept_audio_is_served_as_the_format_its_bytes_are_in(audio: bytes, kind: str) -> None:
+    assert media_probe.audio_type(audio) == kind

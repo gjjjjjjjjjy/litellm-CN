@@ -232,6 +232,8 @@ class QosReviewVideo(LiteLLMBaseModel):
     created_at: UtcDatetime
     completed_at: UtcDatetime | None = Field(description="When the provider reported the video done; None until then")
     prompt: str = Field(description="The prompt the probe gave every model in its run")
+    run: str | None = Field(description="The probe run that made the video; None for videos older than run ids")
+    scheduled: bool = Field(description="Whether the run was one of the probe's daily scheduled runs")
     reviews: int
     overall: float | None = Field(description="Average overall rating of this video")
     my_review: QosVideoReview | None
@@ -321,6 +323,81 @@ class QosVideoEvaluationOptions(LiteLLMBaseModel):
     available: bool = Field(description="Whether the gateway knows a media probe to run evaluations on")
     models: tuple[QosProbeModel, ...]
     prompts: tuple[QosUsedPrompt, ...] = Field(description="Prompts earlier probe runs used, most recent first")
+
+
+QosSpeechModality: TypeAlias = Literal["speech", "transcription"]
+
+
+class QosSpeechReviewInput(LiteLLMBaseModel):
+    """One reviewer's rating of a speech model's reading of the probe's sentence, 1 (bad) to 5 (good)."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    overall: ReviewScore
+
+
+class QosSpeechReview(QosSpeechReviewInput):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    reviewed_at: UtcDatetime
+
+
+class QosSpeechTranscript(LiteLLMBaseModel):
+    """What a transcription model heard in the probe's recording, as the probe reports it."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    text: Annotated[str, Field(max_length=2000)]
+
+
+class QosSpeechResult(LiteLLMBaseModel):
+    """One speech or transcription request of a probe run."""
+
+    model_config = ConfigDict(frozen=True)
+
+    request_id: str
+    run: str
+    scheduled: bool = Field(description="Whether the run was one of the probe's daily scheduled runs")
+    model_group: str
+    modality: QosSpeechModality
+    created_at: UtcDatetime
+    succeeded: bool
+    error: str | None = Field(description="Why the request failed, as the gateway logged it")
+    latency_ms: float
+    audio_seconds: float | None = Field(description="Length of the audio read out or transcribed, when known")
+    text: str = Field(description="The sentence the speech models read, which the recording also says")
+    transcript: str | None = Field(description="What a transcription model heard; None until the probe reports it")
+    reviews: int
+    overall: float | None = Field(description="Average rating of this reading")
+    my_review: QosSpeechReview | None
+
+
+class QosSpeechEvaluationsResponse(LiteLLMBaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    start_time: UtcDatetime
+    end_time: UtcDatetime
+    results: tuple[QosSpeechResult, ...]
+
+
+class QosSpeechProbeModel(LiteLLMBaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    model_group: str
+    modality: QosSpeechModality
+
+
+class QosSpeechEvaluationOptions(LiteLLMBaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    available: bool = Field(description="Whether the gateway knows a media probe to run evaluations on")
+    models: tuple[QosSpeechProbeModel, ...]
+
+
+class QosSpeechEvaluationStarted(LiteLLMBaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    models: tuple[str, ...] = Field(description="The speech and transcription models the probe is testing")
 
 
 QOS_BENCHMARK_MAX_REQUESTS: Final = 5000

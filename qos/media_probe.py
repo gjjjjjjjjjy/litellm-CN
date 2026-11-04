@@ -1,5 +1,6 @@
 """Generate one short video per probed video deployment through the gateway and have a vision model rate each one,
-at fixed times of day and whenever the gateway asks.
+and have every probed speech model read the same sentence and every probed transcription model transcribe the same
+recording of it, at fixed times of day and whenever the gateway asks.
 
 A deployment takes part when its model_info has a `qos_probe` object: {"image": bool, "params": {...}}. Every
 deployment in a run gets the same prompt. With the scheduled prompt the image-to-video ones also get the same drawn
@@ -9,8 +10,13 @@ to /v1/videos and polls /v1/videos/{id} until the video ends, so the gateway rec
 status with the provider's queue time, run time and price for the 音视频 tab. Each finished video is then cut into
 one still per second, which a vision model rates through the gateway, and the rating is stored on the video.
 
-With --listen the gateway can also start a run with its own prompt (POST /evaluations) and ask for a new test prompt
-(POST /prompts), authenticated with the gateway's master key.
+Every request of a run carries the run's id in its spend log metadata, so the review tabs can show a run together.
+Speech models' audio is kept under --audio-dir for reviewers to listen to; what a transcription model heard is stored on
+its request, and the review tab works out its character error rate against the sentence.
+
+With --listen the gateway can also start a video run with its own prompt (POST /evaluations), a speech run
+(POST /speech-evaluations), ask for a new test prompt (POST /prompts) and fetch kept audio (GET /audio/<request id>,
+GET /recording), authenticated with the gateway's master key.
 """
 
 import argparse
@@ -22,6 +28,7 @@ import logging
 import math
 import os
 import re
+import secrets
 import struct
 import threading
 import time
@@ -35,6 +42,7 @@ from fractions import Fraction
 from functools import partial
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from itertools import accumulate, repeat
+from pathlib import Path
 from typing import Annotated, Final
 
 import av
@@ -57,6 +65,22 @@ TEXT_LIMIT: Final = 500
 LIST_LIMIT: Final = 30
 TERMINAL_STATUSES: Final = frozenset({"completed", "failed"})
 LATE_LIMIT: Final = timedelta(minutes=10)
+VIDEO_MODES: Final = frozenset({"video_generation"})
+SPEECH_MODES: Final = frozenset({"audio_speech", "audio_transcription"})
+SPEECH_TEXT: Final = "今天天气很好，我们一起去公园散步，顺便买些水果回家。"
+RECORDING_PATH: Final = Path(__file__).with_name("speech_probe.wav")
+RUN_METADATA_HEADER: Final = "x-litellm-spend-logs-metadata"
+CALL_ID_HEADER: Final = "x-litellm-call-id"
+SAFE_ID: Final = re.compile(r"[A-Za-z0-9_-]{1,128}")
+TRANSCRIPT_ATTEMPTS: Final = 18
+TRANSCRIPT_RETRY_SECONDS: Final = 10
+TRANSCRIPT_LIMIT: Final = 2000
+AUDIO_SIGNATURES: Final = (
+    (b"RIFF", "audio/wav"),
+    (b"OggS", "audio/ogg"),
+    (b"fLaC", "audio/flac"),
+    (b"ID3", "audio/mpeg"),
+)
 logger: Final = logging.getLogger("qos.media_probe")
 
 ParamValue = str | int | float | bool
@@ -186,6 +210,12 @@ class ChatAnswer(BaseModel):
     choices: tuple[ChatChoice, ...] = Field(min_length=1)
 
 
+class Transcription(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="ignore")
+
+    text: str
+
+
 class EvaluationRequest(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -205,11 +235,40 @@ class Probe:
 
 
 @dataclass(frozen=True, slots=True)
+class SpeechProbe:
+    model: str
+    transcribes: bool
+    params: Mapping[str, ParamValue]
+
+
+@dataclass(frozen=True, slots=True)
+class Run:
+    """One run of the probe, named on every request it sends so the review tabs can show the run together."""
+
+    id: str
+    scheduled: bool
+
+    def headers(self, text: str | None = None) -> dict[str, str]:
+        spoken: Final = {} if text is None else {"qos_probe_text": text}
+        return {
+            RUN_METADATA_HEADER: json.dumps({"qos_probe_run": self.id, "qos_probe_scheduled": self.scheduled, **spoken})
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class SpeechKit:
+    """Where speech models' audio is kept, and the recording every transcription model gets."""
+
+    audio_dir: Path
+    recording: bytes | None
+
+
+@dataclass(frozen=True, slots=True)
 class Outcome:
     model: str
     status: str
     seconds: float
-    video_id: str | None = None
+    request_id: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -221,13 +280,38 @@ class Stills:
     jpegs: tuple[tuple[int, bytes], ...]
 
 
+def new_run(scheduled: bool, now: datetime) -> Run:
+    return Run(f"{now:%Y%m%d-%H%M%S}-{secrets.token_hex(3)}", scheduled)
+
+
+def _probed(models: ModelList, modes: frozenset[str]) -> tuple[tuple[str, str | None, ProbeSpec], ...]:
+    """Each probed model group once, by its first deployment, so a group served twice is still probed once."""
+    configured: Final = tuple(
+        (d.model_name, d.model_info.mode, spec)
+        for d in models.data
+        if d.model_info.mode in modes and (spec := d.model_info.qos_probe) is not None
+    )
+    names: Final = tuple(name for name, _, _ in configured)
+    return tuple(probed for index, probed in enumerate(configured) if probed[0] not in names[:index])
+
+
 def probes_from(models: ModelList) -> tuple[Probe, ...]:
-    configured: Final = (d for d in models.data if d.model_info.mode == "video_generation")
-    return tuple(Probe(d.model_name, d.model_info.qos_probe) for d in configured if d.model_info.qos_probe is not None)
+    return tuple(Probe(name, spec) for name, _, spec in _probed(models, VIDEO_MODES))
+
+
+def speech_probes_from(models: ModelList) -> tuple[SpeechProbe, ...]:
+    return tuple(
+        SpeechProbe(name, mode == "audio_transcription", spec.params)
+        for name, mode, spec in _probed(models, SPEECH_MODES)
+    )
+
+
+def listed_models(client: httpx.Client) -> ModelList:
+    return TypeAdapter(ModelList).validate_json(client.get("/model/info").raise_for_status().content)
 
 
 def listed_probes(client: httpx.Client) -> tuple[Probe, ...]:
-    return probes_from(TypeAdapter(ModelList).validate_json(client.get("/model/info").raise_for_status().content))
+    return probes_from(listed_models(client))
 
 
 def mix(a: Color, b: Color, share: float) -> Color:
@@ -321,15 +405,21 @@ def form_value(value: ParamValue) -> str:
     return str(value).lower() if isinstance(value, bool) else str(value)
 
 
-def submit(client: httpx.Client, probe: Probe, prompt: str, first_frame: bytes) -> httpx.Response:
+def form_fields(params: Mapping[str, ParamValue]) -> dict[str, str]:
+    return {key: form_value(value) for key, value in params.items()}
+
+
+def submit(client: httpx.Client, probe: Probe, prompt: str, first_frame: bytes, run: Run) -> httpx.Response:
     if probe.spec.image:
-        fields: Final = {key: form_value(value) for key, value in probe.spec.params.items()}
         return client.post(
             "/v1/videos",
-            data={**fields, "model": probe.model, "prompt": prompt},
+            data={**form_fields(probe.spec.params), "model": probe.model, "prompt": prompt},
             files={"input_reference": ("first_frame.png", first_frame, "image/png")},
+            headers=run.headers(),
         )
-    return client.post("/v1/videos", json={**probe.spec.params, "model": probe.model, "prompt": prompt})
+    return client.post(
+        "/v1/videos", json={**probe.spec.params, "model": probe.model, "prompt": prompt}, headers=run.headers()
+    )
 
 
 def wait_for_end(client: httpx.Client, video_id: str, started: float, sleep: Sleep) -> str:
@@ -441,11 +531,11 @@ def rate(client: httpx.Client, video_id: str, prompt: str, image_to_video: bool,
 
 
 def run_probe(
-    client: httpx.Client, probe: Probe, prompt: str, first_frame: bytes, sleep: Sleep, judge: str | None
+    client: httpx.Client, probe: Probe, prompt: str, first_frame: bytes, sleep: Sleep, judge: str | None, run: Run
 ) -> Outcome:
     started: Final = time.monotonic()
     try:
-        created: Final = submit(client, probe, prompt, first_frame)
+        created: Final = submit(client, probe, prompt, first_frame, run)
         if created.status_code != 200:
             return Outcome(probe.model, f"submit failed {created.status_code}: {created.text[:160]}", 0.0)
         video: Final = VideoObject.model_validate_json(created.content)
@@ -460,65 +550,173 @@ def run_probe(
 
 
 def _run_all(
-    client: httpx.Client, probes: tuple[Probe, ...], prompt: str, first_frame: bytes, sleep: Sleep, judge: str | None
+    client: httpx.Client,
+    probes: tuple[Probe, ...],
+    prompt: str,
+    first_frame: bytes,
+    sleep: Sleep,
+    judge: str | None,
+    run: Run,
 ) -> tuple[Outcome, ...]:
     if not probes:
         return ()
     with ThreadPoolExecutor(max_workers=len(probes)) as pool:
-        return tuple(pool.map(lambda probe: run_probe(client, probe, prompt, first_frame, sleep, judge), probes))
+        return tuple(pool.map(lambda probe: run_probe(client, probe, prompt, first_frame, sleep, judge, run), probes))
 
 
 def evaluate(
-    client: httpx.Client, prompt: str, probes: tuple[Probe, ...], sleep: Sleep, judge: str | None
+    client: httpx.Client, prompt: str, probes: tuple[Probe, ...], sleep: Sleep, judge: str | None, run: Run
 ) -> tuple[Outcome, ...]:
     """Run every probe on the prompt; image-to-video ones start from the drawn frame or a text-to-video first frame."""
     if prompt == PROBE_PROMPT:
-        return _run_all(client, probes, prompt, first_frame_png(*FIRST_FRAME_SIZE), sleep, judge)
+        return _run_all(client, probes, prompt, first_frame_png(*FIRST_FRAME_SIZE), sleep, judge, run)
     image_probes: Final = tuple(probe for probe in probes if probe.spec.image)
     text_probes: Final = tuple(probe for probe in probes if not probe.spec.image)
-    text_outcomes: Final = _run_all(client, text_probes, prompt, b"", sleep, judge)
-    opening: Final = next((o.video_id for o in text_outcomes if o.video_id and o.status.startswith("completed")), None)
+    text_outcomes: Final = _run_all(client, text_probes, prompt, b"", sleep, judge, run)
+    opening: Final = next(
+        (o.request_id for o in text_outcomes if o.request_id and o.status.startswith("completed")), None
+    )
     if opening is None:
         return text_outcomes + _skipped(image_probes, "no finished text-to-video video to start from")
     try:
         frame: Final = opening_frame_png(video_bytes(client, opening, sleep))
     except (httpx.HTTPError, ValueError, OSError, av.FFmpegError) as error:
         return text_outcomes + _skipped(image_probes, f"could not take the first frame: {error!r}"[:160])
-    return text_outcomes + _run_all(client, image_probes, prompt, frame, sleep, judge)
+    return text_outcomes + _run_all(client, image_probes, prompt, frame, sleep, judge, run)
 
 
 def _skipped(probes: tuple[Probe, ...], reason: str) -> tuple[Outcome, ...]:
     return tuple(Outcome(probe.model, f"skipped: {reason}", 0.0) for probe in probes)
 
 
-def log_outcomes(prompt: str, outcomes: tuple[Outcome, ...]) -> None:
-    logger.info("run with the prompt %s ended", prompt)
+def synthesize(client: httpx.Client, probe: SpeechProbe, run: Run, audio_dir: Path) -> Outcome:
+    """Have a speech model read the sentence and keep its audio under the id the gateway gave the request."""
+    started: Final = time.monotonic()
+    try:
+        spoken: Final = client.post(
+            "/v1/audio/speech",
+            json={**probe.params, "model": probe.model, "input": SPEECH_TEXT},
+            headers=run.headers(SPEECH_TEXT),
+        )
+    except httpx.HTTPError as error:
+        return Outcome(probe.model, f"gave up: {error!r}"[:200], time.monotonic() - started)
+    seconds: Final = time.monotonic() - started
+    if spoken.status_code != 200:
+        return Outcome(probe.model, f"failed {spoken.status_code}: {spoken.text[:160]}", seconds)
+    request_id: Final = spoken.headers.get(CALL_ID_HEADER, "")
+    if not SAFE_ID.fullmatch(request_id):
+        return Outcome(probe.model, "spoke, but the gateway gave no id to keep the audio under", seconds)
+    try:
+        (audio_dir / request_id).write_bytes(spoken.content)
+    except OSError as error:
+        return Outcome(probe.model, f"spoke, audio not kept: {error!r}"[:200], seconds, request_id)
+    return Outcome(probe.model, "spoke", seconds, request_id)
+
+
+def keep_transcript(client: httpx.Client, request_id: str, text: str, sleep: Sleep) -> str:
+    """Store what a model heard on its request, once the gateway has written the request down a few seconds after
+    answering it."""
+    for _ in range(TRANSCRIPT_ATTEMPTS):
+        sleep(TRANSCRIPT_RETRY_SECONDS)
+        stored = client.put(
+            "/qos/speech/evaluations/transcript", params={"request_id": request_id}, json={"text": text}
+        )
+        if stored.status_code != 404:
+            stored.raise_for_status()
+            return "kept"
+    return "not kept: the gateway never wrote the request down"
+
+
+def transcribe(client: httpx.Client, probe: SpeechProbe, run: Run, recording: bytes, sleep: Sleep) -> Outcome:
+    started: Final = time.monotonic()
+    try:
+        heard: Final = client.post(
+            "/v1/audio/transcriptions",
+            data={**form_fields(probe.params), "model": probe.model},
+            files={"file": (RECORDING_PATH.name, recording, "audio/wav")},
+            headers=run.headers(SPEECH_TEXT),
+        )
+        seconds: Final = time.monotonic() - started
+        if heard.status_code != 200:
+            return Outcome(probe.model, f"failed {heard.status_code}: {heard.text[:160]}", seconds)
+        text: Final = Transcription.model_validate_json(heard.content).text[:TRANSCRIPT_LIMIT]
+        request_id: Final = heard.headers.get(CALL_ID_HEADER, "")
+        kept: Final = keep_transcript(client, request_id, text, sleep) if SAFE_ID.fullmatch(request_id) else "no id"
+    except (httpx.HTTPError, ValidationError) as error:
+        return Outcome(probe.model, f"gave up: {error!r}"[:200], time.monotonic() - started)
+    return Outcome(probe.model, f"heard {text!r}, transcript {kept}"[:200], seconds, request_id)
+
+
+def evaluate_speech(
+    client: httpx.Client, probes: tuple[SpeechProbe, ...], run: Run, kit: SpeechKit, sleep: Sleep
+) -> tuple[Outcome, ...]:
+    """Every speech model reads the sentence and every transcription model transcribes the recording of it."""
+    recording: Final = kit.recording
+
+    def one(probe: SpeechProbe) -> Outcome:
+        if not probe.transcribes:
+            return synthesize(client, probe, run, kit.audio_dir)
+        if recording is None:
+            return Outcome(probe.model, "skipped: no recording to transcribe", 0.0)
+        return transcribe(client, probe, run, recording, sleep)
+
+    if not probes:
+        return ()
+    with ThreadPoolExecutor(max_workers=len(probes)) as pool:
+        return tuple(pool.map(one, probes))
+
+
+def log_outcomes(what: str, outcomes: tuple[Outcome, ...]) -> None:
+    logger.info("run with %s ended", what)
     for outcome in outcomes:
         logger.info("  %s: %s after %.0f s", outcome.model, outcome.status, outcome.seconds)
 
 
-def run_once(client: httpx.Client, dry_run: bool, sleep: Sleep, judge: str | None) -> None:
-    probes: Final = listed_probes(client)
-    logger.info("probing %d video models with the prompt %s", len(probes), PROBE_PROMPT)
+def run_once(client: httpx.Client, dry_run: bool, sleep: Sleep, judge: str | None, kit: SpeechKit) -> None:
+    models: Final = listed_models(client)
+    probes: Final = probes_from(models)
+    speech: Final = speech_probes_from(models)
+    logger.info(
+        "probing %d video models with the prompt %s and %d speech models", len(probes), PROBE_PROMPT, len(speech)
+    )
     if dry_run:
         for probe in probes:
             logger.info("  %s: image=%s params=%s", probe.model, probe.spec.image, dict(probe.spec.params))
+        for spoken in speech:
+            logger.info("  %s: transcribes=%s params=%s", spoken.model, spoken.transcribes, dict(spoken.params))
         return
-    log_outcomes(PROBE_PROMPT, evaluate(client, PROBE_PROMPT, probes, sleep, judge))
+    run: Final = new_run(scheduled=True, now=datetime.now())
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        heard: Final = pool.submit(evaluate_speech, client, speech, run, kit, sleep)
+        log_outcomes(f"the prompt {PROBE_PROMPT}", evaluate(client, PROBE_PROMPT, probes, sleep, judge, run))
+        log_outcomes("the speech test", heard.result())
+
+
+def _in_background(what: str, work: Callable[[], tuple[Outcome, ...]]) -> None:
+    def run() -> None:
+        try:
+            log_outcomes(what, work())
+        except (httpx.HTTPError, ValueError, OSError, av.FFmpegError) as error:
+            logger.warning("the run with %s stopped: %r", what, error)
+
+    threading.Thread(target=run, name="evaluation", daemon=True).start()
 
 
 def start_evaluation(client: httpx.Client, judge: str | None, prompt: str) -> tuple[str, ...]:
     """Start a run with the prompt in the background and name the models it generates with."""
     probes: Final = listed_probes(client)
+    run: Final = new_run(scheduled=False, now=datetime.now())
     logger.info("the gateway started a run of %d video models with the prompt %s", len(probes), prompt)
+    _in_background(f"the prompt {prompt}", partial(evaluate, client, prompt, probes, time.sleep, judge, run))
+    return tuple(probe.model for probe in probes)
 
-    def run() -> None:
-        try:
-            log_outcomes(prompt, evaluate(client, prompt, probes, time.sleep, judge))
-        except (httpx.HTTPError, ValueError, OSError, av.FFmpegError) as error:
-            logger.warning("the run with the prompt %s stopped: %r", prompt, error)
 
-    threading.Thread(target=run, name="evaluation", daemon=True).start()
+def start_speech_evaluation(client: httpx.Client, kit: SpeechKit) -> tuple[str, ...]:
+    """Start a speech run in the background and name the models it tests."""
+    probes: Final = speech_probes_from(listed_models(client))
+    run: Final = new_run(scheduled=False, now=datetime.now())
+    logger.info("the gateway started a run of %d speech models", len(probes))
+    _in_background("the speech test", partial(evaluate_speech, client, probes, run, kit, time.sleep))
     return tuple(probe.model for probe in probes)
 
 
@@ -546,21 +744,28 @@ def write_prompt(client: httpx.Client, writer: str, avoid: tuple[str, ...]) -> s
     return written[:TEXT_LIMIT]
 
 
+def _from_gateway(authorization: str, api_key: str) -> bool:
+    return hmac.compare_digest(authorization.encode(), f"Bearer {api_key}".encode())
+
+
 def respond(
     path: str,
     authorization: str,
     body: bytes,
     api_key: str,
     start: Callable[[str], tuple[str, ...]],
+    start_speech: Callable[[], tuple[str, ...]],
     write: Callable[[tuple[str, ...]], str],
 ) -> tuple[int, dict[str, object]]:
     """What the probe answers the gateway: a started run or a new prompt."""
-    if not hmac.compare_digest(authorization.encode(), f"Bearer {api_key}".encode()):
+    if not _from_gateway(authorization, api_key):
         return 401, {"error": "this needs the gateway's master key"}
     try:
         if path == "/evaluations":
             prompt: Final = EvaluationRequest.model_validate_json(body).prompt
             return 202, {"prompt": prompt, "models": list(start(prompt))}
+        if path == "/speech-evaluations":
+            return 202, {"models": list(start_speech())}
         if path == "/prompts":
             return 200, {"prompt": write(PromptRequest.model_validate_json(body or b"{}").avoid)}
     except ValidationError as error:
@@ -570,17 +775,49 @@ def respond(
     return 404, {"error": f"nothing at {path}"}
 
 
-def serve(port: int, answer: Callable[[str, str, bytes], tuple[int, dict[str, object]]]) -> ThreadingHTTPServer:
+def audio_type(audio: bytes) -> str:
+    sniffed: Final = next((kind for signature, kind in AUDIO_SIGNATURES if audio.startswith(signature)), None)
+    if sniffed is not None:
+        return sniffed
+    return "audio/mpeg" if audio[:1] == b"\xff" and audio[1:2] >= b"\xe0" else "application/octet-stream"
+
+
+def audio_file(path: str, authorization: str, api_key: str, kit: SpeechKit) -> tuple[int, bytes]:
+    """A speech model's kept audio by the gateway's id for its request, or the recording transcription models get."""
+    if not _from_gateway(authorization, api_key):
+        return 401, b""
+    if path == "/recording":
+        return (404, b"") if kit.recording is None else (200, kit.recording)
+    name: Final = path.removeprefix("/audio/")
+    if name == path or not SAFE_ID.fullmatch(name):
+        return 404, b""
+    try:
+        return 200, (kit.audio_dir / name).read_bytes()
+    except FileNotFoundError:
+        return 404, b""
+
+
+def serve(
+    port: int,
+    answer: Callable[[str, str, bytes], tuple[int, dict[str, object]]],
+    fetch: Callable[[str, str], tuple[int, bytes]],
+) -> ThreadingHTTPServer:
     class Handler(BaseHTTPRequestHandler):
+        def _send(self, status: int, content: bytes, content_type: str) -> None:
+            self.send_response(status)
+            self.send_header("Content-Type", content_type)
+            self.send_header("Content-Length", str(len(content)))
+            self.end_headers()
+            self.wfile.write(content)
+
         def do_POST(self) -> None:
             body: Final = self.rfile.read(int(self.headers.get("Content-Length") or 0))
             status, payload = answer(self.path, self.headers.get("Authorization", ""), body)
-            encoded: Final = json.dumps(payload, ensure_ascii=False).encode()
-            self.send_response(status)
-            self.send_header("Content-Type", "application/json")
-            self.send_header("Content-Length", str(len(encoded)))
-            self.end_headers()
-            self.wfile.write(encoded)
+            self._send(status, json.dumps(payload, ensure_ascii=False).encode(), "application/json")
+
+        def do_GET(self) -> None:
+            status, content = fetch(self.path, self.headers.get("Authorization", ""))
+            self._send(status, content, audio_type(content))
 
         def log_message(self, format: str, *args: object) -> None:
             logger.info("gateway asked: %s", format % args)
@@ -611,12 +848,24 @@ def on_time(run_at: datetime, sleep: Sleep, now: Now) -> bool:
     return now() - run_at <= LATE_LIMIT
 
 
-def scheduled_run(client: httpx.Client, run_at: datetime, dry_run: bool, judge: str | None) -> None:
+def scheduled_run(client: httpx.Client, run_at: datetime, dry_run: bool, judge: str | None, kit: SpeechKit) -> None:
     logger.info("next run at %s", run_at.strftime("%Y-%m-%d %H:%M"))
     if on_time(run_at, time.sleep, datetime.now):
-        run_once(client, dry_run, time.sleep, judge)
+        run_once(client, dry_run, time.sleep, judge, kit)
         return
     logger.info("skipped the %s run, it is already %s", run_at.strftime("%H:%M"), datetime.now().strftime("%H:%M"))
+
+
+def speech_kit(audio_dir: Path, recording: Path) -> SpeechKit:
+    try:
+        audio_dir.mkdir(parents=True, exist_ok=True)
+    except OSError as error:
+        logger.warning("speech audio cannot be kept in %s: %r", audio_dir, error)
+    try:
+        return SpeechKit(audio_dir, recording.read_bytes())
+    except OSError as error:
+        logger.warning("transcription models are skipped, the recording %s cannot be read: %r", recording, error)
+        return SpeechKit(audio_dir, None)
 
 
 def main() -> None:
@@ -629,12 +878,16 @@ def main() -> None:
     parser.add_argument(
         "--judge-model", default="qwen3.8-27b", help="vision model that rates stills and writes prompts; empty skips"
     )
+    parser.add_argument(
+        "--audio-dir", type=Path, default=Path("/data/audio"), help="where speech models' audio is kept"
+    )
     parser.add_argument("--dry-run", action="store_true", help="list the configured probes without sending anything")
     args: Final = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
     logging.getLogger("httpx").setLevel(logging.WARNING)
     api_key: Final = os.environ["LITELLM_API_KEY"]
     judge: Final = args.judge_model or None
+    kit: Final = speech_kit(args.audio_dir, RECORDING_PATH)
     headers: Final = {"Authorization": f"Bearer {api_key}", "x-litellm-tags": PROBE_TAG}
     with httpx.Client(base_url=args.base_url, headers=headers, timeout=120) as client:
         if args.listen:
@@ -644,16 +897,18 @@ def main() -> None:
                     respond,
                     api_key=api_key,
                     start=partial(start_evaluation, client, judge),
+                    start_speech=partial(start_speech_evaluation, client, kit),
                     write=partial(write_prompt, client, args.judge_model),
                 ),
+                partial(audio_file, api_key=api_key, kit=kit),
             )
         if not args.at:
             if args.listen:
                 threading.Event().wait()
-            run_once(client, args.dry_run, time.sleep, judge)
+            run_once(client, args.dry_run, time.sleep, judge, kit)
             return
         for run_at in runs_from(datetime.now(), args.at):
-            scheduled_run(client, run_at, args.dry_run, judge)
+            scheduled_run(client, run_at, args.dry_run, judge, kit)
 
 
 if __name__ == "__main__":

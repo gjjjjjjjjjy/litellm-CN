@@ -36,7 +36,7 @@ def _media_field(field: str, sql_type: str) -> str:
     return f"(metadata -> '{QOS_MEDIA_KEY}' ->> '{field}')::{sql_type}"
 
 
-_MODALITY: Final = f"""COALESCE(
+MEDIA_MODALITY: Final = f"""COALESCE(
             CASE
                 WHEN call_type IN ({sql_list(SPEECH_CALL_TYPES)}) THEN 'speech'
                 WHEN call_type IN ({sql_list(TRANSCRIPTION_CALL_TYPES)}) THEN 'transcription'
@@ -50,7 +50,7 @@ AUDIO_SUMMARY_SQL: Final = f"""
 WITH base AS (
     SELECT
         {logged_model_group("$4")} AS model_group,
-        {_MODALITY} AS modality,
+        {MEDIA_MODALITY} AS modality,
         status,
         EXTRACT(epoch FROM ("endTime" - "startTime")) * 1000 AS latency_ms,
         {_media_field("audio_seconds", "float")} AS audio_seconds,
@@ -98,7 +98,7 @@ WITH created AS (
     WHERE "startTime" >= $1::timestamp
         AND "startTime" < $2::timestamp
         AND {MODEL_TRAFFIC}
-        AND {_MODALITY} = 'video'
+        AND {MEDIA_MODALITY} = 'video'
 ),
 finished AS (
     SELECT DISTINCT ON (metadata -> '{QOS_MEDIA_KEY}' ->> 'task_id')
