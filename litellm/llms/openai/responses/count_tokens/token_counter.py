@@ -29,7 +29,7 @@ from litellm.llms.openai.workload_identity import (
     get_workload_identity_bearer_token,
     resolve_openai_workload_identity_config,
 )
-from litellm.types.utils import LlmProviders, TokenCountMessagesFormat, TokenCountResponse
+from litellm.types.utils import CountContextManagement, LlmProviders, TokenCountMessagesFormat, TokenCountResponse
 
 # Global handler instance - reuse across all token counting requests
 openai_count_tokens_handler: Final = OpenAICountTokensHandler()
@@ -40,6 +40,7 @@ def _workload_identity_config(litellm_params: Mapping[str, object]) -> OpenAIWor
     return resolve_openai_workload_identity_config(
         api_key=None,
         api_base=api_base if isinstance(api_base, str) else None,
+        litellm_params=litellm_params,
     )
 
 
@@ -94,6 +95,7 @@ class OpenAITokenCounter(BaseTokenCounter):
         system: object = None,
         messages_format: TokenCountMessagesFormat = "openai",
         output_format: JsonValue = None,
+        context_management: CountContextManagement | None = None,
     ) -> TokenCountResponse | None:
         """
         Count tokens using OpenAI's Responses API /input_tokens endpoint.
@@ -174,12 +176,14 @@ class OpenAITokenCounter(BaseTokenCounter):
             )
 
             if result is not None:
-                return TokenCountResponse(
-                    total_tokens=result.get("input_tokens", 0),
-                    request_model=request_model,
-                    model_used=model_to_use,
-                    tokenizer_type="openai_api",
-                    original_response=result,
+                return TokenCountResponse.model_validate(
+                    {
+                        "total_tokens": result.get("input_tokens", 0),
+                        "request_model": request_model,
+                        "model_used": model_to_use,
+                        "tokenizer_type": "openai_api",
+                        "original_response": result,
+                    }
                 )
         except OpenAIError as e:
             verbose_logger.warning("OpenAI CountTokens API error: status=%s, message=%s", e.status_code, e.message)

@@ -146,8 +146,8 @@ def test_tier_config_is_normalized_and_unknown_router_extras_are_rejected() -> N
         ({"provider": "laya", "model": "english", "api_key": "sk-member"}, "api_key"),
         ({"provider": "bespoke", "model": "nimble-latest", "api_base": "https://collector.invalid"}, "api_base"),
         ({"provider": "bespoke", "model": "nimble-latest", "api_key": "sk-member"}, "api_key"),
-        ({"provider": "databricks", "model": "my-openjev", "api_base": "https://collector.invalid"}, "opensource_classifier_config"),
-        ({"provider": "databricks", "model": "my-openjev", "api_key": "dapi-member"}, "api_key"),
+        ({"provider": "databricks", "model": "ai_decide", "api_base": "https://collector.invalid"}, "opensource_classifier_config"),
+        ({"provider": "databricks", "model": "ai_decide", "api_key": "dapi-member"}, "api_key"),
     ],
 )
 @pytest.mark.parametrize("legacy", [False, True])
@@ -168,7 +168,13 @@ def test_members_cannot_move_the_jev_classifier_off_the_proxys_typesafe_account(
 
 @pytest.mark.parametrize(
     ("provider", "model"),
-    [("typesafe", "jev-preview"), ("laya", "english"), ("bespoke", "nimble-latest"), ("databricks", "my-openjev")],
+    [
+        ("typesafe", "jev-preview"),
+        ("laya", "english"),
+        ("bespoke", "nimble-latest"),
+        ("databricks", "ai_decide"),
+        ("databricks", "my-openjev"),
+    ],
 )
 @pytest.mark.parametrize("legacy", [False, True])
 def test_members_can_still_tune_the_jev_classifier(provider: str, model: str, legacy: bool) -> None:
@@ -264,7 +270,7 @@ async def test_member_authorization_and_persistence_resolve_the_same_classifier(
         _strategy_router_write_violation,
         update_db_model,
     )
-    from litellm.types.management_endpoints.auto_router_endpoints import RequestComplexityRouterConfig
+    from litellm.router_strategy.complexity_router.request_models import RequestComplexityRouterConfig
 
     monkeypatch.setenv("LITELLM_SALT_KEY", "member-router-test-salt")
     stored_config: Final = {

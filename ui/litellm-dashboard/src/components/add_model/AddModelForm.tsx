@@ -39,6 +39,7 @@ import LiteLLMModelNameField from "./litellm_model_name";
 import ConnectionErrorDisplay from "./model_connection_test";
 import ProviderSpecificFields from "./provider_specific_fields";
 import { SAVE_PROVIDER_CREDENTIAL, savedCredentialFor } from "./provider_credential";
+import { authTypesFor } from "./provider_auth_types";
 import { TEST_MODES } from "./add_model_modes";
 import DecisionModelNote from "./DecisionModelNote";
 import { type DecisionCatalog } from "@/lib/decisionModels";
@@ -110,11 +111,16 @@ const AddModelForm: React.FC<AddModelFormProps> = ({
   }, []);
   const selectedProvider = typeof pickedProvider === "string" ? pickedProvider : null;
   const queryClient = useQueryClient();
+  const [isCredentialModalOpen, setIsCredentialModalOpen] = useState(false);
+  const [credentialModalAuthTypeId, setCredentialModalAuthTypeId] = useState<string | undefined>();
+  const [selectedAuthTypeId, setSelectedAuthTypeId] = useState("");
+  const canCreateCredential = isProxyAdminRole(userRole ?? "");
   const [isFederatedCredentialModalOpen, setIsFederatedCredentialModalOpen] = useState(false);
   const canCreateFederatedCredential =
     isProxyAdminRole(userRole ?? "") && federatedProviderOf(selectedProvider) !== null;
+  const selectedAuthType = authTypesFor(selectedProvider).find(({ id }) => id === selectedAuthTypeId);
 
-  const handleCreateFederatedCredential = async (submission: CredentialSubmission) => {
+  const handleCreateCredential = async (submission: CredentialSubmission) => {
     const credential = buildCredential(submission, submission.credential_values);
     try {
       await credentialCreateCall(accessToken, credential);
@@ -123,12 +129,31 @@ const AddModelForm: React.FC<AddModelFormProps> = ({
       return;
     }
     toast.success("Credential added successfully");
+    setIsCredentialModalOpen(false);
     setIsFederatedCredentialModalOpen(false);
     await queryClient.invalidateQueries({ queryKey: credentialsKeys.all });
     form.setValue("litellm_credential_name", credential.credential_name, { shouldDirty: true });
   };
 
+  const openCredentialModal = (authTypeId?: string) => {
+    setCredentialModalAuthTypeId(authTypeId);
+    setIsCredentialModalOpen(true);
+  };
+
+  const rejectMissingCredential = (): boolean => {
+    const missing = selectedAuthType?.credentialOnly === true && !selectedCredentialName;
+    if (missing) {
+      toast.error("Create or select a credential for this auth type");
+    }
+    return missing;
+  };
+
+  const handleSubmit = async () => (rejectMissingCredential() ? false : handleOk());
+
   const handleTestConnection = async () => {
+    if (rejectMissingCredential() || !(await form.trigger(registry.mountedNames() as string[]))) {
+      return;
+    }
     setIsTestingConnection(true);
     setConnectionTestId(`test-${Date.now()}`);
     setIsResultModalVisible(true);
@@ -187,7 +212,7 @@ const AddModelForm: React.FC<AddModelFormProps> = ({
   const canDeploySharedImages = isProxyAdminRole(userRole ?? "") && !isViewOnly;
   const canSaveProviderCredential = isProxyAdminRole(userRole ?? "") && !isViewOnly && selectedProvider !== null;
   const modeOptions = canDeploySharedImages ? TEST_MODES : TEST_MODES.filter((entry) => entry.value !== "image_generation");
-  const isTeamAdmin = isUserTeamAdminForAnyTeam(teams, userId);
+  const isTeamAdmin = isUserTeamAdminForAnyTeam(teams, userId ?? "");
   // Same owner the Auto-Routers tab uses, so the two creation forms cannot disagree about
   // who has to name a team. This form is only reachable when creation is allowed at all.
   const createScope = modelCreationScope(
@@ -208,7 +233,7 @@ const AddModelForm: React.FC<AddModelFormProps> = ({
                 onSubmit={(event) => {
                   event.preventDefault();
                   if (isImageMode && !secureImageConnection) return;
-                  void handleOk().then((submitted) => {
+                  void handleSubmit().then((submitted) => {
                     if (submitted) {
                       setTeamAdminSelectedTeam(null);
                     }
@@ -405,7 +430,12 @@ const AddModelForm: React.FC<AddModelFormProps> = ({
                             <span className="px-4 text-muted-foreground text-sm">OR</span>
                             <div className="grow border-t border-border"></div>
                           </div>
-                          <ProviderSpecificFields selectedProvider={selectedProvider} />
+                          <ProviderSpecificFields
+                            selectedProvider={selectedProvider}
+                            context="model"
+                            onAuthTypeChange={setSelectedAuthTypeId}
+                            onCreateCredential={canCreateCredential ? openCredentialModal : undefined}
+                          />
                           {canSaveProviderCredential && (
                             <MountedFormField name={SAVE_PROVIDER_CREDENTIAL} defaultValue={true} className="mb-4">
                               {(control) => (
@@ -563,6 +593,17 @@ const AddModelForm: React.FC<AddModelFormProps> = ({
         </CardContent>
       </Card>
 
+      {isCredentialModalOpen && (
+        <CredentialModal
+          open
+          mode="add"
+          initialProvider={selectedProvider}
+          initialAuthTypeId={credentialModalAuthTypeId}
+          providerLocked
+          onCancel={() => setIsCredentialModalOpen(false)}
+          onSubmit={handleCreateCredential}
+        />
+      )}
       {isFederatedCredentialModalOpen && (
         <CredentialModal
           open
@@ -571,7 +612,7 @@ const AddModelForm: React.FC<AddModelFormProps> = ({
           initialAuthMethod="federation"
           providerLocked
           onCancel={() => setIsFederatedCredentialModalOpen(false)}
-          onSubmit={handleCreateFederatedCredential}
+          onSubmit={handleCreateCredential}
         />
       )}
       {/* Test Connection Results Modal */}

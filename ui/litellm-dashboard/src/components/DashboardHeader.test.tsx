@@ -21,4 +21,9 @@ describe("DashboardHeader", () => {
     expect(screen.getByText(title)).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "AI Gateway" })).toHaveAttribute("href", "/ui/");
   });
+
+  it("shows the deployment health control it is given among the header tools", () => {
+    render(<DashboardHeader deploymentHealth={<button type="button">Deployment health</button>} />);
+    expect(screen.getByRole("banner")).toContainElement(screen.getByRole("button", { name: "Deployment health" }));
+  });
 });

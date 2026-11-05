@@ -193,9 +193,10 @@ class OpenAICountTokensConfig:
         tools: list[dict[str, Any]],
     ) -> list[dict[str, object]]:
         """
-        Transform OpenAI chat tools format to Responses API tools format.
+        Transform OpenAI chat and Anthropic tools to Responses API tools format.
 
         Chat format:  {"type": "function", "function": {"name": "...", "parameters": {...}}}
+        Anthropic format:  {"name": "...", "input_schema": {...}}
         Responses format: {"type": "function", "name": "...", "parameters": {...}}
         """
         transformed: Final[list[dict[str, object]]] = []
@@ -211,6 +212,16 @@ class OpenAICountTokensConfig:
                 if "strict" in func:
                     item["strict"] = func["strict"]
                 transformed.append(item)
+            elif "input_schema" in tool and "name" in tool and tool.get("type") in (None, "custom"):
+                transformed.append(
+                    {
+                        "type": "function",
+                        "name": tool["name"],
+                        "description": tool.get("description", ""),
+                        "parameters": tool["input_schema"],
+                        "strict": bool(tool.get("strict")),
+                    }
+                )
             else:
                 # Pass through non-function tools (e.g., web_search, file_search)
                 transformed.append(tool)
@@ -315,7 +326,7 @@ class OpenAICountTokensConfig:
             )
         )
         return OpenAICountTokensConfig.count_request_parts(
-            ResponsesAPIRequestUtils._restore_encrypted_content_item_ids_in_input(translated.get("input")),  # pyright: ignore[reportPrivateUsage]  # the input restore inference runs
+            ResponsesAPIRequestUtils.restore_encrypted_content_item_ids_in_input(translated.get("input")),
             translated.get("instructions"),
             translated.get("tools"),
             translated.get("text"),

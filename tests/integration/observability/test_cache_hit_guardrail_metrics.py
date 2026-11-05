@@ -1,6 +1,5 @@
 import asyncio
 import json
-import subprocess
 import uuid
 from collections.abc import Callable, Generator, Mapping
 from contextlib import contextmanager
@@ -15,7 +14,7 @@ import pytest
 import yaml
 from integration._support.client import Gateway, Scenario, eventually, object_value, string_value
 from integration._support.database import read_rows
-from integration._support.process import owned_proxy_process
+from integration._support.process import OwnedProxy, owned_proxy_process
 from integration._support.wire import Reply, Request, Wire, wire_server
 from prometheus_client.parser import text_string_to_metric_families
 
@@ -178,7 +177,7 @@ class Rig:
     guardrail_name: str
     policy: Wire
     provider: Wire
-    process: subprocess.Popen[bytes]
+    owned: OwnedProxy
 
 
 @contextmanager
@@ -228,7 +227,7 @@ def _rig(
                 identity,
                 policy,
                 provider,
-                owned.process,
+                owned,
             )
 
 
@@ -413,7 +412,7 @@ def test_cache_hit_post_call_reject_keeps_deployment_labels_anthropic(gateway: G
             raised = True
         assert raised, "cache-hit post_call guardrail did not reject /v1/messages"
         assert rig.provider.received.qsize() == 1, rig.provider.drain()
-        _expect_metrics(rig, 1, 0, api_provider="anthropic", pf_id="None")
+        _expect_metrics(rig, 1, 0, api_provider="anthropic")
 
 
 def test_cache_hit_post_call_reject_keeps_deployment_labels_responses(gateway: Gateway, tmp_path: Path) -> None:
@@ -430,7 +429,7 @@ def test_cache_hit_post_call_reject_keeps_deployment_labels_responses(gateway: G
         )
         assert reject.status_code == 400, reject.text
         assert rig.provider.received.qsize() == 1, rig.provider.drain()
-        _expect_metrics(rig, 1, 0, pf_id="None")
+        _expect_metrics(rig, 1, 0)
         _assert_spend(_call_id(reject), rig)
 
 

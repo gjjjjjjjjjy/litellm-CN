@@ -4,13 +4,18 @@ import threading
 from collections.abc import Mapping
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass
+from pathlib import Path
 from types import MappingProxyType
 from typing import Final, Literal
 from urllib.parse import urlsplit
 
 import httpx
+import psutil
+import pytest
 from integration._support.client import Gateway, eventually
-from integration._support.wire import wire_server
+from integration._support.process import graceful_stop_seconds, owned_proxy_process
+from integration._support.wire import Wire, wire_server
+from integration._support.ports import allocate_port
 from integration.authorization._responses_compact import (
     ALIASES,
     OTHER_TEAM_DETAIL,
@@ -113,6 +118,13 @@ def _assert_verdict(outcome: _Outcome, model: str) -> None:
     assert_compacted_reply(outcome.response, model, outcome.call.text)
 
 
+def _served(outcome: _Outcome, model: str) -> bool:
+    if outcome.response is None or outcome.response.status_code >= 500:
+        return False
+    _assert_verdict(outcome, model)
+    return True
+
+
 def _texts(outcomes: tuple[_Outcome, ...], kinds: tuple[_Kind, ...]) -> frozenset[str]:
     return frozenset(outcome.call.text for outcome in outcomes if outcome.call.kind in kinds)
 
@@ -124,6 +136,15 @@ def _assert_upstream(
         text: (upstream_compact_body(text, {"previous_response_id": minted_id(created)}),) for text in owner_texts
     }
     assert {text: compact_hits(received, text) for text in refused_texts} == dict.fromkeys(refused_texts, ())
+
+
+def _held_connections(pid: int, wire: Wire) -> int:
+    port: Final = urlsplit(wire.url).port
+    return sum(
+        1
+        for connection in psutil.Process(pid).net_connections(kind="tcp")
+        if connection.status == psutil.CONN_ESTABLISHED and connection.raddr and connection.raddr.port == port
+    )
 
 
 def _settled(target: _Target) -> bool:
@@ -138,9 +159,9 @@ def _settled(target: _Target) -> bool:
 def test_upstream_outage_mid_burst_keeps_refusals_and_lands_each_owner_compact_once(gateway: Gateway) -> None:
     upstream: Final = CompactUpstream()
     created: Final = marker("mint")
+    port: Final = allocate_port()
     with gateway.scenario() as scenario:
-        with wire_server(upstream.respond) as first:
-            port: Final = urlsplit(first.url).port
+        with wire_server(upstream.respond, port=port) as first:
             actors: Final = tenants(scenario, first)
             target: Final = _Target(gateway, actors, mint(gateway, actors.owner, actors.model, created), vendor_id())
             upstreamed(first)
@@ -148,7 +169,6 @@ def test_upstream_outage_mid_burst_keeps_refusals_and_lands_each_owner_compact_o
             before_received: Final = upstreamed(first)
         during: Final = _send_all(target, _calls("during", 16))
         alive: Final = gateway.request("GET", "/health/liveliness")
-        assert port is not None
         with wire_server(upstream.respond, port=port) as second:
             eventually(lambda: _settled(target), lambda settled: settled, seconds=60)
             after: Final = _send_all(target, _calls("after", 16))
@@ -198,3 +218,61 @@ def test_held_owner_compacts_do_not_hold_up_refusals(gateway: Gateway) -> None:
         _assert_verdict(outcome, actors.model)
     _assert_upstream(received, _texts(served, _OWNER), _texts(refused, _REFUSING), created)
     assert_compact_rows(actors.owner, _texts(served, _OWNER))
+
+
+@pytest.mark.timeout(4 * graceful_stop_seconds() + 300)
+def test_worker_kill_and_proxy_restart_keep_compact_ownership(gateway: Gateway, tmp_path: Path) -> None:
+    kill_gate: Final = threading.Event()
+    stop_gate: Final = threading.Event()
+    upstream: Final = CompactUpstream(MappingProxyType({"heldkill": kill_gate, "heldstop": stop_gate}))
+    created: Final = marker("mint")
+    with wire_server(upstream.respond) as wire, gateway.scenario() as scenario:
+        actors: Final = tenants(scenario, wire)
+        with owned_proxy_process(gateway, tmp_path, {}, workers=2) as first:
+            workers: Final = eventually(
+                first.worker_pids, lambda found: len(found) == 2, seconds=graceful_stop_seconds() + 60
+            )
+            target: Final = _Target(
+                first.gateway, actors, mint(first.gateway, actors.owner, actors.model, created), vendor_id()
+            )
+            upstreamed(wire)
+            held_kill: Final = _calls("heldkill", 12, _OWNER)
+            with ThreadPoolExecutor(max_workers=len(held_kill)) as pool:
+                try:
+                    in_flight: Final = _submit(pool, target, held_kill)
+                    eventually(lambda: wire.received.qsize(), lambda size: size >= len(held_kill), seconds=90)
+                    held_by: Final = MappingProxyType({pid: _held_connections(pid, wire) for pid in workers})
+                    victim: Final = max(workers, key=held_by.__getitem__)
+                    with first.replacing_worker(victim) as kill:
+                        kill()
+                        kill_gate.set()
+                        killed: Final = _results(in_flight)
+                finally:
+                    kill_gate.set()
+            after_kill: Final = _send_all(target, _calls("after_kill", 12))
+            kill_received: Final = upstreamed(wire)
+            held_stop: Final = _calls("heldstop", 8, _OWNER)
+            with ThreadPoolExecutor(max_workers=len(held_stop)) as pool:
+                try:
+                    stopping: Final = _submit(pool, target, held_stop)
+                    eventually(lambda: wire.received.qsize(), lambda size: size >= len(held_stop), seconds=90)
+                    first.begin_shutdown()
+                    stop_gate.set()
+                    stopped: Final = _results(stopping)
+                finally:
+                    stop_gate.set()
+        stop_received: Final = upstreamed(wire)
+        with owned_proxy_process(gateway, tmp_path, {}, workers=2) as second:
+            rebooted: Final = _send_all(
+                _Target(second.gateway, actors, target.owned, target.foreign), _calls("rebooted", 12)
+            )
+            reboot_received: Final = upstreamed(wire)
+    assert sum(held_by.values()) == len(held_kill) and held_by[victim] > 0, held_by
+    served_through_kill: Final = tuple(outcome for outcome in killed if _served(outcome, actors.model))
+    assert len(served_through_kill) == len(held_kill) - held_by[victim], (held_by, killed)
+    for outcome in (*after_kill, *stopped, *rebooted):
+        _assert_verdict(outcome, actors.model)
+    _assert_upstream(kill_received, _texts((*killed, *after_kill), _OWNER), _texts(after_kill, _REFUSING), created)
+    _assert_upstream(stop_received, _texts(stopped, _OWNER), frozenset(), created)
+    _assert_upstream(reboot_received, _texts(rebooted, _OWNER), _texts(rebooted, _REFUSING), created)
+    assert_compact_rows(actors.owner, _texts((*served_through_kill, *after_kill, *rebooted), _OWNER))

@@ -54,7 +54,7 @@ describe("focused dashboard header", () => {
     expect(screen.queryByRole("link", { name: "Docs" })).not.toBeInTheDocument();
     expect(fetch).not.toHaveBeenCalled();
 
-    await user.click(screen.getByRole("button", { name: "Switch to dark mode (beta)" }));
+    await user.click(screen.getByRole("button", { name: "Switch to dark mode" }));
     expect(await screen.findByRole("button", { name: "Switch to light mode" })).toBeInTheDocument();
     expect(document.documentElement).toHaveClass("dark");
     expect(fetch).not.toHaveBeenCalled();

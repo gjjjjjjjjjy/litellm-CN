@@ -2,7 +2,7 @@
 
 中文词库、术语规则和构建脚本随 Fork 一起维护。构建时在临时源码副本中应用译文，并把 Fork 的后端代码（如新增的 Moark / Gitee AI 服务商）一起打包，生成镜像 `litellm-local:zh-cn`
 
-`litellm_zh_cn` 分支当前基于 `v1.106.6` 稳定版维护中文功能，`main` 分支用于同步官方上游。`origin` 指向自己的 Fork，`upstream` 指向 `BerriAI/litellm`
+`litellm_zh_cn` 分支当前基于 `v1.108.0` 稳定版维护中文功能，`main` 分支用于同步官方上游。`origin` 指向自己的 Fork，`upstream` 指向 `BerriAI/litellm`
 
 ## 构建和启动
 
@@ -13,7 +13,7 @@
 Fork 源码和后端基础镜像需使用同一版本，版本不一致时构建直接报错。当前分支的构建命令为
 
 ```bash
-./localization/zh-CN/build.sh "$PWD" ghcr.io/berriai/litellm:v1.106.6
+./localization/zh-CN/build.sh "$PWD" ghcr.io/berriai/litellm:v1.108.0
 ./local-dev/start.sh
 ```
 
@@ -32,7 +32,7 @@ docker compose -p litellm-cn -f docker-compose.yml -f docker-compose.local-zh.ym
 ```bash
 HTTPS_PROXY=http://host.docker.internal:7897 \
 HTTP_PROXY=http://host.docker.internal:7897 \
-./localization/zh-CN/build.sh "$PWD" ghcr.io/berriai/litellm:v1.106.6
+./localization/zh-CN/build.sh "$PWD" ghcr.io/berriai/litellm:v1.108.0
 ```
 
 构建执行补丁测试、TypeScript 检查和 Next.js 静态页面生成。构建结束后自动删除临时源码与依赖
@@ -108,7 +108,7 @@ git push origin litellm_zh_cn
 ./local-dev/start.sh
 ```
 
-浅克隆需要补齐历史后才能可靠计算合并关系，可先执行 `git fetch --unshallow upstream`。新版本改变根布局或构建工具时，按实际错误调整 `prepare-ui.mjs` 或构建脚本
+浅克隆计算不出合并基点时，不必补齐全部历史：中文分支已完整包含上一个稳定版标签，用它作为基点合并即可，例如 `git merge-recursive v1.106.6 -- HEAD vX.Y.Z`，解决冲突后写入 `.git/MERGE_HEAD` 再提交。新版本改变根布局或构建工具时，按实际错误调整 `prepare-ui.mjs` 或构建脚本
 
 ## 许可证
 

@@ -80,7 +80,7 @@ def _read_stream(
         return "".join(_content(line, content_received, done_received) for line in response.iter_lines())
 
 
-@pytest.mark.parametrize("buffering", [None, True], ids=["omitted", "enabled"])
+@pytest.mark.parametrize("buffering", [None, True, False], ids=["omitted", "enabled", "disabled"])
 def test_detect_only_decision_pipeline_respects_buffering(
     gateway: Gateway,
     tmp_path: Path,
@@ -224,7 +224,14 @@ def test_detect_only_decision_pipeline_respects_buffering(
                 )
                 try:
                     assert judge_entered.wait(timeout=15), "The completed chat response never reached the judge"
-                    assert not content_received.wait(timeout=1), "Pipeline released content while its judge was held"
+                    if buffering is False:
+                        assert content_received.wait(timeout=5), (
+                            "Pipeline did not release explicitly unbuffered content"
+                        )
+                    else:
+                        assert not content_received.wait(timeout=1), (
+                            "Pipeline released content while its judge was held"
+                        )
                     assert not result.done(), "Client stream ended before the judge verdict"
                 finally:
                     release_judge.set()

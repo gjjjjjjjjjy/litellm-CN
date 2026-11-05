@@ -492,6 +492,9 @@ class BaseDecisionsConfig(ABC):
     def resolve_api_key(self, api_key: str | None) -> str | None:
         return api_key or self._first_secret(self.api_key_env)
 
+    def resolve_connection(self, api_base: str | None, api_key: str | None) -> tuple[str | None, str | None]:
+        return self.resolve_api_base(api_base), self.resolve_api_key(api_key)
+
     @staticmethod
     def _first_secret(names: tuple[str, ...]) -> str | None:
         return next((value for value in (get_secret_str(name) for name in names) if value), None)
@@ -534,7 +537,11 @@ class BaseDecisionsConfig(ABC):
     def supports_assets(self, headers: Mapping[str, str]) -> bool:
         return False
 
-    def supports_box_questions(self, model: str, custom_llm_provider: str, headers: Mapping[str, str]) -> bool:
+    def supports_box_questions(
+        self, model: str, custom_llm_provider: str, headers: Mapping[str, str], deployment_flag: bool | None
+    ) -> bool:
+        if deployment_flag is not None:
+            return deployment_flag
         return _is_decisions_model(model, custom_llm_provider) and litellm.supports_box_questions(
             model=model, custom_llm_provider=custom_llm_provider
         )

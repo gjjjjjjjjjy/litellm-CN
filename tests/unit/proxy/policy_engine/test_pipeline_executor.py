@@ -15,17 +15,23 @@ import pytest
 import litellm
 from litellm.caching.dual_cache import DualCache
 from litellm.integrations.custom_guardrail import CustomGuardrail
+from litellm.litellm_core_utils.litellm_logging import Logging as LiteLLMLoggingObj
+from litellm.llms.base_llm.guardrail_translation.utils import UnappliableRequestRewrite
 from litellm.proxy._types import UserAPIKeyAuth
 from litellm.proxy.guardrails.guardrail_hooks.custom_code.custom_code_guardrail import (
     CustomCodeGuardrail,
 )
-from litellm.proxy.policy_engine.pipeline_executor import PipelineExecutor, UndeliverableStreamRewrite
+from litellm.proxy.policy_engine.pipeline_executor import (
+    PipelineExecutor,
+    UndeliverableStreamRewrite,
+    pipeline_step_is_detect_only,
+)
 from litellm.types.guardrails import GuardrailEventHooks
 from litellm.types.proxy.policy_engine.pipeline_types import (
     GuardrailPipeline,
     PipelineStep,
 )
-from litellm.types.utils import CallTypesLiteral
+from litellm.types.utils import CallTypesLiteral, GenericGuardrailAPIInputs
 
 try:
     from fastapi.exceptions import HTTPException
@@ -55,6 +61,25 @@ class AlwaysFailGuardrail(CustomGuardrail):
     async def async_pre_call_hook(self, user_api_key_dict, cache, data, call_type):
         self.calls += 1
         raise HTTPException(status_code=400, detail="Content policy violation")
+
+
+class UnappliableRewriteGuardrail(CustomGuardrail):
+    """Raises the error an endpoint translation raises for a rewrite it cannot apply."""
+
+    def __init__(self, guardrail_name: str):
+        super().__init__(
+            guardrail_name=guardrail_name,
+            event_hook="pre_call",
+            default_on=True,
+        )
+        self.calls = 0
+
+    def should_run_guardrail(self, data, event_type) -> bool:
+        return True
+
+    async def async_pre_call_hook(self, user_api_key_dict, cache, data, call_type):
+        self.calls += 1
+        raise UnappliableRequestRewrite(self.guardrail_name)
 
 
 class HttpStatusGuardrail(CustomGuardrail):
@@ -791,6 +816,38 @@ async def test_on_error_next_fallback_on_api_outage_on_fail_blocks_content(monke
     assert result.step_results[1].outcome == "pass"
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "on_fail, on_error",
+    [("block", "allow"), ("next", "block"), ("allow", "block"), ("allow", "allow"), ("next", "next"), ("next", None)],
+)
+async def test_unappliable_rewrite_blocks_whatever_on_fail_and_on_error_say(monkeypatch, on_fail, on_error):
+    """
+    A rewrite the endpoint cannot apply blocks the pipeline, so no on_fail or on_error action sends the original request on.
+    """
+    rewriter = UnappliableRewriteGuardrail("rewriter")
+    later = AlwaysPassGuardrail("later-step")
+    monkeypatch.setattr(litellm, "callbacks", [rewriter, later])
+
+    result = await PipelineExecutor.execute_steps(
+        steps=[
+            PipelineStep(guardrail="rewriter", on_pass="next", on_fail=on_fail, on_error=on_error),
+            PipelineStep(guardrail="later-step", on_pass="allow", on_fail="block"),
+        ],
+        mode="pre_call",
+        data={"messages": [{"role": "user", "content": "card 4111 1111 1111 1111"}]},
+        user_api_key_dict=MagicMock(),
+        call_type="completion",
+        policy_name="rewrite-policy",
+    )
+
+    assert rewriter.calls == 1
+    assert later.calls == 0
+    assert result.terminal_action == "block"
+    assert result.step_results[0].action_taken == "block"
+    assert isinstance(result.original_exception, UnappliableRequestRewrite)
+
+
 @pytest.mark.skipif(HTTPException is None, reason="fastapi not installed")
 @pytest.mark.asyncio
 async def test_on_fail_next_on_content_on_error_block_stops_api_fallback(monkeypatch):
@@ -1101,6 +1158,7 @@ async def test_pipeline_step_keeps_native_hook_when_opted_out(monkeypatch):
         data=data,
         user_api_key_dict=MagicMock(),
         call_type="completion",
+        metadata_key="metadata",
     )
 
     assert outcome == "pass"
@@ -1214,7 +1272,7 @@ def _assert_passed_with_discard_warning(result, caplog, reason):
     assert len(discard_warnings) == 1
     assert reason in discard_warnings[0]
     assert "text rewrites included" in discard_warnings[0]
-    assert "masker" not in ((result.modified_data or {}).get("metadata") or {}).get("applied_guardrails", [])
+    assert result.modified_data["metadata"]["applied_guardrails"] == ["masker"]
 
 
 @pytest.mark.asyncio
@@ -1374,6 +1432,60 @@ async def test_streaming_step_records_the_guardrail_in_the_applied_guardrails_he
 
     result = await _run_streaming_step(_WritingTranslation(), [_chunk()])
 
+    assert result.modified_data["metadata"]["applied_guardrails"] == ["masker"]
+
+
+class _SelfRecordingGuardrail(_TextReturningGuardrail):
+    records_own_guardrail_information = True
+
+
+@pytest.mark.asyncio
+async def test_streaming_step_whose_guardrail_records_its_own_results_is_named(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(litellm, "callbacks", [_SelfRecordingGuardrail(["hello world"])])
+
+    result = await _run_streaming_step(_WritingTranslation(), [_chunk()])
+
+    assert result.modified_data["metadata"]["applied_guardrails"] == ["masker"]
+
+
+class _LitellmMetadataOpeningGuardrail(CustomGuardrail):
+    """Opens ``litellm_metadata`` on the request while scanning, as the A2A translation does."""
+
+    def __init__(self) -> None:
+        super().__init__(guardrail_name="masker", event_hook="post_call", default_on=True)
+
+    async def apply_guardrail(
+        self,
+        inputs: GenericGuardrailAPIInputs,
+        request_data: dict[str, object],
+        input_type: Literal["request", "response"],
+        logging_obj: LiteLLMLoggingObj | None = None,
+    ) -> GenericGuardrailAPIInputs:
+        request_data["litellm_metadata"] = {"user_api_key_hash": "hashed"}
+        return inputs
+
+
+@pytest.mark.asyncio
+async def test_streaming_step_is_named_in_the_metadata_the_request_started_with(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(litellm, "callbacks", [_LitellmMetadataOpeningGuardrail()])
+
+    result = await _run_streaming_step(_WritingTranslation(), [_chunk()])
+
+    assert result.modified_data["metadata"]["applied_guardrails"] == ["masker"]
+    assert "applied_guardrails" not in result.modified_data["litellm_metadata"]
+
+
+@pytest.mark.asyncio
+async def test_streaming_step_that_flags_the_stream_is_named_when_the_pipeline_moves_on(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(litellm, "callbacks", [_BlockingStreamGuardrail()])
+
+    result = await _run_streaming_step(_WritingTranslation(), [_chunk()])
+
+    assert [(step.outcome, step.action_taken) for step in result.step_results] == [("fail", "next")]
     assert result.modified_data["metadata"]["applied_guardrails"] == ["masker"]
 
 
@@ -1794,3 +1906,24 @@ def test_undeliverable_stream_rewrite_keeps_its_reason_through_a_copy(clone):
     assert copied.reason == "the translation refused it"
     assert str(copied) == str(original)
     assert str(copied).endswith("cannot be written back to the stream: the translation refused it")
+
+
+@pytest.mark.parametrize(
+    ("on_pass", "on_fail", "on_error", "detect_only"),
+    (
+        pytest.param("allow", "next", None, True, id="allow-next"),
+        pytest.param("next", "allow", "next", True, id="next-allow-next"),
+        pytest.param("allow", "next", "allow", True, id="allow-next-allow"),
+        pytest.param("allow", "block", None, False, id="on_fail-block"),
+        pytest.param("allow", "next", "block", False, id="on_error-block"),
+        pytest.param("allow", "modify_response", None, False, id="on_fail-modify_response"),
+        pytest.param("modify_response", "next", None, False, id="on_pass-modify_response"),
+        pytest.param("block", "next", None, False, id="on_pass-block"),
+    ),
+)
+def test_pipeline_step_is_detect_only_when_no_reachable_action_touches_the_response(
+    on_pass: str, on_fail: str, on_error: str | None, detect_only: bool
+) -> None:
+    step = PipelineStep(guardrail="scanner", on_pass=on_pass, on_fail=on_fail, on_error=on_error)
+
+    assert pipeline_step_is_detect_only(step) is detect_only

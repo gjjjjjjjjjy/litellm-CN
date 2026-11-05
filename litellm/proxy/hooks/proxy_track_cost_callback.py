@@ -4,15 +4,15 @@ from collections.abc import Callable, Generator, Mapping, Sequence
 from contextlib import contextmanager
 from contextvars import ContextVar
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Final, Protocol, cast
+from types import MappingProxyType
+from typing import TYPE_CHECKING, Final, Protocol, TypeAlias, cast
 
 from pydantic import TypeAdapter
-from typing_extensions import TypeIs  # noqa: TID251  # TypeIs reaches typing only on 3.13
 
 import litellm
 from litellm._logging import verbose_proxy_logger
 from litellm.batches.batch_utils import batch_cost_is_final
-from litellm.constants import BACKGROUND_INTERACTION_COST_POLLING_ENABLED
+from litellm.constants import BACKGROUND_INTERACTION_COST_POLLING_ENABLED, BILLED_RETRY_ATTEMPT_METADATA_KEY
 from litellm.integrations.custom_logger import CustomLogger
 from litellm.litellm_core_utils.core_helpers import (
     budget_reservation_from_metadata,
@@ -22,6 +22,7 @@ from litellm.litellm_core_utils.core_helpers import (
 )
 from litellm.litellm_core_utils.litellm_logging import StandardLoggingPayloadSetup
 from litellm.litellm_core_utils.llm_cost_calc.guardrail_cost import guardrail_information_cost
+from litellm.llms.azure.ptu_capacity import is_str_keyed_mapping
 from litellm.proxy._types import UserAPIKeyAuth
 from litellm.proxy.auth.auth_checks import (
     get_key_object,
@@ -53,11 +54,13 @@ from litellm.proxy.spend_tracking.spend_log_error_logger import (
 )
 from litellm.proxy.spend_tracking.spend_tracking_utils import (  # noqa: F401  # legacy module exports
     _sanitize_error_information_for_spend_logs,  # pyright: ignore[reportPrivateUsage,reportUnusedImport]  # backwards-compatible package export
+    deployment_params_provider,
     get_request_model_access_groups,
     sanitize_error_information_for_spend_logs,
     should_store_prompts_and_responses_in_spend_logs,
 )
 from litellm.proxy.utils import BilledFailedAttempt, ProxyUpdateSpend
+from litellm.types.router import Deployment
 from litellm.types.utils import (
     CallTypes,
     LiteLLMBatch,
@@ -137,20 +140,34 @@ def _proxy_stamped_used_client_oauth_token(
     return stamped if isinstance(stamped, bool) else None
 
 
+def _failure_snapshot_with_guardrails_recorded_after_it(
+    failure_snapshot: object, recorded_guardrail_information: object
+) -> Mapping[str, object] | None:
+    if (
+        not recorded_guardrail_information
+        or not isinstance(failure_snapshot, dict)
+        or failure_snapshot.get("guardrail_information")
+    ):
+        return None
+    return {**failure_snapshot, "guardrail_information": recorded_guardrail_information}
+
+
 def _proxy_spend_writer() -> DBSpendUpdateWriter:
     from litellm.proxy.proxy_server import proxy_logging_obj
 
     return proxy_logging_obj.db_spend_update_writer
 
 
-def _is_str_keyed_mapping(
-    value: object,
-) -> TypeIs[Mapping[str, object]]:  # guard-ok: standard_logging_object and kwargs are str-keyed payloads
-    return isinstance(value, Mapping)
-
-
 def _str_keyed_fields(value: object) -> Mapping[str, object]:
-    return value if _is_str_keyed_mapping(value) else {}
+    return value if is_str_keyed_mapping(value) else {}
+
+
+DeploymentLookup: TypeAlias = Callable[[str], Deployment | None]
+
+
+def _proxy_deployment(model_id: str) -> Deployment | None:
+    router: Final = get_llm_router()
+    return None if router is None else router.get_deployment(model_id=model_id)
 
 
 def _billed_failed_attempts(request_data: Mapping[str, object]) -> tuple[BilledFailedAttempt, ...]:
@@ -163,7 +180,10 @@ def _billed_failed_attempts(request_data: Mapping[str, object]) -> tuple[BilledF
 
 
 def _failure_spend_rows(
-    request_data: Mapping[str, object], final_cost: float, late_guardrails_snapshot: object
+    request_data: Mapping[str, object],
+    final_cost: float,
+    late_guardrails_snapshot: object,
+    deployment_lookup: DeploymentLookup,
 ) -> tuple[tuple[float, Mapping[str, object]], ...]:
     """One ``(response_cost, kwargs)`` per spend row a failure writes: the final attempt under the
     request id, then every earlier attempt the provider also billed under its own row."""
@@ -175,25 +195,59 @@ def _failure_spend_rows(
     return (
         (final_cost, final_row),
         *(
-            (attempt.response_cost, _attempt_spend_row_kwargs(request_data, attempt, position))
+            (
+                attempt.response_cost,
+                _attempt_spend_row_kwargs(
+                    request_data, attempt, position, _attempt_deployment(attempt, deployment_lookup)
+                ),
+            )
             for position, attempt in enumerate(_billed_failed_attempts(request_data))
         ),
     )
 
 
+def _attempt_deployment(attempt: BilledFailedAttempt, deployment_lookup: DeploymentLookup) -> Deployment | None:
+    return None if attempt.deployment_id is None else deployment_lookup(attempt.deployment_id)
+
+
+def _deployment_attribution(deployment: Deployment) -> Mapping[str, object]:
+    """The spend-log attribution fields of the deployment that served an attempt: the model string it
+    was called with, its provider, its configured ``api_base`` and its model group."""
+    return MappingProxyType(
+        {
+            "model": deployment.litellm_params.model,
+            "custom_llm_provider": deployment_params_provider(deployment.litellm_params),
+            "api_base": deployment.litellm_params.api_base,
+            "model_group": deployment.model_name,
+        }
+    )
+
+
+_NO_ATTRIBUTION: Final[Mapping[str, object]] = MappingProxyType({})
+
+
 def _attempt_spend_row_kwargs(
-    request_data: Mapping[str, object], attempt: BilledFailedAttempt, position: int
+    request_data: Mapping[str, object], attempt: BilledFailedAttempt, position: int, deployment: Deployment | None
 ) -> Mapping[str, object]:
     """The final attempt's row kwargs re-keyed for one earlier billed attempt: its own
     ``request_id`` (``<id>-attempt-<position>``, since ``request_id`` is the spend-log primary key
     and the retry count restarts after a fallback hop), its estimated usage and cost, its retry
-    count under ``attempted_retries`` and the deployment that billed it under ``model_info.id``."""
+    count under ``attempted_retries``, the deployment that billed it under ``model_info.id`` and,
+    when the router still knows that deployment, its model, provider, ``api_base`` and model group.
+    The row is stamped ``billed_retry_attempt`` so the daily spend tables keep its spend, tokens
+    and model usage without counting it as a request the caller sent."""
     suffix: Final = f"-attempt-{position}"
+    attribution: Final = _NO_ATTRIBUTION if deployment is None else _deployment_attribution(deployment)
     raw_params: Final = cast("Mapping[str, object]", request_data.get("litellm_params") or {})  # cast-ok: request dict
-    litellm_params: Final = dict(raw_params)
+    litellm_params: Final = {
+        **raw_params,
+        **({} if deployment is None else {"api_base": attribution["api_base"]}),
+    }
     metadata: Final = {
         **cast("Mapping[str, object]", litellm_params.get("metadata") or {}),  # cast-ok: request dict
         "attempted_retries": attempt.attempted_retries,
+        BILLED_RETRY_ATTEMPT_METADATA_KEY: True,
+        **({} if deployment is None else {"model_group": attribution["model_group"]}),
     }
     metadata.pop("previous_models", None)
     if attempt.deployment_id is not None:
@@ -204,6 +258,7 @@ def _attempt_spend_row_kwargs(
     litellm_params["metadata"] = metadata
     row: Final = {
         **request_data,
+        **({} if deployment is None else {k: attribution[k] for k in ("model", "custom_llm_provider")}),
         "litellm_params": litellm_params,
         "combined_usage_object": attempt.usage,
         "response_cost": attempt.response_cost,
@@ -216,7 +271,11 @@ def _attempt_spend_row_kwargs(
     if isinstance(standard_logging_object, dict):
         payload: Final = cast("Mapping[str, object]", standard_logging_object)  # cast-ok: StandardLoggingPayload dict
         if isinstance(payload.get("id"), str):
-            row["standard_logging_object"] = {**payload, "id": f"{payload['id']}{suffix}"}
+            row["standard_logging_object"] = {
+                **payload,
+                "id": f"{payload['id']}{suffix}",
+                **({} if deployment is None else {**attribution, "model_id": attempt.deployment_id}),
+            }
     return row
 
 
@@ -228,10 +287,12 @@ class _ProxyDBLogger(CustomLogger):
         turn_off_message_logging: bool = False,
         message_logging: bool = True,
         spend_writer: Callable[[], DBSpendUpdateWriter] = _proxy_spend_writer,
+        deployment_lookup: DeploymentLookup = _proxy_deployment,
     ) -> None:
         super().__init__(turn_off_message_logging=turn_off_message_logging, message_logging=message_logging)
         self.spend_event_producer = spend_event_producer
         self._spend_writer: Final = spend_writer
+        self._deployment_lookup: Final = deployment_lookup
 
     async def async_log_success_event(
         self, kwargs: ObjectMapping, response_obj: object, start_time: datetime, end_time: datetime
@@ -288,6 +349,8 @@ class _ProxyDBLogger(CustomLogger):
             and not (
                 RouteChecks.is_llm_api_route(route=request_route) or RouteChecks.is_info_route(route=request_route)
             )
+            or request_route is not None
+            and RouteChecks.is_dashboard_session_info_route(request_route, user_api_key_dict.team_id)
         ):
             return
 
@@ -389,6 +452,11 @@ class _ProxyDBLogger(CustomLogger):
             existing_metadata.get("standard_logging_guardrail_information")
         )
 
+        failure_snapshot_with_late_guardrails: Final = _failure_snapshot_with_guardrails_recorded_after_it(
+            request_data.get("standard_logging_object"),
+            existing_metadata.get("standard_logging_guardrail_information"),
+        )
+
         await self._write_failure_spend_rows(
             user_api_key_dict=user_api_key_dict,
             original_exception=original_exception,
@@ -396,7 +464,8 @@ class _ProxyDBLogger(CustomLogger):
             spend_rows=_failure_spend_rows(
                 cast("Mapping[str, object]", request_data),  # cast-ok: request dict, copied per row below
                 recovered_response_cost,
-                None,
+                failure_snapshot_with_late_guardrails,
+                self._deployment_lookup,
             ),
         )
 
@@ -434,7 +503,6 @@ class _ProxyDBLogger(CustomLogger):
             increment_spend_counters,
             proxy_logging_obj,
             update_cache,
-            update_cache_read_keys,
         )
 
         accounting: Final = (
@@ -462,7 +530,7 @@ class _ProxyDBLogger(CustomLogger):
                 )
                 _write_spend_metadata_to_kwargs(kwargs=kwargs, metadata=metadata)
             budget_reservation: Final = _get_budget_reservation_from_metadata(metadata=metadata)
-            if accounting is not None and budget_reservation is not None:
+            if accounting is not None and (budget_reservation is not None or litellm.apply_search_free_tier):
                 accounting.write_started = True
             if (
                 isinstance(completion_response, LiteLLMBatch)
@@ -549,13 +617,6 @@ class _ProxyDBLogger(CustomLogger):
                         request_tags=tags,
                         model_access_groups=model_access_groups,
                         project_id=project_id,
-                        update_cache_read_keys=update_cache_read_keys(
-                            user_id=user_id,
-                            end_user_id=end_user_id,
-                            team_id=team_id,
-                            tags=tags,
-                            response_cost=response_cost,
-                        ),
                     )
                     if not charged:
                         return
@@ -885,7 +946,6 @@ async def _update_database_and_spend_counters(
     request_tags: list[str] | None = None,
     model_access_groups: Sequence[str] | None = None,
     project_id: str | None = None,
-    update_cache_read_keys: Sequence[str] = (),
 ) -> bool:
     """The reservation is reconciled before the spend is persisted, from its own read. One spend counter batch then
     spans the database write and the counter update, so the post-call counters are read with a single MGET after the
@@ -927,7 +987,6 @@ async def _update_database_and_spend_counters(
             request_tags=request_tags,
             model_access_groups=model_access_groups,
             project_id=project_id,
-            update_cache_read_keys=update_cache_read_keys,
         )
 
 
@@ -948,10 +1007,7 @@ async def _update_database_and_spend_counters_in_batch(
     request_tags: list[str] | None,
     model_access_groups: Sequence[str] | None,
     project_id: str | None,
-    update_cache_read_keys: Sequence[str],
 ) -> bool:
-    from litellm.proxy.proxy_server import arm_update_cache_read
-
     try:
         writer: Final = proxy_logging_obj.db_spend_update_writer
         accounting: Final = (
@@ -991,7 +1047,6 @@ async def _update_database_and_spend_counters_in_batch(
         await _release_budget_reservation(budget_reservation=budget_reservation)
         return False
 
-    await arm_update_cache_read(update_cache_read_keys)
     try:
         await increment_spend_counters(
             token=user_api_key,

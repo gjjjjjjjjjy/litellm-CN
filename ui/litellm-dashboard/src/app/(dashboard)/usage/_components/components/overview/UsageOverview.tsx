@@ -8,7 +8,7 @@
 
 import { type ReactNode, useMemo, useState } from "react";
 import type { DailyData } from "@/components/UsagePage/types";
-import { KeyRound } from "lucide-react";
+import { KeyRound, Users } from "lucide-react";
 import { StackedUsageChart, type StackedUsageScale } from "@/components/shared/charts";
 import {
   bucketSeries,
@@ -31,6 +31,7 @@ interface UsageOverviewProps {
   requestCountsPending: boolean;
   budget: number | null;
   topKeys: ReactNode;
+  topUsers: ReactNode;
   gatewayByEndpoint: ReactNode;
   topAgents: ReactNode;
   providerBreakdown: ReactNode;
@@ -52,6 +53,7 @@ export default function UsageOverview({
   loading,
   requestCountsPending,
   topKeys,
+  topUsers,
   gatewayByEndpoint,
   topAgents,
   providerBreakdown,
@@ -79,8 +81,8 @@ export default function UsageOverview({
       />
 
       <Panel
-        title="Top models"
-        subtitle={`${granularity === "day" ? "Daily" : "Weekly"} ${METRIC_NOUN[state.metric]}, top 8 stacked`}
+        title={`${granularity === "day" ? "Daily" : "Weekly"} usage`}
+        subtitle={`${granularity === "day" ? "Daily" : "Weekly"} ${METRIC_NOUN[state.metric]} by model (top 8, rest grouped as Other)`}
         action={
           <>
             <BreakdownControls state={state} onChange={setSelectedState} showDimension={false} />
@@ -112,7 +114,8 @@ export default function UsageOverview({
             />
           )}
         </div>
-        <div className={cn("border-t py-2", PANEL_INSET_X)}>
+        <div className={cn("border-t pt-3 pb-2", PANEL_INSET_X)}>
+          <h4 className="text-sm leading-5 font-medium text-foreground">Top models</h4>
           <Leaderboard
             ranking={ranking}
             series={dailySeries}
@@ -129,6 +132,9 @@ export default function UsageOverview({
 
       <Panel icon={KeyRound} title="Top Virtual Keys">
         {topKeys}
+      </Panel>
+      <Panel icon={Users} title="Top Users by Spend">
+        {topUsers}
       </Panel>
       {gatewayByEndpoint}
     </div>

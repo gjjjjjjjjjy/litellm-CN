@@ -7,8 +7,8 @@ from types import MappingProxyType
 from typing import Final
 
 import httpx
-from integration._support.client import JSON_OBJECT, Gateway, object_value
 
+from integration._support.client import Gateway, JSON_OBJECT, object_value
 from litellm.constants import PROXY_CONFIG_RELOAD_INTERVAL_SECONDS
 
 

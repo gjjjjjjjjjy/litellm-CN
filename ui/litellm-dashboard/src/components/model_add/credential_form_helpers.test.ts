@@ -172,14 +172,12 @@ describe("initialFormValues", () => {
       credential_info: { custom_llm_provider: "openai" },
     };
 
-    const expectedValues = {
+    expect(initialFormValues(credential, null)).toEqual({
       api_key: "sk-a****",
       credential_name: "legacy-a",
       display_name: "Legacy A",
       custom_llm_provider: "openai",
-    };
-
-    expect(initialFormValues(credential, null)).toEqual(expectedValues);
+    });
   });
 
   it("prefills an empty label when the credential has none and only the provider when adding", () => {

@@ -1,8 +1,10 @@
 import json
+from pathlib import Path
 from typing import Final
 
 import pytest
 
+from litellm.llms.bedrock.common_utils import get_bedrock_base_model
 from litellm.proxy.common_utils.token_count_settings import (
     ProviderCountFailure,
     TokenCountModel,
@@ -17,6 +19,7 @@ _DEFAULT: Final = {
     "token_count_framing": 97,
     "token_count_model": {"model": "anthropic.claude-opus-5-5", "region": "us-east-1"},
 }
+_COST_MAP: Final = Path(__file__).parents[4] / "model_prices_and_context_window.json"
 
 
 def _in_us_west_2() -> str:
@@ -30,6 +33,13 @@ def _in_us_west_2() -> str:
         (
             {"token_count_framing": 5, "token_count_model": {"model": "custom-model", "region": "ap-southeast-4"}},
             TokenCountSettings(framing=5, count_model=TokenCountModel(model="custom-model", region="ap-southeast-4")),
+        ),
+        (
+            {"token_count_model": {"model": "custom-model", "litellm_provider": "bedrock_mantle"}},
+            TokenCountSettings(
+                framing=97,
+                count_model=TokenCountModel(model="custom-model", region=None, litellm_provider="bedrock_mantle"),
+            ),
         ),
         (
             {"token_count_model": {"model": "custom-model"}},
@@ -92,13 +102,15 @@ def test_shipped_count_region_never_takes_the_prompt_out_of_the_deployment_geogr
     assert settings.count_model == TokenCountModel(model="anthropic.claude-opus-5-5", region=expected_region)
 
 
-def test_shipped_global_count_model_keeps_its_region_for_a_deployment_in_any_geography() -> None:
+@pytest.mark.parametrize("prefix", ("", "bedrock/", "bedrock_mantle/"))
+def test_shipped_global_count_model_keeps_its_region_for_a_deployment_in_any_geography(prefix: str) -> None:
+    model: Final = f"{prefix}global.anthropic.claude-opus-5-5"
     settings: Final = resolve_token_count_settings(
         configured={},
-        default={"token_count_model": {"model": "global.anthropic.claude-opus-5-5", "region": "us-east-1"}},
+        default={"token_count_model": {"model": model, "region": "us-east-1"}},
         deployment_region=lambda: "eu-west-1",
     )
-    assert settings.count_model == TokenCountModel(model="global.anthropic.claude-opus-5-5", region="us-east-1")
+    assert settings.count_model == TokenCountModel(model=model, region="us-east-1")
 
 
 def test_shipped_australian_count_region_stays_with_an_australian_deployment() -> None:
@@ -153,6 +165,26 @@ def test_count_source_fields_name_the_counting_model_only_when_token_count_model
     source: str | None, expected: dict[str, str]
 ) -> None:
     assert count_source_fields(_counted(source)) == expected
+
+
+def test_every_shipped_token_count_model_resolves_to_a_mapped_aws_model() -> None:
+    cost_map: Final = json.loads(_COST_MAP.read_text())
+    aws_models: Final = frozenset(
+        get_bedrock_base_model(name)
+        for name, entry in cost_map.items()
+        if isinstance(entry, dict) and entry.get("litellm_provider") in ("bedrock", "bedrock_converse")
+    )
+    count_models: Final = {
+        name: entry["token_count_model"]
+        for name, entry in cost_map.items()
+        if isinstance(entry, dict) and "token_count_model" in entry
+    }
+    assert count_models
+    for name, count_model in count_models.items():
+        model: Final = count_model["model"]
+        assert get_bedrock_base_model(model) in aws_models
+        assert cost_map[name]["litellm_provider"] in ("bedrock", "bedrock_converse")
+        assert "region" not in count_model or count_model["region"].strip()
 
 
 _UPSTREAM_404: Final = {

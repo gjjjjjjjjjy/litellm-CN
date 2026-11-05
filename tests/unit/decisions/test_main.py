@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import copy
 import json
 import re
 import threading
@@ -33,6 +34,7 @@ from litellm.types.decisions import (
     OpenAIDecisionResponse,
     ScoreAnswer,
 )
+from litellm.types.router import ModelInfo
 from litellm.types.utils import LlmProviders
 from litellm.utils import ProviderConfigManager
 
@@ -82,7 +84,7 @@ _STRANDS_RESPONSE: Final[Mapping[str, object]] = {
     "latency_ms": 3722.17,
 }
 _DATABRICKS_ENDPOINT: Final = "databricks-openjev-qwen35-4b"
-_DATABRICKS_RESPONSE: Final[Mapping[str, object]] = {
+_DATABRICKS_ENDPOINT_RESPONSE: Final[Mapping[str, object]] = {
     "model": "/mosaicml/local_model",
     "answers": {
         "is_defect": {"type": "noul", "noul": 0.9},
@@ -94,6 +96,21 @@ _DATABRICKS_RESPONSE: Final[Mapping[str, object]] = {
         },
     },
     "usage": {"input_tokens": 214, "output_tokens": 0},
+}
+_DATABRICKS_ROUTE: Final = "https://workspace.example/api/2.0/ai-functions/ai-decide"
+_DATABRICKS_RESPONSE: Final[Mapping[str, object]] = {
+    "response": {
+        "answers": {
+            "is_defect": {"type": "noul", "probability": 0.9},
+            "sentiment": {
+                "type": "choice",
+                "choice": "positive",
+                "confidence": 0.8,
+                "probabilities": {"positive": 0.8, "negative": 0.2},
+            },
+        }
+    },
+    "metadata": {"version": "1.0"},
 }
 _PROVIDERS: Final[tuple[tuple[str, str, str, str], ...]] = (
     (
@@ -154,6 +171,25 @@ async def _drain_logging_worker() -> None:
 def _httpx_transport(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(litellm, "disable_aiohttp_transport", True)
     litellm.in_memory_llm_clients_cache.flush_cache()
+
+
+_GPT_6_LUNA_DECISIONS_INPUT_RATE: Final = 1e-07
+_MICROSOFT_DECISION_1_DECISIONS_INPUT_RATE: Final = 7e-08
+_DECISIONS_PRICING_FIELDS: Final[dict[str, dict[str, object]]] = {
+    "gpt-6-luna": {
+        "input_cost_per_token_decisions": _GPT_6_LUNA_DECISIONS_INPUT_RATE,
+        "cache_read_input_token_cost_decisions": _GPT_6_LUNA_DECISIONS_INPUT_RATE,
+        "cache_creation_input_token_cost_decisions": _GPT_6_LUNA_DECISIONS_INPUT_RATE,
+        "output_cost_per_token_decisions": 0.0,
+    },
+    "azure_ai/Microsoft-Decision-1": {"input_cost_per_token_decisions": _MICROSOFT_DECISION_1_DECISIONS_INPUT_RATE},
+}
+
+
+@pytest.fixture
+def decisions_pricing_fields(monkeypatch: pytest.MonkeyPatch) -> None:
+    for key, fields in _DECISIONS_PRICING_FIELDS.items():
+        monkeypatch.setitem(litellm.model_cost, key, {**litellm.model_cost[key], **fields})
 
 
 @pytest.mark.asyncio
@@ -311,6 +347,79 @@ def test_decisions_cost_uses_litellm_token_pricing() -> None:
     assert cost == pytest.approx(expected_cost)
 
 
+@pytest.mark.asyncio
+async def test_openai_decisions_uses_evaluation_pricing_and_explicit_base_model(
+    respx_mock: respx.MockRouter,
+    decisions_pricing_fields: None,
+) -> None:
+    route: Final = respx_mock.post("https://api.openai.com/v1/decisions").respond(json=_OPENAI_RESPONSE)
+    response: Final = await litellm.adecisions(
+        model="openai/gpt-6-luna",
+        input="The package arrived broken.",
+        questions=[{"type": "predicate", "name": "is_defect", "instructions": "Is this a defect?"}],
+        api_key="caller-key",
+        api_base="https://api.openai.com/v1",
+    )
+    chat_cost: Mapping[str, object] = litellm.model_cost["gpt-6-luna"]
+    expected_chat_cost: Final = (
+        (_INPUT_TOKENS - _CACHED_TOKENS - _CACHE_WRITE_TOKENS) * float(chat_cost["input_cost_per_token"])
+        + _CACHED_TOKENS * float(chat_cost["cache_read_input_token_cost"])
+        + _CACHE_WRITE_TOKENS * float(chat_cost["cache_creation_input_token_cost"])
+        + _OUTPUT_TOKENS * float(chat_cost["output_cost_per_token"])
+    )
+
+    assert route.called
+    assert response._hidden_params["model"] == "openai/gpt-6-luna"
+    assert response._hidden_params["provider_response_model"] == "openai/gpt-6-luna"
+    assert litellm.completion_cost(completion_response=response) == pytest.approx(
+        _INPUT_TOKENS * _GPT_6_LUNA_DECISIONS_INPUT_RATE
+    )
+    assert litellm.completion_cost(completion_response=response, call_type="acompletion") == pytest.approx(
+        expected_chat_cost
+    )
+
+
+@pytest.mark.asyncio
+async def test_systemone_uses_evaluation_pricing(respx_mock: respx.MockRouter, decisions_pricing_fields: None) -> None:
+    route: Final = respx_mock.post("https://api.openai.com/v1/decisions").respond(json=_OPENAI_RESPONSE)
+    response: Final = await litellm.asystemone(
+        model="openai/gpt-6-luna",
+        state="The package arrived broken.",
+        questions=_QUESTIONS,
+        api_key="caller-key",
+        api_base="https://api.openai.com/v1",
+    )
+
+    assert route.called
+    assert response._hidden_params["model"] == "openai/gpt-6-luna"
+    assert response._hidden_params["provider_response_model"] == "openai/gpt-6-luna"
+    assert litellm.completion_cost(completion_response=response) == pytest.approx(
+        _INPUT_TOKENS * _GPT_6_LUNA_DECISIONS_INPUT_RATE
+    )
+
+
+@pytest.mark.asyncio
+async def test_systemone_falls_back_to_plain_pricing_without_decisions_row(
+    respx_mock: respx.MockRouter,
+) -> None:
+    route: Final = respx_mock.post("https://decisions.example/v1/decisions").respond(json=_RESPONSE)
+    response: Final = await litellm.asystemone(
+        model="perplexity/sonar",
+        state="review",
+        questions={"is_defect": {"type": "noul", "instructions": "Is this a defect?"}},
+        api_key="caller-key",
+        api_base="https://decisions.example/v1",
+    )
+    plain_cost: Mapping[str, object] = litellm.model_cost["perplexity/sonar"]
+
+    assert route.called
+    assert response._hidden_params["provider_response_model"] == "perplexity/sonar"
+    assert litellm.completion_cost(completion_response=response) == pytest.approx(
+        _INPUT_TOKENS * float(plain_cost["input_cost_per_token"])
+        + _OUTPUT_TOKENS * float(plain_cost["output_cost_per_token"])
+    )
+
+
 @pytest.mark.parametrize(
     "response",
     (
@@ -431,6 +540,74 @@ async def test_empty_custom_provider_falls_back_to_the_model_prefix(respx_mock: 
     assert route.called
     assert json.loads(respx_mock.calls[0].request.content)["model"] == "pplx-decider-v1-27b"
     assert response._hidden_params["custom_llm_provider"] == "perplexity"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("provider", "model"), (("laya", "english"), ("bespoke", "nimble-latest")))
+async def test_oss_classifier_env_key_goes_only_to_its_env_api_base(
+    monkeypatch: pytest.MonkeyPatch,
+    respx_mock: respx.MockRouter,
+    provider: str,
+    model: str,
+) -> None:
+    monkeypatch.setenv(f"{provider.upper()}_API_BASE", "https://operator-configured.example")
+    monkeypatch.setenv(f"{provider.upper()}_API_KEY", "operator-env-key")
+    env_upstream: Final = respx_mock.post("https://operator-configured.example/v1/systemone").respond(
+        json=_STRANDS_RESPONSE
+    )
+    other_upstream: Final = respx_mock.post("https://deployment-chosen.example/v1/systemone").respond(
+        json=_STRANDS_RESPONSE
+    )
+    questions: Final = {"is_defect": {"type": "noul", "instructions": "Is this a defect?"}}
+
+    await litellm.asystemone(model=f"{provider}/{model}", state="review", questions=questions)
+    await litellm.asystemone(
+        model=f"{provider}/{model}",
+        state="review",
+        questions=questions,
+        api_base="https://deployment-chosen.example",
+        api_key="",
+    )
+    await litellm.asystemone(
+        model=f"{provider}/{model}",
+        state="review",
+        questions=questions,
+        api_base="https://operator-configured.example/",
+    )
+
+    assert [call.request.headers["authorization"] for call in env_upstream.calls] == [
+        "Bearer operator-env-key",
+        "Bearer operator-env-key",
+    ]
+    assert "authorization" not in other_upstream.calls[0].request.headers
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("model", "api_base", "error"),
+    (
+        ("laya/any-checkpoint", "https://laya.example", "laya model must be one of"),
+        ("bespoke/any-checkpoint", "https://bespoke.example", "bespoke model must be one of"),
+        ("laya/english", "https://laya.example?token=x", "must not contain credentials, a query"),
+        ("bespoke/nimble", "http://user:secret@bespoke.example", "must not contain credentials, a query"),
+        ("laya/english", "ftp://laya.example", "must be an HTTP or HTTPS server URL"),
+    ),
+)
+async def test_oss_classifier_rejects_unknown_models_and_ambiguous_bases_before_http(
+    respx_mock: respx.MockRouter,
+    model: str,
+    api_base: str,
+    error: str,
+) -> None:
+    with pytest.raises(litellm.BadRequestError, match=re.escape(error)):
+        await litellm.asystemone(
+            model=model,
+            state="review",
+            questions={"is_defect": {"type": "noul", "instructions": "Is this a defect?"}},
+            api_base=api_base,
+        )
+
+    assert len(respx_mock.calls) == 0
 
 
 @pytest.mark.asyncio
@@ -1097,7 +1274,7 @@ async def test_databricks_requires_api_base_before_http(
 
     with pytest.raises(litellm.BadRequestError, match="DATABRICKS_API_BASE"):
         await litellm.asystemone(
-            model=f"databricks/{_DATABRICKS_ENDPOINT}",
+            model="databricks/ai_decide",
             state="review",
             questions={"is_defect": {"type": "noul", "instructions": "Is this a defect?"}},
         )
@@ -1117,7 +1294,7 @@ async def test_databricks_rejects_a_serving_endpoint_name_that_would_rewrite_the
     monkeypatch.setenv("DATABRICKS_API_BASE", "https://workspace.example/serving-endpoints")
     monkeypatch.setenv("DATABRICKS_API_KEY", "dapi-key")
 
-    with pytest.raises(litellm.BadRequestError, match="bare endpoint name"):
+    with pytest.raises(litellm.BadRequestError, match="bare serving endpoint name"):
         await litellm.asystemone(
             model=f"databricks/{endpoint_name}",
             state="review",
@@ -1132,13 +1309,13 @@ async def test_databricks_requires_a_key_before_http(
     monkeypatch: pytest.MonkeyPatch,
     respx_mock: respx.MockRouter,
 ) -> None:
-    monkeypatch.setenv("DATABRICKS_API_BASE", "https://workspace.example/serving-endpoints")
+    monkeypatch.setenv("DATABRICKS_API_BASE", "https://workspace.example")
     monkeypatch.delenv("DATABRICKS_API_KEY", raising=False)
     monkeypatch.delenv("DATABRICKS_TOKEN", raising=False)
 
     with pytest.raises(litellm.AuthenticationError, match="Missing API key for Decisions provider 'databricks'"):
         await litellm.asystemone(
-            model=f"databricks/{_DATABRICKS_ENDPOINT}",
+            model="databricks/ai_decide",
             state="review",
             questions={"is_defect": {"type": "noul", "instructions": "Is this a defect?"}},
         )
@@ -1160,7 +1337,7 @@ async def test_databricks_posts_the_jev_body_to_the_serving_endpoint_invocations
     monkeypatch.setenv("DATABRICKS_TOKEN", "dapi-token")
     route: Final = respx_mock.post(
         f"https://workspace.example/serving-endpoints/{_DATABRICKS_ENDPOINT}/invocations"
-    ).respond(json=_DATABRICKS_RESPONSE)
+    ).respond(json=_DATABRICKS_ENDPOINT_RESPONSE)
     questions: Final = {
         "is_defect": {"type": "noul", "instructions": "Is this a defect?"},
         "sentiment": {"type": "choice", "criteria": {"positive": None, "negative": "unhappy"}},
@@ -1188,27 +1365,67 @@ async def test_databricks_posts_the_jev_body_to_the_serving_endpoint_invocations
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "api_base",
+    [
+        "https://workspace.example",
+        "https://workspace.example/",
+        "https://workspace.example/serving-endpoints",
+        "https://workspace.example/serving-endpoints/",
+    ],
+)
+async def test_databricks_posts_the_systemone_body_without_model_to_the_ai_decide_route(
+    monkeypatch: pytest.MonkeyPatch,
+    respx_mock: respx.MockRouter,
+    api_base: str,
+) -> None:
+    monkeypatch.setenv("DATABRICKS_API_BASE", api_base)
+    monkeypatch.delenv("DATABRICKS_API_KEY", raising=False)
+    monkeypatch.setenv("DATABRICKS_TOKEN", "dapi-token")
+    route: Final = respx_mock.post(_DATABRICKS_ROUTE).respond(json=_DATABRICKS_RESPONSE)
+    questions: Final = {
+        "is_defect": {"type": "noul", "instructions": "Is this a defect?"},
+        "sentiment": {"type": "choice", "criteria": {"positive": None, "negative": "unhappy"}},
+    }
+
+    response: Final = await litellm.adecisions(
+        model="databricks/ai_decide",
+        state={"ticket": "export hangs"},
+        questions=questions,
+    )
+
+    assert route.called
+    sent: Final = respx_mock.calls[0].request
+    assert sent.headers["authorization"] == "Bearer dapi-token"
+    assert json.loads(sent.content) == {"state": {"ticket": "export hangs"}, "questions": questions}
+    assert response.model is None
+    assert response.answers["is_defect"] == NoulAnswer(type="noul", noul=0.9)
+    assert isinstance(response.answers["sentiment"], ChoiceAnswer)
+    assert response.model_extra == {"metadata": {"version": "1.0"}}
+    assert response.hidden_params["custom_llm_provider"] == "databricks"
+    assert response.hidden_params["model"] == "databricks/ai_decide"
+
+
+@pytest.mark.asyncio
 async def test_databricks_router_deployment_sends_its_own_key_to_its_own_base(
     monkeypatch: pytest.MonkeyPatch,
     respx_mock: respx.MockRouter,
 ) -> None:
-    monkeypatch.setenv("DATABRICKS_API_BASE", "https://other-workspace.example/serving-endpoints")
+    monkeypatch.setenv("DATABRICKS_API_BASE", "https://other-workspace.example")
     monkeypatch.setenv("DATABRICKS_API_KEY", "env-key-stays-home")
     router: Final = litellm.Router(
         model_list=[
             {
                 "model_name": "decider",
                 "litellm_params": {
-                    "model": f"databricks/{_DATABRICKS_ENDPOINT}",
-                    "api_base": "https://workspace.example/serving-endpoints",
+                    "model": "databricks/ai_decide",
+                    "api_base": "https://workspace.example",
                     "api_key": "deployment-key",
                 },
             }
         ]
     )
-    route: Final = respx_mock.post(
-        f"https://workspace.example/serving-endpoints/{_DATABRICKS_ENDPOINT}/invocations"
-    ).respond(json=_DATABRICKS_RESPONSE)
+    route: Final = respx_mock.post(_DATABRICKS_ROUTE).respond(json=_DATABRICKS_RESPONSE)
 
     response: Final = await router.asystemone(
         model="decider",
@@ -1258,6 +1475,7 @@ async def test_openai_decisions_translate_systemone_to_the_openai_wire_contract_
     url: str,
     monkeypatch: pytest.MonkeyPatch,
     respx_mock: respx.MockRouter,
+    decisions_pricing_fields: None,
 ) -> None:
     monkeypatch.setattr(litellm, "api_base", None)
     monkeypatch.delenv("OPENAI_BASE_URL", raising=False)
@@ -1297,13 +1515,7 @@ async def test_openai_decisions_translate_systemone_to_the_openai_wire_contract_
     }
     assert response.answers == {"is_defect": NoulAnswer(type="noul", noul=0.9)}
     assert response.hidden_params["custom_llm_provider"] == "openai"
-    luna_cost: Final = litellm.model_cost["gpt-6-luna"]
-    expected_cost: Final = (
-        (_INPUT_TOKENS - _CACHED_TOKENS - _CACHE_WRITE_TOKENS) * float(luna_cost["input_cost_per_token"])
-        + _CACHED_TOKENS * float(luna_cost["cache_read_input_token_cost"])
-        + _CACHE_WRITE_TOKENS * float(luna_cost["cache_creation_input_token_cost"])
-        + _OUTPUT_TOKENS * float(luna_cost["output_cost_per_token"])
-    )
+    expected_cost: Final = _INPUT_TOKENS * _GPT_6_LUNA_DECISIONS_INPUT_RATE
     assert expected_cost > 0
     assert litellm.completion_cost(completion_response=response) == pytest.approx(expected_cost)
 
@@ -2409,6 +2621,28 @@ async def test_azure_ai_decision_posts_deployment_to_foundry_systemone_route(
 
 
 @pytest.mark.asyncio
+async def test_azure_ai_systemone_uses_its_decisions_pricing_fields(
+    respx_mock: respx.MockRouter, decisions_pricing_fields: None
+) -> None:
+    route: Final = respx_mock.post("https://res.services.ai.azure.com/providers/microsoft/v1/systemone").respond(
+        json={**_RESPONSE, "model": "microsoft-decision-1"}
+    )
+    response: Final = await litellm.asystemone(
+        model="azure_ai/Microsoft-Decision-1",
+        state="review",
+        questions={"is_defect": {"type": "noul", "instructions": "Is this a defect?"}},
+        api_base="https://res.services.ai.azure.com",
+        api_key="foundry-key",
+    )
+
+    assert route.called
+    assert response._hidden_params["provider_response_model"] == "azure_ai/Microsoft-Decision-1"
+    assert litellm.completion_cost(completion_response=response) == pytest.approx(
+        _INPUT_TOKENS * _MICROSOFT_DECISION_1_DECISIONS_INPUT_RATE
+    )
+
+
+@pytest.mark.asyncio
 async def test_azure_ai_decision_reads_foundry_env_and_keeps_gateway_path_prefix(
     monkeypatch: pytest.MonkeyPatch,
     respx_mock: respx.MockRouter,
@@ -2523,6 +2757,7 @@ async def test_clef_omni_media_reaches_upstream_in_both_formats(
         "cloudflare/clef-flash",
         "typesafe/jev-latest",
         "openai/decision",
+        "fireworks_ai/accounts/fireworks/routers/rune",
     ),
 )
 @pytest.mark.parametrize(
@@ -2777,6 +3012,70 @@ def test_positional_arguments_keep_the_order_the_sdk_had_before_media(respx_mock
         assert "audio" not in json.loads(sent)
 
 
+_FIREWORKS_URL: Final = "https://api.fireworks.ai/inference/v1/systemone"
+_FIREWORKS_MODEL: Final = "fireworks_ai/accounts/fireworks/routers/rune"
+_FIREWORKS_RESPONSE: Final[Mapping[str, object]] = {
+    "model": "accounts/fireworks/routers/rune",
+    "answers": {"is_defect": {"type": "noul", "noul": 0.9902915235185259}},
+    "usage": {"input_tokens": 300, "cached_input_tokens": 200, "output_tokens": 0},
+}
+
+
+@pytest.mark.asyncio
+async def test_fireworks_ai_posts_the_jev_body_to_systemone_with_the_account_model_name(
+    monkeypatch: pytest.MonkeyPatch,
+    respx_mock: respx.MockRouter,
+) -> None:
+    monkeypatch.delenv("FIREWORKS_API_BASE", raising=False)
+    monkeypatch.delenv("FIREWORKS_API_KEY", raising=False)
+    monkeypatch.setenv("FIREWORKS_AI_API_KEY", "fireworks-key")
+    route: Final = respx_mock.post(_FIREWORKS_URL).respond(json=_FIREWORKS_RESPONSE)
+
+    response: Final = await litellm.asystemone(
+        model=_FIREWORKS_MODEL,
+        state="The package arrived broken.",
+        questions={"is_defect": {"type": "noul", "instructions": "Is this a defect?"}},
+    )
+
+    assert route.called
+    assert respx_mock.calls[0].request.headers["authorization"] == "Bearer fireworks-key"
+    assert json.loads(respx_mock.calls[0].request.content) == {
+        "model": "accounts/fireworks/routers/rune",
+        "state": "The package arrived broken.",
+        "questions": {"is_defect": {"type": "noul", "instructions": "Is this a defect?"}},
+    }
+    assert response.model == _FIREWORKS_RESPONSE["model"]
+    assert response.answers["is_defect"] == NoulAnswer(type="noul", noul=0.9902915235185259)
+
+
+@pytest.mark.asyncio
+async def test_fireworks_ai_bills_cached_input_tokens_at_the_cache_read_rate(
+    monkeypatch: pytest.MonkeyPatch,
+    respx_mock: respx.MockRouter,
+) -> None:
+    monkeypatch.delenv("FIREWORKS_API_BASE", raising=False)
+    respx_mock.post(_FIREWORKS_URL).respond(json=_FIREWORKS_RESPONSE)
+    prices: Final = litellm.model_cost[_FIREWORKS_MODEL]
+    uncached: Final = 100 * float(prices["input_cost_per_token"])
+    cached: Final = 200 * float(prices["cache_read_input_token_cost"])
+    recording_logger: Final = _RecordingLogger()
+    monkeypatch.setattr(litellm, "callbacks", [recording_logger])
+
+    response: Final = await litellm.adecisions(
+        model=_FIREWORKS_MODEL,
+        input="The package arrived broken.",
+        questions=[{"type": "predicate", "name": "is_defect", "instructions": "Is this a defect?"}],
+        api_key="caller-key",
+    )
+    await _drain_logging_worker()
+
+    assert cached > 0
+    assert response.usage.input_tokens_details.cached_tokens == 200
+    assert recording_logger.standard_logging_object is not None
+    assert recording_logger.standard_logging_object["response_cost"] == pytest.approx(uncached + cached)
+    assert recording_logger.standard_logging_object["response_cost"] < 300 * float(prices["input_cost_per_token"])
+
+
 _BOX_QUESTION_REQUESTS: Final[tuple[tuple[str, Mapping[str, object]], ...]] = (
     (
         "decisions",
@@ -2889,6 +3188,147 @@ async def test_box_questions_are_dropped_under_drop_params_and_answered_as_refus
         "is_defect": {"type": "noul", "instructions": "Is this a defect?"}
     }
     assert response.model_dump(mode="json")["answers"] == _DROPPED_BOX_ANSWERS[api]
+
+
+_CRACK_BOX_QUESTION: Final[Mapping[str, object]] = MappingProxyType(
+    {"type": "box", "name": "crack", "instructions": "the crack on the screen"}
+)
+_CRACK_BOX_ANSWER: Final[Mapping[str, object]] = MappingProxyType(
+    {"type": "box", "name": "crack", "box": {"top": 0.1, "bottom": 0.4, "left": 0.2, "right": 0.6}, "confidence": 0.7}
+)
+
+
+@pytest.mark.asyncio
+async def test_a_deployment_that_advertises_box_questions_gets_box_answers_from_an_openai_format_provider(
+    respx_mock: respx.MockRouter,
+) -> None:
+    route: Final = respx_mock.post("https://api.openai.com/v1/decisions").respond(
+        json={**_OPENAI_RESPONSE, "answers": [dict(_CRACK_BOX_ANSWER)]}
+    )
+
+    response: Final = await litellm.adecisions(
+        model="openai/gpt-6-luna",
+        input="review",
+        questions=[_CRACK_BOX_QUESTION],
+        api_key="deployment-key",
+        model_info={"supports_box_questions": True},
+    )
+
+    assert json.loads(route.calls.last.request.content)["questions"] == [dict(_CRACK_BOX_QUESTION)]
+    assert [answer.model_dump(mode="json") for answer in response.answers] == [dict(_CRACK_BOX_ANSWER)]
+
+
+@pytest.mark.asyncio
+async def test_a_deployment_that_turns_box_questions_off_is_refused_even_when_the_cost_map_allows_them(
+    respx_mock: respx.MockRouter, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(litellm, "drop_params", False)
+    route: Final = respx_mock.post("https://api.typesafe.ai/v1/systemone").respond(json=_RESPONSE)
+
+    with pytest.raises(litellm.UnsupportedParamsError, match=r"\['box questions'\]"):
+        await litellm.adecisions(
+            model="typesafe/jev-1.14.0",
+            input="review",
+            questions=[_CRACK_BOX_QUESTION],
+            api_key="deployment-key",
+            extra_headers={"TypeSafe-Danger-Zone-Images": "true"},
+            model_info={"supports_box_questions": False},
+        )
+
+    assert not route.called
+
+
+@pytest.mark.asyncio
+async def test_a_typesafe_deployment_that_advertises_box_questions_still_needs_the_images_header(
+    respx_mock: respx.MockRouter, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(litellm, "drop_params", False)
+    route: Final = respx_mock.post("https://api.typesafe.ai/v1/systemone").respond(json=_RESPONSE)
+
+    with pytest.raises(litellm.UnsupportedParamsError, match=r"\['box questions'\]"):
+        await litellm.adecisions(
+            model="typesafe/jev-1.14.0",
+            input="review",
+            questions=[_CRACK_BOX_QUESTION],
+            api_key="deployment-key",
+            model_info={"supports_box_questions": True},
+        )
+
+    assert not route.called
+
+
+@pytest.mark.asyncio
+async def test_a_deployment_flag_that_is_not_a_boolean_leaves_the_cost_map_in_charge(
+    respx_mock: respx.MockRouter, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(litellm, "drop_params", False)
+    route: Final = respx_mock.post("https://api.openai.com/v1/decisions").respond(json=_OPENAI_RESPONSE)
+
+    with pytest.raises(litellm.UnsupportedParamsError, match=r"\['box questions'\]"):
+        await litellm.adecisions(
+            model="openai/gpt-6-luna",
+            input="review",
+            questions=[_CRACK_BOX_QUESTION],
+            api_key="deployment-key",
+            model_info={"supports_box_questions": "true"},
+        )
+
+    assert not route.called
+
+
+@pytest.mark.asyncio
+async def test_an_unflagged_deployment_keeps_box_questions_a_same_model_deployment_advertises(
+    respx_mock: respx.MockRouter, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(litellm, "drop_params", False)
+    backend: Final = "perplexity/pplx-decider-v1-27b"
+    monkeypatch.setitem(litellm.model_cost, backend, copy.deepcopy(litellm.model_cost[backend]))
+    for deployment_id in ("box-flagged", "box-sibling"):
+        monkeypatch.setitem(litellm.model_cost, deployment_id, {})
+    route: Final = respx_mock.post(_PERPLEXITY_DECISIONS_URL).respond(
+        json={
+            "model": "pplx-decider-v1-27b",
+            "answers": {"crack": {k: v for k, v in _CRACK_BOX_ANSWER.items() if k != "name"}},
+            "usage": {"input_tokens": _INPUT_TOKENS, "output_tokens": _OUTPUT_TOKENS},
+        }
+    )
+    router: Final = litellm.Router(
+        model_list=[
+            {
+                "model_name": "flagged",
+                "litellm_params": {"model": backend, "api_key": "k"},
+                "model_info": {"id": "box-flagged", "supports_box_questions": True},
+            },
+            {
+                "model_name": "sibling",
+                "litellm_params": {"model": backend, "api_key": "k"},
+                "model_info": {"id": "box-sibling"},
+            },
+        ]
+    )
+
+    response: Final = await router.adecisions(model="sibling", input="review", questions=[_CRACK_BOX_QUESTION])
+
+    assert "crack" in json.loads(route.calls.last.request.content)["questions"]
+    assert [answer.model_dump(mode="json") for answer in response.answers] == [dict(_CRACK_BOX_ANSWER)]
+
+
+@pytest.mark.asyncio
+async def test_a_model_info_object_instead_of_a_dict_still_reaches_the_provider(
+    respx_mock: respx.MockRouter,
+) -> None:
+    route: Final = respx_mock.post("https://api.openai.com/v1/decisions").respond(json=_OPENAI_RESPONSE)
+
+    response: Final = await litellm.adecisions(
+        model="openai/gpt-6-luna",
+        input="review",
+        questions=[{"type": "predicate", "name": "is_defect", "instructions": "Is this a defect?"}],
+        api_key="deployment-key",
+        model_info=ModelInfo(id="deployment-1"),
+    )
+
+    assert route.called
+    assert response.answers[0].model_dump(mode="json")["name"] == "is_defect"
 
 
 def test_dropping_every_question_answers_400_before_http(respx_mock: respx.MockRouter) -> None:

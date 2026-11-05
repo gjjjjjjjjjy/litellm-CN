@@ -16,6 +16,7 @@ from pydantic import TypeAdapter
 from starlette.routing import Match
 
 import litellm
+from litellm.litellm_core_utils.decisions_pricing import apply_decisions_pricing
 from litellm.proxy._lazy_features import LAZY_FEATURES, LazyFeature, attach_lazy_features
 from litellm.proxy.decisions_endpoints.endpoints import decisions, router, systemone
 from litellm.proxy.pass_through_endpoints.pass_through_endpoints import SafeRouteAdder
@@ -259,6 +260,58 @@ def test_proxy_decisions_dispatches_strands_decider(
     assert "authorization" not in upstream.calls[0].request.headers
 
 
+@pytest.mark.parametrize(
+    ("model", "env_base", "env_key"),
+    (
+        ("laya/english", "LAYA_API_BASE", "LAYA_API_KEY"),
+        ("bespoke/nimble-latest", "BESPOKE_API_BASE", "BESPOKE_API_KEY"),
+    ),
+    ids=("laya", "bespoke"),
+)
+def test_proxy_decisions_dispatches_oss_classifier_deployment(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    respx_mock: respx.MockRouter,
+    model: str,
+    env_base: str,
+    env_key: str,
+) -> None:
+    monkeypatch.delenv(env_base, raising=False)
+    monkeypatch.delenv(env_key, raising=False)
+    router: Final = litellm.Router(
+        model_list=[
+            {
+                "model_name": "oss-classifier",
+                "litellm_params": {
+                    "model": model,
+                    "api_base": "https://oss-decider.example",
+                },
+            }
+        ]
+    )
+    monkeypatch.setattr(litellm.proxy.proxy_server, "llm_router", router)
+    upstream: Final = respx_mock.post("https://oss-decider.example/v1/systemone").respond(json=_STRANDS_RESPONSE)
+
+    response: Final = client.post(
+        "/v1/systemone",
+        json={
+            "model": "oss-classifier",
+            "state": {"source": "proxy-test"},
+            "questions": {"is_defect": {"type": "noul", "instructions": "Is this a defect?"}},
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["answers"] == _STRANDS_RESPONSE["answers"]
+    assert upstream.called
+    assert json.loads(upstream.calls[0].request.content) == {
+        "model": model.partition("/")[2],
+        "state": {"source": "proxy-test"},
+        "questions": {"is_defect": {"type": "noul", "instructions": "Is this a defect?"}},
+    }
+    assert "authorization" not in upstream.calls[0].request.headers
+
+
 def test_proxy_systemone_dispatches_databricks_serving_endpoint(
     client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
@@ -304,6 +357,53 @@ def test_proxy_systemone_dispatches_databricks_serving_endpoint(
     assert upstream.calls[0].request.headers["authorization"] == "Bearer dapi-deployment"
 
 
+def test_proxy_systemone_dispatches_databricks_ai_decide(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    respx_mock: respx.MockRouter,
+) -> None:
+    monkeypatch.delenv("DATABRICKS_API_BASE", raising=False)
+    monkeypatch.delenv("DATABRICKS_API_KEY", raising=False)
+    monkeypatch.delenv("DATABRICKS_TOKEN", raising=False)
+    router: Final = litellm.Router(
+        model_list=[
+            {
+                "model_name": "databricks-decider",
+                "litellm_params": {
+                    "model": "databricks/ai_decide",
+                    "api_base": "https://workspace.example/serving-endpoints",
+                    "api_key": "dapi-deployment",
+                },
+            }
+        ]
+    )
+    monkeypatch.setattr(litellm.proxy.proxy_server, "llm_router", router)
+    upstream: Final = respx_mock.post("https://workspace.example/api/2.0/ai-functions/ai-decide").respond(
+        json={
+            "response": {"answers": {"is_defect": {"type": "noul", "probability": 0.9}}},
+            "metadata": {"version": "1.0"},
+        }
+    )
+
+    response: Final = client.post(
+        "/v1/systemone",
+        json={
+            "model": "databricks-decider",
+            "state": {"source": "proxy-test"},
+            "questions": {"is_defect": {"type": "noul", "instructions": "Is this a defect?"}},
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["answers"] == _RESPONSE["answers"]
+    assert upstream.called
+    assert json.loads(upstream.calls[0].request.content) == {
+        "state": {"source": "proxy-test"},
+        "questions": {"is_defect": {"type": "noul", "instructions": "Is this a defect?"}},
+    }
+    assert upstream.calls[0].request.headers["authorization"] == "Bearer dapi-deployment"
+
+
 def test_proxy_decisions_without_model_uses_the_proxy_default_model(
     client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
@@ -320,6 +420,31 @@ def test_proxy_decisions_without_model_uses_the_proxy_default_model(
     assert response.json()["answers"] == _RESPONSE["answers"]
     assert upstream.called
     assert json.loads(upstream.calls[0].request.content)["model"] == "pplx-decider-v1-27b"
+
+
+def test_a_request_body_cannot_turn_on_box_questions_for_a_proxy_without_a_router(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    respx_mock: respx.MockRouter,
+) -> None:
+    monkeypatch.setattr(litellm, "drop_params", False)
+    monkeypatch.setattr(litellm.proxy.proxy_server, "llm_router", None)
+    monkeypatch.setattr(litellm.proxy.proxy_server, "user_model", "openai/gpt-6-luna")
+    upstream: Final = respx_mock.post("https://fake-openai.example/v1/decisions").respond(json={})
+
+    response: Final = client.post(
+        "/v1/decisions",
+        json={
+            "model": "openai/gpt-6-luna",
+            "input": "A phone screen with a diagonal crack.",
+            "questions": [{"type": "box", "name": "crack", "instructions": "Where is the crack?"}],
+            "model_info": {"supports_box_questions": True},
+        },
+    )
+
+    assert response.status_code == 400, response.text
+    assert "['box questions']" in response.json()["error"]["message"]
+    assert not upstream.called
 
 
 _OPENAI_FORMAT_REQUEST: Final[Mapping[str, object]] = {
@@ -509,6 +634,16 @@ def test_openai_format_decisions_reach_an_openai_deployment_unchanged_including_
     monkeypatch: pytest.MonkeyPatch,
     respx_mock: respx.MockRouter,
 ) -> None:
+    monkeypatch.setitem(
+        litellm.model_cost,
+        "gpt-6-luna",
+        {
+            **litellm.model_cost["gpt-6-luna"],
+            "input_cost_per_token_decisions": 1e-07,
+            "cache_read_input_token_cost_decisions": 1e-07,
+            "output_cost_per_token_decisions": 0.0,
+        },
+    )
     monkeypatch.setattr(litellm, "api_base", None)
     monkeypatch.delenv("OPENAI_BASE_URL", raising=False)
     monkeypatch.delenv("OPENAI_API_BASE", raising=False)
@@ -560,11 +695,9 @@ def test_openai_format_decisions_reach_an_openai_deployment_unchanged_including_
     body: Final = response.json()
     assert body["answers"] == _OPENAI_FORMAT_ANSWERS
     assert body["usage"] == upstream_usage
-    luna_cost: Final = litellm.model_cost["gpt-6-luna"]
-    expected_cost: Final = (
-        (_INPUT_TOKENS - cached_tokens) * float(luna_cost["input_cost_per_token"])
-        + cached_tokens * float(luna_cost["cache_read_input_token_cost"])
-        + _OUTPUT_TOKENS * float(luna_cost["output_cost_per_token"])
+    luna_decisions_cost: Final = apply_decisions_pricing(litellm.model_cost["gpt-6-luna"])
+    expected_cost: Final = _INPUT_TOKENS * float(luna_decisions_cost["input_cost_per_token"]) + _OUTPUT_TOKENS * float(
+        luna_decisions_cost["output_cost_per_token"]
     )
     assert expected_cost > 0
     assert float(response.headers["x-litellm-response-cost"]) == pytest.approx(expected_cost)

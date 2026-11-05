@@ -7,6 +7,8 @@ from unittest.mock import MagicMock, patch
 import httpx
 import pytest
 import respx
+from openai.lib.streaming.chat import ChatCompletionStreamState
+from openai.types.chat import ChatCompletionChunk
 from pydantic import TypeAdapter
 from fastapi.testclient import TestClient
 from pydantic import BaseModel, ConfigDict
@@ -331,6 +333,44 @@ def test_transform_choices_with_citations():
             ]
         ]
     }
+
+
+def _databricks_reasoning_chunk(chunk_id: str, summaries: list[dict[str, str]], text: str | None = None) -> dict:
+    content: Final = [{"type": "reasoning", "summary": summaries}] + ([{"type": "text", "text": text}] if text else [])
+    return {
+        "id": chunk_id,
+        "object": "chat.completion.chunk",
+        "created": 0,
+        "model": "databricks-qwen",
+        "choices": [{"delta": {"role": "assistant", "content": content}, "index": 0, "finish_reason": None}],
+    }
+
+
+def test_streamed_reasoning_summaries_accumulate_in_the_openai_sdk_stream_state():
+    """`client.chat.completions.stream()` runs every delta through the OpenAI SDK's `ChatCompletionStreamState`,
+    which raises `RuntimeError: Expected list delta entry to have an \`index\` key` on the second chunk unless each
+    streamed `thinking_blocks` entry carries its list position"""
+    iterator: Final = DatabricksChatResponseIterator(None, sync_stream=True)
+    chunks: Final = (
+        _databricks_reasoning_chunk("c1", [{"type": "summary_text", "text": "Step 1. "}]),
+        _databricks_reasoning_chunk("c1", [{"type": "summary_text", "text": "Step 2.", "signature": "sig-a"}]),
+        _databricks_reasoning_chunk(
+            "c1",
+            [{"type": "summary_text", "text": "", "signature": ""}, {"type": "summary_text", "text": "Step 3."}],
+            text="391",
+        ),
+    )
+
+    state: Final = ChatCompletionStreamState()
+    for chunk in chunks:
+        state.handle_chunk(ChatCompletionChunk.model_validate(iterator.chunk_parser(chunk).model_dump()))
+    message: Final = state.get_final_completion().choices[0].message.model_dump()
+
+    assert message["content"] == "391"
+    assert message["thinking_blocks"] == [
+        {"type": "thinking", "thinking": "Step 1. Step 2.", "signature": "sig-a", "index": 0},
+        {"type": "thinking", "thinking": "Step 3.", "signature": "", "index": 1},
+    ]
 
 
 def test_chunk_parser_with_citation():
@@ -2290,3 +2330,120 @@ def test_databricks_pydantic_json_schema_preserves_nested_refs() -> None:
         "title": "Person",
         "type": "object",
     }
+
+
+@pytest.mark.respx(assert_all_called=True)
+def test_completion_with_prompt_caching_anthropic_model(
+    monkeypatch: pytest.MonkeyPatch, respx_mock: respx.MockRouter
+) -> None:
+    monkeypatch.setenv("DATABRICKS_API_BASE", DATABRICKS_API_BASE)
+    monkeypatch.setenv("DATABRICKS_API_KEY", DATABRICKS_API_KEY)
+    route: Final = respx_mock.post(DATABRICKS_CHAT_COMPLETIONS_URL).mock(
+        return_value=httpx.Response(
+            200,
+            json=_databricks_anthropic_cache_response(cache_read_input_tokens=0, cache_creation_input_tokens=1545),
+        )
+    )
+    cached_block: Final = {"type": "text", "text": "example text" * 512, "cache_control": {"type": "ephemeral"}}
+    messages: Final = [
+        {
+            "role": "system",
+            "content": [
+                {"type": "text", "text": "You are a helpful assistant that explains the content of the given text."}
+            ],
+        },
+        {"role": "user", "content": [cached_block]},
+    ]
+
+    response: Final = litellm.completion(
+        model="databricks/databricks-claude-3-7-sonnet",
+        messages=messages,
+        temperature=0.5,
+    )
+
+    _assert_databricks_request(route.calls.last.request, DATABRICKS_CHAT_COMPLETIONS_URL, DATABRICKS_API_KEY)
+    request_body: Final = json.loads(route.calls.last.request.content)
+    assert request_body["model"] == "databricks-claude-3-7-sonnet"
+    assert "stream" not in request_body
+    assert request_body["messages"][1]["content"] == [cached_block]
+    assert response.model == "databricks/claude-3-7-sonnet"
+    assert response.usage.prompt_tokens == 1549
+    assert response.usage.completion_tokens == 117
+    assert response.usage.total_tokens == 1666
+    assert response.usage.cache_read_input_tokens == 0
+    assert response.usage.cache_creation_input_tokens == 1545
+
+
+def test_get_optional_params_keeps_service_tier_for_databricks() -> None:
+    optional_params: Final = litellm.utils.get_optional_params(
+        model="databricks-claude-opus-5",
+        custom_llm_provider="databricks",
+        service_tier="priority",
+        drop_params=True,
+    )
+
+    assert optional_params["service_tier"] == "priority"
+
+
+@pytest.mark.parametrize("served_tier", ["priority", "default", None])
+def test_transform_response_carries_served_service_tier(served_tier: str | None) -> None:
+    raw_response: Final = MagicMock()
+    raw_response.json.return_value = {
+        "id": "chatcmpl-1",
+        "object": "chat.completion",
+        "created": 0,
+        "model": "dbrx",
+        **({"service_tier": served_tier} if served_tier is not None else {}),
+        "choices": [{"index": 0, "message": {"role": "assistant", "content": "ok"}, "finish_reason": "stop"}],
+        "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+    }
+
+    result: Final = DatabricksConfig().transform_response(
+        model="databricks/dbrx",
+        raw_response=raw_response,
+        model_response=litellm.ModelResponse(),
+        logging_obj=MagicMock(),
+        request_data={},
+        messages=[{"role": "user", "content": "hi"}],
+        optional_params={},
+        litellm_params={},
+        encoding=None,
+    )
+
+    assert result.to_dict().get("service_tier") == served_tier
+
+
+_DATABRICKS_TOOLS_WITH_OPENAI_TOOL_SEARCH: Final = [
+    {"type": "tool_search", "execution": "server"},
+    {
+        "type": "function",
+        "function": {"name": "get_weather", "parameters": {"type": "object", "properties": {}}},
+        "defer_loading": True,
+    },
+]
+
+
+def test_databricks_claude_answers_400_for_the_openai_tool_search_tool_without_drop_params(monkeypatch):
+    monkeypatch.setattr(litellm, "drop_params", False)
+    with pytest.raises(litellm.utils.UnsupportedParamsError) as raised:
+        DatabricksConfig().map_openai_params(
+            non_default_params={"tools": _DATABRICKS_TOOLS_WITH_OPENAI_TOOL_SEARCH},
+            optional_params={},
+            model="databricks-claude-opus-5-5",
+            drop_params=False,
+        )
+    assert raised.value.status_code == 400
+    assert "tool_search" in str(raised.value)
+
+
+def test_databricks_claude_drops_the_openai_tool_search_tool_under_drop_params(monkeypatch):
+    monkeypatch.setattr(litellm, "drop_params", False)
+    mapped: Final = DatabricksConfig().map_openai_params(
+        non_default_params={"tools": _DATABRICKS_TOOLS_WITH_OPENAI_TOOL_SEARCH},
+        optional_params={},
+        model="databricks-claude-opus-5-5",
+        drop_params=True,
+    )
+    assert mapped["tools"] == [
+        {"type": "function", "function": {"name": "get_weather", "parameters": {"type": "object", "properties": {}}}}
+    ]

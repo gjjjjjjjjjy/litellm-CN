@@ -4,7 +4,7 @@ import json
 import uuid
 from types import SimpleNamespace
 from typing import Final
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import httpx
 import pytest
@@ -17,6 +17,7 @@ from litellm.llms.bedrock.chat.invoke_transformations.anthropic_claude3_transfor
 )
 from litellm.llms.custom_httpx.http_handler import AsyncHTTPHandler
 from tests._vcr_conftest_common import install_live_call_probe, record_vcr_outcome
+from tests.unit.llms.anthropic.anthropic_docs_refusal import ANTHROPIC_DOCS_REFUSAL_MESSAGE
 
 ONE_PIXEL_PNG = base64.b64decode(
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
@@ -747,7 +748,7 @@ def test_bedrock_chat_invoke_tool_based_response_format_still_upgrades_legacy_th
                     "schema": {"type": "object", "properties": {"result": {"type": "string"}}},
                 },
             },
-            "thinking": {"type": "enabled", "budget_tokens": 4096, "block_binding": BLOCK_BINDING},
+            "thinking": {"type": "enabled", "budget_tokens": 4096},
             "max_tokens": 8192,
         },
         optional_params={},
@@ -756,7 +757,7 @@ def test_bedrock_chat_invoke_tool_based_response_format_still_upgrades_legacy_th
     )
 
     assert "tools" in result
-    assert result["thinking"] == {"type": "adaptive", "block_binding": BLOCK_BINDING}
+    assert result["thinking"] == {"type": "adaptive"}
     assert result["output_config"] == {"effort": "high"}
 
 
@@ -1004,14 +1005,8 @@ BLOCK_BINDING: Final = {"prefix_mismatch_behavior": "error"}
 @pytest.mark.parametrize(
     "requested_thinking",
     (
-        {"type": "adaptive", "display": "updates", "block_binding": BLOCK_BINDING, "future_key": 1},
-        {
-            "type": "enabled",
-            "budget_tokens": 2048,
-            "display": "updates",
-            "block_binding": BLOCK_BINDING,
-            "future_key": 1,
-        },
+        {"type": "adaptive", "display": "updates", "block_binding": BLOCK_BINDING},
+        {"type": "enabled", "budget_tokens": 2048, "display": "updates", "block_binding": BLOCK_BINDING},
     ),
     ids=("adaptive", "legacy"),
 )
@@ -1035,32 +1030,6 @@ def test_bedrock_chat_invoke_keeps_block_binding_with_display_updates(
     )
 
     assert result.get("thinking") == {"type": "adaptive", "display": "updates", "block_binding": BLOCK_BINDING}
-
-
-@pytest.mark.parametrize(
-    "config_path",
-    (
-        "litellm.llms.bedrock.chat.mantle.transformation.AmazonMantleConfig",
-        "litellm.llms.bedrock_mantle.chat.claude_transformation.BedrockMantleClaudeChatConfig",
-    ),
-    ids=("bedrock_mantle_route", "bedrock_mantle_provider"),
-)
-def test_bedrock_chat_mantle_rebuilds_display_updates_without_block_binding(
-    local_model_cost_map, local_beta_headers_config, config_path: str
-) -> None:
-    module_name, _, class_name = config_path.rpartition(".")
-    config: Final = getattr(importlib.import_module(module_name), class_name)()
-    optional_params: Final = config.map_openai_params(
-        non_default_params={
-            "max_tokens": 512,
-            "thinking": {"type": "adaptive", "display": "updates", "block_binding": BLOCK_BINDING, "future_key": 1},
-        },
-        optional_params={},
-        model="anthropic.claude-opus-4-8",
-        drop_params=False,
-    )
-
-    assert optional_params.get("thinking") == {"type": "adaptive", "display": "updates"}
 
 
 FINE_GRAINED_TOOL_STREAMING_BETA: Final = "fine-grained-tool-streaming-2025-05-14"
@@ -1778,3 +1747,23 @@ class TestBedrockAnthropicCombinedRegressions:
             user_msg = result["messages"][0]
             has_cache_control = any(isinstance(c, dict) and "cache_control" in c for c in user_msg["content"])
             assert has_cache_control
+
+
+def test_refusal_stop_details_kept_through_bedrock_invoke_transform():
+    body: Final = ANTHROPIC_DOCS_REFUSAL_MESSAGE
+    result: Final = AmazonAnthropicClaudeConfig().transform_response(
+        model="anthropic.claude-sonnet-5-5-v1:0",
+        raw_response=httpx.Response(status_code=200, headers={}, json=body),
+        model_response=litellm.ModelResponse(),
+        logging_obj=MagicMock(),
+        request_data={},
+        messages=[{"role": "user", "content": "hi"}],
+        optional_params={},
+        litellm_params={},
+        encoding=None,
+    )
+
+    assert result.choices[0].finish_reason == "content_filter"
+    provider_fields: Final = result.choices[0].message.provider_specific_fields
+    assert provider_fields["stop_reason"] == "refusal"
+    assert provider_fields["stop_details"] == ANTHROPIC_DOCS_REFUSAL_MESSAGE["stop_details"]

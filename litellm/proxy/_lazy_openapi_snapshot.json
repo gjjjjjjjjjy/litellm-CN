@@ -648,6 +648,20 @@
               ],
               "title": "Access Model Names"
             },
+            "access_skill_names": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Access Skill Names"
+            },
             "assigned_key_ids": {
               "anyOf": [
                 {
@@ -686,6 +700,23 @@
                 }
               ],
               "title": "Description"
+            },
+            "mcp_tool_permissions": {
+              "anyOf": [
+                {
+                  "additionalProperties": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Mcp Tool Permissions"
             }
           },
           "required": [
@@ -812,6 +843,14 @@
               "title": "Access Model Names",
               "type": "array"
             },
+            "access_skill_names": {
+              "default": [],
+              "items": {
+                "type": "string"
+              },
+              "title": "Access Skill Names",
+              "type": "array"
+            },
             "assigned_key_ids": {
               "items": {
                 "type": "string"
@@ -866,6 +905,23 @@
                 }
               ],
               "title": "Description"
+            },
+            "mcp_tool_permissions": {
+              "anyOf": [
+                {
+                  "additionalProperties": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Mcp Tool Permissions"
             },
             "updated_at": {
               "format": "date-time",
@@ -957,6 +1013,20 @@
               ],
               "title": "Access Model Names"
             },
+            "access_skill_names": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Access Skill Names"
+            },
             "assigned_key_ids": {
               "anyOf": [
                 {
@@ -995,6 +1065,23 @@
                 }
               ],
               "title": "Description"
+            },
+            "mcp_tool_permissions": {
+              "anyOf": [
+                {
+                  "additionalProperties": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Mcp Tool Permissions"
             }
           },
           "title": "AccessGroupUpdateRequest",
@@ -3756,6 +3843,11 @@
               "title": "Total Prompt Tokens",
               "type": "integer"
             },
+            "total_ptu_hours": {
+              "default": 0.0,
+              "title": "Total Ptu Hours",
+              "type": "number"
+            },
             "total_response_time_ms": {
               "default": 0,
               "title": "Total Response Time Ms",
@@ -4563,6 +4655,11 @@
               "default": 0,
               "title": "Prompt Tokens",
               "type": "integer"
+            },
+            "ptu_hours": {
+              "default": 0.0,
+              "title": "Ptu Hours",
+              "type": "number"
             },
             "spend": {
               "default": 0.0,
@@ -7274,6 +7371,22 @@
               "title": "Id",
               "type": "string"
             },
+            "installation_preference": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "available",
+                    "auto_install",
+                    "required"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Installation Preference"
+            },
             "keywords": {
               "anyOf": [
                 {
@@ -7371,6 +7484,23 @@
               "title": "Id",
               "type": "string"
             },
+            "installation_preference": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "available",
+                    "auto_install",
+                    "required"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Plugin installation preference",
+              "title": "Installation Preference"
+            },
             "name": {
               "description": "Plugin name",
               "title": "Name",
@@ -7467,6 +7597,23 @@
               ],
               "description": "Plugin homepage URL",
               "title": "Homepage"
+            },
+            "installation_preference": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "available",
+                    "auto_install",
+                    "required"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Emitted as installationPreference on this plugin's marketplace.json entry. Needs an archive source, the only plugins Claude Desktop lists from a marketplace.json URL, and 'auto_install' or 'required' also need its sha256. Claude Desktop honors the mark only when the archive and marketplace.json share its inference gateway origin",
+              "title": "Installation Preference"
             },
             "keywords": {
               "anyOf": [
@@ -7618,6 +7765,23 @@
               "description": "Plugin homepage URL",
               "title": "Homepage"
             },
+            "installation_preference": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "available",
+                    "auto_install",
+                    "required"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Emitted as installationPreference on this plugin's marketplace.json entry. Needs an archive source, the only plugins Claude Desktop lists from a marketplace.json URL, and 'auto_install' or 'required' also need its sha256. Claude Desktop honors the mark only when the archive and marketplace.json share its inference gateway origin",
+              "title": "Installation Preference"
+            },
             "keywords": {
               "anyOf": [
                 {
@@ -7717,7 +7881,7 @@
     "paths": {
       "/claude-code/marketplace.json": {
         "get": {
-          "description": "Serve marketplace.json for Claude Code plugin discovery.\n\nThis endpoint is accessed by Claude Code CLI when users run:\n- claude plugin marketplace add <url>\n- claude plugin install <name>@<marketplace>\n\nWithout `key` the catalog holds the enabled (public) plugins. With `?key=sk-...`\nthe key is authenticated and the catalog also holds the disabled plugins granted\nto it through `object_permission.skills` on the key or its team.\n\nReturns:\n    Marketplace catalog with list of available plugins and their git sources.\n\nExample:\n    ```bash\n    claude plugin marketplace add http://localhost:4000/claude-code/marketplace.json\n    claude plugin marketplace add \"http://localhost:4000/claude-code/marketplace.json?key=sk-...\"\n    claude plugin install my-plugin@litellm\n    ```",
+          "description": "Serve marketplace.json for Claude Code plugin discovery.\n\nThis endpoint is accessed by Claude Code CLI when users run:\n- claude plugin marketplace add <url>\n- claude plugin install <name>@<marketplace>\n\nWithout `key` the catalog holds the enabled (public) plugins. With `?key=sk-...`\nthe key is authenticated and the catalog also holds the disabled plugins granted\nto it through `object_permission.skills` or an access group on the key or its team.\n\nReturns:\n    Marketplace catalog with list of available plugins and their git sources.\n\nExample:\n    ```bash\n    claude plugin marketplace add http://localhost:4000/claude-code/marketplace.json\n    claude plugin marketplace add \"http://localhost:4000/claude-code/marketplace.json?key=sk-...\"\n    claude plugin install my-plugin@litellm\n    ```",
           "operationId": "get_marketplace_claude_code_marketplace_json_get",
           "parameters": [
             {
@@ -7812,7 +7976,7 @@
           ]
         },
         "post": {
-          "description": "Register a new plugin in the LiteLLM marketplace.\n\nLiteLLM acts as a registry/discovery layer. Plugins are hosted on\nGitHub/GitLab/Bitbucket or as a zip archive on any https host (e.g. S3).\nClaude Code clones the git source or downloads the archive when users install.\n\nThis endpoint is create-only and never overwrites. If a plugin with\nthe same name already exists it returns 409 Conflict; use\nPUT /claude-code/plugins/{plugin_name} to update an existing plugin.\n\nRequires a proxy admin API key.\n\nParameters:\n    - name: Plugin name (kebab-case)\n    - source: Plugin source reference (github, url, git-subdir, or archive format)\n    - version: Semantic version (optional)\n    - description: Plugin description (optional)\n    - author: Author information (optional)\n    - homepage: Plugin homepage URL (optional)\n    - keywords: Search keywords (optional)\n    - category: Plugin category (optional)\n\nReturns:\n    Registration status (action is always \"created\") and plugin information.\n\nExample:\n    ```bash\n    curl -X POST http://localhost:4000/claude-code/plugins \\\n      -H \"Authorization: Bearer sk-...\" \\\n      -H \"Content-Type: application/json\" \\\n      -d '{\n        \"name\": \"my-plugin\",\n        \"source\": {\"source\": \"github\", \"repo\": \"org/my-plugin\"},\n        \"version\": \"1.0.0\",\n        \"description\": \"My awesome plugin\"\n      }'\n    ```",
+          "description": "Register a new plugin in the LiteLLM marketplace.\n\nLiteLLM acts as a registry/discovery layer. Plugins are hosted on\nGitHub/GitLab/Bitbucket or as a zip archive on any https host (e.g. S3).\nClaude Code clones the git source or downloads the archive when users install.\n\nThis endpoint is create-only and never overwrites. If a plugin with\nthe same name already exists it returns 409 Conflict; use\nPUT /claude-code/plugins/{plugin_name} to update an existing plugin.\n\nRequires a proxy admin API key.\n\nParameters:\n    - name: Plugin name (kebab-case)\n    - source: Plugin source reference (github, url, git-subdir, or archive format)\n    - version: Semantic version (optional)\n    - description: Plugin description (optional)\n    - author: Author information (optional)\n    - homepage: Plugin homepage URL (optional)\n    - keywords: Search keywords (optional)\n    - category: Plugin category (optional)\n    - installation_preference: 'available', 'auto_install', or 'required' (optional)\n\nReturns:\n    Registration status (action is always \"created\") and plugin information.\n\nExample:\n    ```bash\n    curl -X POST http://localhost:4000/claude-code/plugins \\\n      -H \"Authorization: Bearer sk-...\" \\\n      -H \"Content-Type: application/json\" \\\n      -d '{\n        \"name\": \"my-plugin\",\n        \"source\": {\"source\": \"github\", \"repo\": \"org/my-plugin\"},\n        \"version\": \"1.0.0\",\n        \"description\": \"My awesome plugin\"\n      }'\n    ```",
           "operationId": "register_plugin_claude_code_plugins_post",
           "requestBody": {
             "content": {
@@ -7947,7 +8111,7 @@
           ]
         },
         "put": {
-          "description": "Update an existing plugin in the LiteLLM marketplace.\n\nThe plugin is identified by its name in the path, which is the resource\nidentity and cannot be changed here. This is a full replace, not a merge:\nthe manifest is rebuilt from the request body, so any optional field left\nout is reset to its default (e.g. an omitted version is cleared, not kept).\nSend the full desired state.\n\nReturns 404 if no plugin with the given name exists; use\nPOST /claude-code/plugins to create a new plugin.\n\nRequires a proxy admin API key.\n\nParameters:\n    - plugin_name: Name of the plugin to update (path parameter)\n    - source: Plugin source reference (github, url, git-subdir, or archive format)\n    - version: Semantic version (optional)\n    - description: Plugin description (optional)\n    - author: Author information (optional)\n    - homepage: Plugin homepage URL (optional)\n    - keywords: Search keywords (optional)\n    - category: Plugin category (optional)\n\nReturns:\n    Update status (action is always \"updated\") and plugin information.\n\nExample:\n    ```bash\n    curl -X PUT http://localhost:4000/claude-code/plugins/my-plugin \\\n      -H \"Authorization: Bearer sk-...\" \\\n      -H \"Content-Type: application/json\" \\\n      -d '{\n        \"source\": {\"source\": \"github\", \"repo\": \"org/my-plugin\"},\n        \"version\": \"2.0.0\",\n        \"description\": \"My awesome plugin\"\n      }'\n    ```",
+          "description": "Update an existing plugin in the LiteLLM marketplace.\n\nThe plugin is identified by its name in the path, which is the resource\nidentity and cannot be changed here. This is a full replace, not a merge:\nthe manifest is rebuilt from the request body, so any optional field left\nout is reset to its default (e.g. an omitted version is cleared, not kept).\nSend the full desired state.\n\nReturns 404 if no plugin with the given name exists; use\nPOST /claude-code/plugins to create a new plugin.\n\nRequires a proxy admin API key.\n\nParameters:\n    - plugin_name: Name of the plugin to update (path parameter)\n    - source: Plugin source reference (github, url, git-subdir, or archive format)\n    - version: Semantic version (optional)\n    - description: Plugin description (optional)\n    - author: Author information (optional)\n    - homepage: Plugin homepage URL (optional)\n    - keywords: Search keywords (optional)\n    - category: Plugin category (optional)\n    - installation_preference: 'available', 'auto_install', or 'required' (optional)\n\nReturns:\n    Update status (action is always \"updated\") and plugin information.\n\nExample:\n    ```bash\n    curl -X PUT http://localhost:4000/claude-code/plugins/my-plugin \\\n      -H \"Authorization: Bearer sk-...\" \\\n      -H \"Content-Type: application/json\" \\\n      -d '{\n        \"source\": {\"source\": \"github\", \"repo\": \"org/my-plugin\"},\n        \"version\": \"2.0.0\",\n        \"description\": \"My awesome plugin\"\n      }'\n    ```",
           "operationId": "update_plugin_claude_code_plugins__plugin_name__put",
           "parameters": [
             {
@@ -15545,7 +15709,7 @@
                 }
               ],
               "default": false,
-              "description": "Implemented by guardrail='model_armor'. When True, attachment references that carry no inline bytes (file_id, gs://, or http(s) URLs) pass through unscanned instead of blocking, while fail_on_error still governs real Model Armor API errors. Default False blocks them.",
+              "description": "Implemented by guardrail='model_armor' and guardrail='bedrock'. When True, attachments the guardrail cannot scan pass through unscanned instead of blocking. For Model Armor these are references with no inline bytes (file_id, gs://, or http(s) URLs), and fail_on_error still governs real Model Armor API errors. For Bedrock these are documents, files, audio, video, and images that are not inline PNG or JPEG up to 4 MB. Default False blocks them.",
               "title": "Skip Unscannable Attachments"
             },
             "sticky_session_routing": {
@@ -18598,7 +18762,7 @@
                 }
               ],
               "default": false,
-              "description": "Implemented by guardrail='model_armor'. When True, attachment references that carry no inline bytes (file_id, gs://, or http(s) URLs) pass through unscanned instead of blocking, while fail_on_error still governs real Model Armor API errors. Default False blocks them.",
+              "description": "Implemented by guardrail='model_armor' and guardrail='bedrock'. When True, attachments the guardrail cannot scan pass through unscanned instead of blocking. For Model Armor these are references with no inline bytes (file_id, gs://, or http(s) URLs), and fail_on_error still governs real Model Armor API errors. For Bedrock these are documents, files, audio, video, and images that are not inline PNG or JPEG up to 4 MB. Default False blocks them.",
               "title": "Skip Unscannable Attachments"
             },
             "sticky_session_routing": {
@@ -18774,6 +18938,18 @@
               ],
               "description": "Custom message when a guardrail blocks an action. Supports placeholders like {tool_name}, {rule_id}, and {default_message}.",
               "title": "Violation Message Template"
+            },
+            "wingback_app_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Wingback external gateway integration name for request attribution (sent as additional_provider_specific_params.wingback_app_id).",
+              "title": "Wingback App Id"
             },
             "xecguard_model": {
               "anyOf": [
@@ -25643,6 +25819,60 @@
           "title": "OutputTokensDetails",
           "type": "object"
         },
+        "OutputToolSearchCall": {
+          "additionalProperties": true,
+          "properties": {
+            "arguments": {
+              "title": "Arguments"
+            },
+            "call_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Call Id"
+            },
+            "execution": {
+              "enum": [
+                "server",
+                "client"
+              ],
+              "title": "Execution",
+              "type": "string"
+            },
+            "id": {
+              "title": "Id",
+              "type": "string"
+            },
+            "status": {
+              "enum": [
+                "in_progress",
+                "completed",
+                "incomplete"
+              ],
+              "title": "Status",
+              "type": "string"
+            },
+            "type": {
+              "const": "tool_search_call",
+              "title": "Type",
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "arguments",
+            "execution",
+            "status",
+            "type"
+          ],
+          "title": "OutputToolSearchCall",
+          "type": "object"
+        },
         "PendingSafetyCheck": {
           "additionalProperties": true,
           "description": "A pending safety check for the computer call.",
@@ -28009,6 +28239,9 @@
                       },
                       {
                         "$ref": "#/components/schemas/CustomToolCallOutputItem"
+                      },
+                      {
+                        "$ref": "#/components/schemas/OutputToolSearchCall"
                       }
                     ]
                   },
@@ -35368,6 +35601,28 @@
               ],
               "title": "Id Jag Resource"
             },
+            "id_jag_resource_client_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Id Jag Resource Client Id"
+            },
+            "id_jag_resource_client_secret": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Id Jag Resource Client Secret"
+            },
             "id_jag_resource_token_endpoint": {
               "anyOf": [
                 {
@@ -35378,6 +35633,17 @@
                 }
               ],
               "title": "Id Jag Resource Token Endpoint"
+            },
+            "id_jag_subject_source": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Id Jag Subject Source"
             },
             "redirect_uris": {
               "anyOf": [
@@ -36609,7 +36875,7 @@
       "/.well-known/oauth-authorization-server": {
         "get": {
           "description": "OAuth authorization server discovery endpoint.\n\nSupports both legacy pattern (/{server_name}) and root endpoint.",
-          "operationId": "oauth_authorization_server_mcp__well_known_oauth_authorization_server_get",
+          "operationId": "oauth_authorization_server_mcp__well_known_oauth_authorization_server_get_2",
           "parameters": [
             {
               "in": "query",
@@ -36657,7 +36923,7 @@
       "/.well-known/oauth-authorization-server/mcp": {
         "get": {
           "description": "OAuth authorization server discovery for the aggregate /mcp endpoint, the RFC 8414\npath-inserted form for a client that treats {base}/mcp as its authorization base URL.\n\nThe single-segment /mcp is reserved for the aggregate so the discovery chain stays\nconsistent: the aggregate protected-resource document advertises {base}/mcp as its\nauthorization server, so the document served here must have issuer {base}/mcp. A server\nliterally named ``mcp`` therefore does not take this route; it keeps its standard\ntwo-segment discovery at /.well-known/oauth-authorization-server/mcp/mcp. Letting the\nper-server row win here instead would serve an issuer of {base} against a resource that\nadvertised {base}/mcp, which fails the RFC 8414 issuer check and breaks the front door.",
-          "operationId": "oauth_authorization_server_aggregate__well_known_oauth_authorization_server_mcp_get",
+          "operationId": "oauth_authorization_server_aggregate__well_known_oauth_authorization_server_mcp_get_2",
           "responses": {
             "200": {
               "content": {
@@ -36677,7 +36943,7 @@
       "/.well-known/oauth-authorization-server/mcp/{mcp_server_name}": {
         "get": {
           "description": "OAuth authorization server discovery endpoint using standard MCP URL pattern.\n\nStandard pattern: /mcp/{server_name}\nDiscovery path: /.well-known/oauth-authorization-server/mcp/{server_name}",
-          "operationId": "oauth_authorization_server_mcp_standard__well_known_oauth_authorization_server_mcp__mcp_server_name__get",
+          "operationId": "oauth_authorization_server_mcp_standard__well_known_oauth_authorization_server_mcp__mcp_server_name__get_2",
           "parameters": [
             {
               "in": "path",
@@ -36718,7 +36984,7 @@
       "/.well-known/oauth-authorization-server/{mcp_server_name}": {
         "get": {
           "description": "OAuth authorization server discovery endpoint.\n\nSupports both legacy pattern (/{server_name}) and root endpoint.",
-          "operationId": "oauth_authorization_server_mcp__well_known_oauth_authorization_server__mcp_server_name__get",
+          "operationId": "oauth_authorization_server_mcp__well_known_oauth_authorization_server__mcp_server_name__get_2",
           "parameters": [
             {
               "in": "path",
@@ -36766,7 +37032,7 @@
       "/.well-known/oauth-authorization-server/{mcp_server_name}/mcp": {
         "get": {
           "description": "OAuth authorization server discovery for legacy /{server_name}/mcp pattern.",
-          "operationId": "oauth_authorization_server_legacy__well_known_oauth_authorization_server__mcp_server_name__mcp_get",
+          "operationId": "oauth_authorization_server_legacy__well_known_oauth_authorization_server__mcp_server_name__mcp_get_2",
           "parameters": [
             {
               "in": "path",
@@ -36806,7 +37072,7 @@
       },
       "/.well-known/oauth-protected-resource": {
         "get": {
-          "operationId": "oauth_protected_resource_root__well_known_oauth_protected_resource_get",
+          "operationId": "oauth_protected_resource_root__well_known_oauth_protected_resource_get_2",
           "responses": {
             "200": {
               "content": {
@@ -36842,7 +37108,7 @@
       "/.well-known/oauth-protected-resource/mcp": {
         "get": {
           "description": "OAuth protected resource discovery for the aggregate /mcp endpoint.\n\nThe single-segment ``/mcp`` path does not collide with any per-server PRM pattern\n(those are two-segment: ``/mcp/{server}`` or ``/{server}/mcp``), so this unambiguously\ndescribes the aggregate resource.",
-          "operationId": "oauth_protected_resource_aggregate__well_known_oauth_protected_resource_mcp_get",
+          "operationId": "oauth_protected_resource_aggregate__well_known_oauth_protected_resource_mcp_get_2",
           "responses": {
             "200": {
               "content": {
@@ -36862,7 +37128,7 @@
       "/.well-known/oauth-protected-resource/mcp/{mcp_server_name}": {
         "get": {
           "description": "OAuth protected resource discovery endpoint using standard MCP URL pattern.\n\nStandard pattern: /mcp/{server_name}\nDiscovery path: /.well-known/oauth-protected-resource/mcp/{server_name}\n\nThis endpoint is compliant with MCP specification and works with standard\nMCP clients like mcp-inspector and VSCode Copilot.",
-          "operationId": "oauth_protected_resource_mcp_standard__well_known_oauth_protected_resource_mcp__mcp_server_name__get",
+          "operationId": "oauth_protected_resource_mcp_standard__well_known_oauth_protected_resource_mcp__mcp_server_name__get_2",
           "parameters": [
             {
               "in": "path",
@@ -36903,7 +37169,7 @@
       "/.well-known/oauth-protected-resource/{mcp_server_name}/mcp": {
         "get": {
           "description": "OAuth protected resource discovery endpoint using LiteLLM legacy URL pattern.\n\nLegacy pattern: /{server_name}/mcp\nDiscovery path: /.well-known/oauth-protected-resource/{server_name}/mcp\n\nThis endpoint is kept for backward compatibility. New integrations should\nuse the standard MCP pattern (/mcp/{server_name}) instead.",
-          "operationId": "oauth_protected_resource_mcp__well_known_oauth_protected_resource__mcp_server_name__mcp_get",
+          "operationId": "oauth_protected_resource_mcp__well_known_oauth_protected_resource__mcp_server_name__mcp_get_2",
           "parameters": [
             {
               "in": "path",
@@ -37032,9 +37298,27 @@
         },
         "Body_token_endpoint__mcp_server_name__token_post": {
           "properties": {
+            "assertion": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Assertion"
+            },
             "client_id": {
-              "title": "Client Id",
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Client Id"
             },
             "client_secret": {
               "anyOf": [
@@ -37131,17 +37415,34 @@
             }
           },
           "required": [
-            "grant_type",
-            "client_id"
+            "grant_type"
           ],
           "title": "Body_token_endpoint__mcp_server_name__token_post",
           "type": "object"
         },
         "Body_token_endpoint_token_post": {
           "properties": {
+            "assertion": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Assertion"
+            },
             "client_id": {
-              "title": "Client Id",
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Client Id"
             },
             "client_secret": {
               "anyOf": [
@@ -37238,8 +37539,7 @@
             }
           },
           "required": [
-            "grant_type",
-            "client_id"
+            "grant_type"
           ],
           "title": "Body_token_endpoint_token_post",
           "type": "object"
@@ -38129,6 +38429,28 @@
               ],
               "title": "Id Jag Resource"
             },
+            "id_jag_resource_client_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Id Jag Resource Client Id"
+            },
+            "id_jag_resource_client_secret": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Id Jag Resource Client Secret"
+            },
             "id_jag_resource_token_endpoint": {
               "anyOf": [
                 {
@@ -38139,6 +38461,17 @@
                 }
               ],
               "title": "Id Jag Resource Token Endpoint"
+            },
+            "id_jag_subject_source": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Id Jag Subject Source"
             },
             "redirect_uris": {
               "anyOf": [
@@ -38881,28 +39214,6 @@
           "title": "RegisterGuardrailResponse",
           "type": "object"
         },
-        "Scope": {
-          "additionalProperties": false,
-          "properties": {
-            "all_teams": {
-              "default": false,
-              "title": "All Teams",
-              "type": "boolean"
-            },
-            "api_key_hash": {
-              "default": "",
-              "title": "Api Key Hash",
-              "type": "string"
-            },
-            "team_id": {
-              "default": "",
-              "title": "Team Id",
-              "type": "string"
-            }
-          },
-          "title": "Scope",
-          "type": "object"
-        },
         "ValidationError": {
           "properties": {
             "ctx": {
@@ -38941,105 +39252,6 @@
             "type"
           ],
           "title": "ValidationError",
-          "type": "object"
-        },
-        "Worker": {
-          "additionalProperties": false,
-          "properties": {
-            "analysis_key_id": {
-              "anyOf": [
-                {
-                  "pattern": "^[a-f0-9]{64}$",
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Analysis Key Id"
-            },
-            "id": {
-              "title": "Id",
-              "type": "string"
-            },
-            "last_seen": {
-              "format": "date-time",
-              "title": "Last Seen",
-              "type": "string"
-            },
-            "name": {
-              "title": "Name",
-              "type": "string"
-            },
-            "revoked": {
-              "default": false,
-              "title": "Revoked",
-              "type": "boolean"
-            },
-            "scope": {
-              "$ref": "#/components/schemas/Scope"
-            }
-          },
-          "required": [
-            "id",
-            "name",
-            "scope",
-            "last_seen"
-          ],
-          "title": "Worker",
-          "type": "object"
-        },
-        "WorkerCreated": {
-          "additionalProperties": false,
-          "properties": {
-            "image": {
-              "title": "Image",
-              "type": "string"
-            },
-            "managed": {
-              "default": false,
-              "title": "Managed",
-              "type": "boolean"
-            },
-            "token": {
-              "title": "Token",
-              "type": "string"
-            },
-            "worker": {
-              "$ref": "#/components/schemas/Worker"
-            }
-          },
-          "required": [
-            "image",
-            "worker",
-            "token"
-          ],
-          "title": "WorkerCreated",
-          "type": "object"
-        },
-        "WorkerName": {
-          "properties": {
-            "analysis_key_id": {
-              "pattern": "^[a-f0-9]{64}$",
-              "title": "Analysis Key Id",
-              "type": "string"
-            },
-            "managed": {
-              "default": false,
-              "title": "Managed",
-              "type": "boolean"
-            },
-            "name": {
-              "default": "Lens worker",
-              "minLength": 1,
-              "title": "Name",
-              "type": "string"
-            }
-          },
-          "required": [
-            "analysis_key_id"
-          ],
-          "title": "WorkerName",
           "type": "object"
         }
       }
@@ -39088,7 +39300,7 @@
       "/.well-known/oauth-authorization-server": {
         "get": {
           "description": "OAuth authorization server discovery endpoint.\n\nSupports both legacy pattern (/{server_name}) and root endpoint.",
-          "operationId": "oauth_authorization_server_mcp__well_known_oauth_authorization_server_get_2",
+          "operationId": "oauth_authorization_server_mcp__well_known_oauth_authorization_server_get",
           "parameters": [
             {
               "in": "query",
@@ -39136,7 +39348,7 @@
       "/.well-known/oauth-authorization-server/mcp": {
         "get": {
           "description": "OAuth authorization server discovery for the aggregate /mcp endpoint, the RFC 8414\npath-inserted form for a client that treats {base}/mcp as its authorization base URL.\n\nThe single-segment /mcp is reserved for the aggregate so the discovery chain stays\nconsistent: the aggregate protected-resource document advertises {base}/mcp as its\nauthorization server, so the document served here must have issuer {base}/mcp. A server\nliterally named ``mcp`` therefore does not take this route; it keeps its standard\ntwo-segment discovery at /.well-known/oauth-authorization-server/mcp/mcp. Letting the\nper-server row win here instead would serve an issuer of {base} against a resource that\nadvertised {base}/mcp, which fails the RFC 8414 issuer check and breaks the front door.",
-          "operationId": "oauth_authorization_server_aggregate__well_known_oauth_authorization_server_mcp_get_2",
+          "operationId": "oauth_authorization_server_aggregate__well_known_oauth_authorization_server_mcp_get",
           "responses": {
             "200": {
               "content": {
@@ -39156,7 +39368,7 @@
       "/.well-known/oauth-authorization-server/mcp/{mcp_server_name}": {
         "get": {
           "description": "OAuth authorization server discovery endpoint using standard MCP URL pattern.\n\nStandard pattern: /mcp/{server_name}\nDiscovery path: /.well-known/oauth-authorization-server/mcp/{server_name}",
-          "operationId": "oauth_authorization_server_mcp_standard__well_known_oauth_authorization_server_mcp__mcp_server_name__get_2",
+          "operationId": "oauth_authorization_server_mcp_standard__well_known_oauth_authorization_server_mcp__mcp_server_name__get",
           "parameters": [
             {
               "in": "path",
@@ -39197,7 +39409,7 @@
       "/.well-known/oauth-authorization-server/{mcp_server_name}": {
         "get": {
           "description": "OAuth authorization server discovery endpoint.\n\nSupports both legacy pattern (/{server_name}) and root endpoint.",
-          "operationId": "oauth_authorization_server_mcp__well_known_oauth_authorization_server__mcp_server_name__get_2",
+          "operationId": "oauth_authorization_server_mcp__well_known_oauth_authorization_server__mcp_server_name__get",
           "parameters": [
             {
               "in": "path",
@@ -39245,7 +39457,7 @@
       "/.well-known/oauth-authorization-server/{mcp_server_name}/mcp": {
         "get": {
           "description": "OAuth authorization server discovery for legacy /{server_name}/mcp pattern.",
-          "operationId": "oauth_authorization_server_legacy__well_known_oauth_authorization_server__mcp_server_name__mcp_get_2",
+          "operationId": "oauth_authorization_server_legacy__well_known_oauth_authorization_server__mcp_server_name__mcp_get",
           "parameters": [
             {
               "in": "path",
@@ -39285,7 +39497,7 @@
       },
       "/.well-known/oauth-protected-resource": {
         "get": {
-          "operationId": "oauth_protected_resource_root__well_known_oauth_protected_resource_get_2",
+          "operationId": "oauth_protected_resource_root__well_known_oauth_protected_resource_get",
           "responses": {
             "200": {
               "content": {
@@ -39321,7 +39533,7 @@
       "/.well-known/oauth-protected-resource/mcp": {
         "get": {
           "description": "OAuth protected resource discovery for the aggregate /mcp endpoint.\n\nThe single-segment ``/mcp`` path does not collide with any per-server PRM pattern\n(those are two-segment: ``/mcp/{server}`` or ``/{server}/mcp``), so this unambiguously\ndescribes the aggregate resource.",
-          "operationId": "oauth_protected_resource_aggregate__well_known_oauth_protected_resource_mcp_get_2",
+          "operationId": "oauth_protected_resource_aggregate__well_known_oauth_protected_resource_mcp_get",
           "responses": {
             "200": {
               "content": {
@@ -39341,7 +39553,7 @@
       "/.well-known/oauth-protected-resource/mcp/{mcp_server_name}": {
         "get": {
           "description": "OAuth protected resource discovery endpoint using standard MCP URL pattern.\n\nStandard pattern: /mcp/{server_name}\nDiscovery path: /.well-known/oauth-protected-resource/mcp/{server_name}\n\nThis endpoint is compliant with MCP specification and works with standard\nMCP clients like mcp-inspector and VSCode Copilot.",
-          "operationId": "oauth_protected_resource_mcp_standard__well_known_oauth_protected_resource_mcp__mcp_server_name__get_2",
+          "operationId": "oauth_protected_resource_mcp_standard__well_known_oauth_protected_resource_mcp__mcp_server_name__get",
           "parameters": [
             {
               "in": "path",
@@ -39382,7 +39594,7 @@
       "/.well-known/oauth-protected-resource/{mcp_server_name}/mcp": {
         "get": {
           "description": "OAuth protected resource discovery endpoint using LiteLLM legacy URL pattern.\n\nLegacy pattern: /{server_name}/mcp\nDiscovery path: /.well-known/oauth-protected-resource/{server_name}/mcp\n\nThis endpoint is kept for backward compatibility. New integrations should\nuse the standard MCP pattern (/mcp/{server_name}) instead.",
-          "operationId": "oauth_protected_resource_mcp__well_known_oauth_protected_resource__mcp_server_name__mcp_get_2",
+          "operationId": "oauth_protected_resource_mcp__well_known_oauth_protected_resource__mcp_server_name__mcp_get",
           "parameters": [
             {
               "in": "path",
@@ -39783,6 +39995,22 @@
                 ],
                 "title": "Resource"
               }
+            },
+            {
+              "in": "query",
+              "name": "scope",
+              "required": false,
+              "schema": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Scope"
+              }
             }
           ],
           "responses": {
@@ -40078,52 +40306,6 @@
             }
           ],
           "summary": "Introspect Endpoint",
-          "tags": [
-            "mcp_discoverable"
-          ]
-        }
-      },
-      "/lens/workers/register": {
-        "post": {
-          "operationId": "register_worker_lens_workers_register_post",
-          "requestBody": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/WorkerName"
-                }
-              }
-            },
-            "required": true
-          },
-          "responses": {
-            "200": {
-              "content": {
-                "application/json": {
-                  "schema": {
-                    "$ref": "#/components/schemas/WorkerCreated"
-                  }
-                }
-              },
-              "description": "Successful Response"
-            },
-            "422": {
-              "content": {
-                "application/json": {
-                  "schema": {
-                    "$ref": "#/components/schemas/HTTPValidationError"
-                  }
-                }
-              },
-              "description": "Validation Error"
-            }
-          },
-          "security": [
-            {
-              "APIKeyHeader": []
-            }
-          ],
-          "summary": "Register Worker",
           "tags": [
             "mcp_discoverable"
           ]
@@ -41663,6 +41845,28 @@
               ],
               "title": "Id Jag Resource"
             },
+            "id_jag_resource_client_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Id Jag Resource Client Id"
+            },
+            "id_jag_resource_client_secret": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Id Jag Resource Client Secret"
+            },
             "id_jag_resource_token_endpoint": {
               "anyOf": [
                 {
@@ -41673,6 +41877,17 @@
                 }
               ],
               "title": "Id Jag Resource Token Endpoint"
+            },
+            "id_jag_subject_source": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Id Jag Subject Source"
             },
             "redirect_uris": {
               "anyOf": [
@@ -43801,6 +44016,24 @@
               }
             },
             {
+              "description": "Filter MCP servers by internal user scope. When provided (and team_id is not), returns the union of the servers each of the user's teams has access to plus globally available (allow_all_keys) servers. A user who belongs to no team gets the unscoped list. Used by the Internal User and Virtual Key edit UIs.",
+              "in": "query",
+              "name": "user_id",
+              "required": false,
+              "schema": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "Filter MCP servers by internal user scope. When provided (and team_id is not), returns the union of the servers each of the user's teams has access to plus globally available (allow_all_keys) servers. A user who belongs to no team gets the unscoped list. Used by the Internal User and Virtual Key edit UIs.",
+                "title": "User Id"
+              }
+            },
+            {
               "description": "Annotate each returned server with connected_app_reachable: whether a connected app authorized by the calling user (a gateway OAuth session) is served this server on the aggregate MCP endpoint.",
               "in": "query",
               "name": "connected_app_view",
@@ -45703,6 +45936,28 @@
               ],
               "title": "Id Jag Resource"
             },
+            "id_jag_resource_client_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Id Jag Resource Client Id"
+            },
+            "id_jag_resource_client_secret": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Id Jag Resource Client Secret"
+            },
             "id_jag_resource_token_endpoint": {
               "anyOf": [
                 {
@@ -45713,6 +45968,17 @@
                 }
               ],
               "title": "Id Jag Resource Token Endpoint"
+            },
+            "id_jag_subject_source": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Id Jag Subject Source"
             },
             "redirect_uris": {
               "anyOf": [
@@ -48238,6 +48504,10 @@
               "title": "Data",
               "type": "string"
             },
+            "index": {
+              "title": "Index",
+              "type": "integer"
+            },
             "type": {
               "const": "redacted_thinking",
               "title": "Type",
@@ -48322,6 +48592,10 @@
                 }
               ],
               "title": "Cache Control"
+            },
+            "index": {
+              "title": "Index",
+              "type": "integer"
             },
             "signature": {
               "anyOf": [
@@ -48473,6 +48747,10 @@
             },
             "cache_control": {
               "$ref": "#/components/schemas/ChatCompletionCachedContent"
+            },
+            "defer_loading": {
+              "title": "Defer Loading",
+              "type": "boolean"
             },
             "eager_input_streaming": {
               "title": "Eager Input Streaming",
@@ -55232,6 +55510,17 @@
                 }
               ],
               "title": "Last Failure At"
+            },
+            "last_latency_ms": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Last Latency Ms"
             },
             "latest_status": {
               "title": "Latest Status",
@@ -63933,6 +64222,17 @@
                 }
               ],
               "title": "Api Key"
+            },
+            "input_cost_per_query": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Input Cost Per Query"
             },
             "max_retries": {
               "anyOf": [

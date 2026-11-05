@@ -27,6 +27,7 @@ import httpx
 from httpx import USE_CLIENT_DEFAULT
 from httpx._types import FileContent
 from openai.types.file_deleted import FileDeleted
+from pydantic import TypeAdapter
 from typing_extensions import ReadOnly
 
 import litellm
@@ -109,6 +110,7 @@ from litellm.llms.custom_httpx.http_handler import (
     HTTPHandler,
     get_async_httpx_client,
     get_httpx_client,
+    header_value,
 )
 from litellm.responses.streaming_iterator import (
     BaseResponsesAPIStreamingIterator,
@@ -214,7 +216,6 @@ if TYPE_CHECKING:
         FakeAnthropicMessagesStreamIterator,
     )
     from litellm.llms.base_llm.passthrough.transformation import BasePassthroughConfig
-    from litellm.proxy._types import UserAPIKeyAuth
     from litellm.types.google_genai.main import GenerateContentResponse
     from litellm.types.llms.openai_evals import (
         CancelEvalResponse,
@@ -226,6 +227,7 @@ if TYPE_CHECKING:
         Run,
         RunDeleteResponse,
     )
+    from litellm.types.proxy.auth.user_api_key_auth import UserAPIKeyAuth
 
     LiteLLMLoggingObj = _LiteLLMLoggingObj
 else:
@@ -465,6 +467,7 @@ async def _aiter_bytes_then_close(response: httpx.Response, *, chunk_size: int) 
 
 
 _DECODED_BODY_STALE_HEADERS: Final[frozenset[str]] = frozenset({"content-encoding", "content-length"})
+_OPTIONAL_PARAMS: Final = TypeAdapter(Mapping[str, object])
 
 
 def _decoded_body_headers(response: httpx.Response) -> httpx.Headers:
@@ -472,8 +475,8 @@ def _decoded_body_headers(response: httpx.Response) -> httpx.Headers:
     `aiter_bytes` yields the decoded body, so the upstream transfer headers only
     describe the bytes on the wire when no content-encoding was applied.
     """
-    headers: Final[Mapping[str, str]] = response.headers
-    if headers.get("content-encoding", "identity").lower() == "identity":
+    content_encoding: Final = header_value(response.headers, "content-encoding")
+    if content_encoding is None or content_encoding.lower() == "identity":
         return response.headers
     return httpx.Headers(
         [
@@ -503,6 +506,19 @@ def _collect_ws_project_quota_callbacks() -> tuple[ProjectQuotaCallback, ...]:
         for callback in callbacks
         if callable(getattr(callback, "enforce_project_io_token_quota_for_frame", None))
     )
+
+
+def _unwrap_provider_error(error: Exception) -> Exception:
+    if not isinstance(error, httpx.TransportError):
+        return error
+    current: BaseException | None = error.__cause__  # rebind-ok: walks the bounded exception cause chain
+    for _ in range(10):
+        if current is None:
+            return error
+        if isinstance(current, BaseLLMException):
+            return current
+        current = current.__cause__
+    return error
 
 
 class BaseLLMHTTPHandler:
@@ -1001,11 +1017,14 @@ class BaseLLMHTTPHandler:
 
             completion_stream: object = MockResponseIterator(model_response=model_response, json_mode=json_mode)
         else:
-            completion_stream = provider_config.get_model_response_iterator(
+            completion_stream = provider_config.get_model_response_iterator_for_request(
                 streaming_response=response.iter_lines(),
                 sync_stream=True,
                 json_mode=json_mode,
+                optional_params=_OPTIONAL_PARAMS.validate_python(optional_params),
             )
+            if isinstance(completion_stream, BaseModelResponseIterator):
+                completion_stream.http_response = response
 
         # LOGGING
         logging_obj.post_call(
@@ -1140,8 +1159,11 @@ class BaseLLMHTTPHandler:
 
             completion_stream: object = MockResponseIterator(model_response=model_response, json_mode=json_mode)
         else:
-            completion_stream = provider_config.get_model_response_iterator(
-                streaming_response=response.aiter_lines(), sync_stream=False
+            completion_stream = provider_config.get_model_response_iterator_for_request(
+                streaming_response=response.aiter_lines(),
+                sync_stream=False,
+                json_mode=json_mode,
+                optional_params=_OPTIONAL_PARAMS.validate_python(optional_params),
             )
             if isinstance(completion_stream, BaseModelResponseIterator):
                 completion_stream.http_response = response
@@ -2465,7 +2487,7 @@ class BaseLLMHTTPHandler:
         api_base: str | None = None,
         stream: bool | None = False,
         kwargs: dict[str, object] | None = None,
-    ) -> AnthropicMessagesResponse | Coroutine[object, object, AnthropicMessagesResponse | AsyncIterator]:
+    ) -> AnthropicMessagesResponse | Coroutine[object, object, AnthropicMessagesResponse | AsyncIterator[bytes]]:
         """
         LLM HTTP Handler for Anthropic Messages
         """
@@ -2534,12 +2556,13 @@ class BaseLLMHTTPHandler:
 
         optional_param_names: Final = _responses_api_optional_request_param_names()
         updated_response_params: Final = {
-            **response_api_optional_request_params,
+            **{key: value for key, value in response_api_optional_request_params.items() if key in modified_kwargs},
             **{key: value for key, value in modified_kwargs.items() if key in optional_param_names},
         }
+        current_litellm_params: Final[Mapping[str, object]] = dict(litellm_params)
         updated_litellm_params: Final = GenericLiteLLMParams(
             **{
-                **dict(litellm_params),
+                **{key: value for key, value in current_litellm_params.items() if key in modified_kwargs},
                 **{
                     key: value
                     for key, value in modified_kwargs.items()
@@ -3503,9 +3526,7 @@ class BaseLLMHTTPHandler:
         """
         if upload_url_location == "headers":
             # Google Cloud Storage style - URL in X-Goog-Upload-URL header
-            upload_headers: Final[Mapping[str, str]] = response.headers
-            upload_url = upload_headers.get("X-Goog-Upload-URL")
-            return upload_url, None
+            return header_value(response.headers, "X-Goog-Upload-URL"), None
         else:
             # Response body style (e.g., Manus, S3 presigned URLs)
             try:
@@ -6313,16 +6334,19 @@ class BaseLLMHTTPHandler:
             BaseRealtimeHTTPConfig,
         ],
     ):
+        error: Final = _unwrap_provider_error(e)
         received_status_code: Final = (
-            e.response.status_code if isinstance(e, httpx.HTTPStatusError) else getattr(e, "status_code", None)
+            error.response.status_code
+            if isinstance(error, httpx.HTTPStatusError)
+            else getattr(error, "status_code", None)
         )
         status_code = received_status_code if isinstance(received_status_code, int) else 500
-        error_headers = getattr(e, "headers", None)
-        if isinstance(e, httpx.HTTPStatusError):
-            error_text = e.response.text
+        error_headers = getattr(error, "headers", None)
+        if isinstance(error, httpx.HTTPStatusError):
+            error_text = error.response.text
         else:
-            error_text = getattr(e, "text", str(e))
-        error_response: Final = getattr(e, "response", None)
+            error_text = getattr(error, "text", str(error))
+        error_response: Final[object] = getattr(error, "response", None)
         if error_headers is None and error_response:
             error_headers = getattr(error_response, "headers", None)
         if error_response and hasattr(error_response, "text"):
@@ -7726,6 +7750,7 @@ class BaseLLMHTTPHandler:
             return video_content_provider_config.transform_video_content_response(
                 raw_response=response,
                 logging_obj=logging_obj,
+                client=sync_httpx_client,
             )
 
         except Exception as e:
@@ -7805,6 +7830,7 @@ class BaseLLMHTTPHandler:
             return await video_content_provider_config.async_transform_video_content_response(
                 raw_response=response,
                 logging_obj=logging_obj,
+                client=async_httpx_client,
             )
 
         except Exception as e:

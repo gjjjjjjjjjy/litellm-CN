@@ -11,6 +11,7 @@ vi.mock("@/components/networking", () => ({
     PROXY_BASE_URL: "",
     PROXY_LOGOUT_URL: "https://example.com/logout",
   }),
+  getUiPageUrl: (url: string) => url,
   serverRootPath: "",
 }));
 
@@ -266,7 +267,7 @@ describe("Navbar", () => {
     renderWithProviders(<Navbar {...publicPageProps} />);
 
     expect(screen.queryByRole("button", { name: /open account menu/i })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /^notifications$/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^notifications/i })).not.toBeInTheDocument();
   });
 
   it("should handle hide new feature indicators toggle", async () => {

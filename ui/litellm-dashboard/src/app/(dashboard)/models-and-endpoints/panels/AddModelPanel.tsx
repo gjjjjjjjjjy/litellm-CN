@@ -1,7 +1,8 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useForm, useWatch } from "react-hook-form";
+import { parseAsString, useQueryStates } from "nuqs";
 import { useQueryClient } from "@tanstack/react-query";
 import AddModelForm from "@/components/add_model/AddModelForm";
 import { handleAddModelSubmit } from "@/components/add_model/handle_add_model_submit";
@@ -21,9 +22,10 @@ import { buildDecisionCatalog } from "@/lib/decisionModels";
 import { credentialCreateCall } from "@/components/networking";
 import { extractProxyErrorMessage } from "@/lib/http/client";
 import { toast } from "@/lib/toast";
-import { Button } from "@/components/ui/button";
 
 const INITIAL_VALUES: MountedFormValues = { litellm_credential_name: null };
+
+const PREFILL_URL_PARAMS = { provider: parseAsString, litellm_model: parseAsString };
 
 export default function AddModelPanel() {
   const { accessToken } = useAuthorized();
@@ -35,6 +37,29 @@ export default function AddModelPanel() {
   const credentials = credentialsResponse?.credentials || [];
   const { data: providerMetadata } = useProviderFields();
   const { data: teams } = useTeams();
+  const [{ provider: prefillProviderSlug, litellm_model: prefillModel }, setPrefillParams] =
+    useQueryStates(PREFILL_URL_PARAMS);
+  const prefillProvider = useMemo(
+    () =>
+      prefillProviderSlug === null
+        ? null
+        : providerMetadata?.find((info) => info.litellm_provider === prefillProviderSlug)?.provider ?? null,
+    [prefillProviderSlug, providerMetadata],
+  );
+  const prefillApplied = useRef(false);
+
+  useEffect(() => {
+    if (prefillApplied.current || prefillProvider === null) {
+      return;
+    }
+    prefillApplied.current = true;
+    form.setValue("custom_llm_provider", prefillProvider);
+    if (prefillModel === null) {
+      return;
+    }
+    form.setValue("model", [prefillModel]);
+  }, [form, prefillModel, prefillProvider]);
+
   const pickedProvider = useWatch({ control: form.control, name: "custom_llm_provider" });
   const providerModels = useMemo(
     () => (typeof pickedProvider === "string" ? getProviderModels(pickedProvider, modelCostMapData) : []),
@@ -67,12 +92,18 @@ export default function AddModelPanel() {
     return handleAddModelSubmit(
       plan.modelValues,
       accessToken,
-      { resetFields: () => form.reset(INITIAL_VALUES) },
+      {
+        resetFields: () => {
+          form.reset(INITIAL_VALUES);
+          void setPrefillParams({ provider: null, litellm_model: null });
+        },
+      },
       refresh,
     );
   };
 
-  return <AddModelForm
+  return (
+    <AddModelForm
       form={form}
       registry={registry}
       mountedValues={mountedValues}
@@ -84,5 +115,6 @@ export default function AddModelPanel() {
       teams={teams ?? null}
       credentials={credentials}
       decisionCatalog={decisionCatalog}
-    />;
+    />
+  );
 }

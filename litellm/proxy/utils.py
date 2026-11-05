@@ -19,6 +19,7 @@ from collections.abc import (
     Awaitable,
     Callable,
     Coroutine,
+    Iterator,
     Mapping,
     Sequence,
 )
@@ -28,6 +29,7 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from functools import partial
 from itertools import takewhile
+from operator import attrgetter
 from types import MappingProxyType
 from typing import (
     TYPE_CHECKING,
@@ -47,6 +49,7 @@ from typing import (
     runtime_checkable,
 )
 
+import anyio
 import httpx
 from typing_extensions import Never, ReadOnly, TypedDict
 
@@ -54,6 +57,7 @@ from litellm import _custom_logger_compatible_callbacks_literal
 from litellm.constants import (
     DEFAULT_MODEL_CREATED_AT_TIME,
     FILE_USAGE_MAX_TRACKED_COUNTERS,
+    LITELLM_CONFIG_CACHE_TTL_SECONDS,
     LITELLM_HTTP_STATUS_CLIENT_DISCONNECTED,
     LITELLM_LOGGING_NO_UPSTREAM_LLM_CALL,
     MAX_TEAM_LIST_LIMIT,
@@ -77,6 +81,7 @@ from litellm.proxy._types import (
 )
 from litellm.proxy.bug_report_config import build_proxy_bug_report
 from litellm.proxy.common_utils.openai_error_payload import (
+    attribute_of,
     litellm_call_id_headers,
     openai_error_param,
     with_litellm_call_id,
@@ -111,7 +116,7 @@ except ImportError:
     raise ImportError("backoff is not installed. Please install it via 'pip install backoff'")
 
 from fastapi import HTTPException, status
-from pydantic import TypeAdapter, ValidationError
+from pydantic import BaseModel, TypeAdapter, ValidationError
 
 import litellm
 import litellm.litellm_core_utils
@@ -150,6 +155,7 @@ from litellm.litellm_core_utils.core_helpers import (
     is_expected_client_error,
 )
 from litellm.litellm_core_utils.duration_parser import get_budget_window_start
+from litellm.litellm_core_utils.env_utils import get_env_float, get_env_int
 from litellm.litellm_core_utils.litellm_logging import Logging, deployment_pricing_model_info
 from litellm.litellm_core_utils.llm_cost_calc.utils import generic_cost_per_token
 from litellm.litellm_core_utils.safe_json_dumps import safe_dumps
@@ -166,6 +172,7 @@ from litellm.proxy._types import (
     CallInfo,
     LiteLLM_VerificationTokenView,
     Member,
+    SpecialModelNames,
     UserAPIKeyAuth,
 )
 from litellm.proxy.agent_endpoints.auth.agent_access_groups import CeilingResolver, resolve_agent_access_group_ceiling
@@ -227,7 +234,7 @@ from litellm.proxy.hooks.cache_control_check import (  # noqa: F401, RUF100  # l
 )
 from litellm.proxy.hooks.parallel_request_limiter import (  # noqa: F401, RUF100  # legacy module exports
     PROXY_MaxParallelRequestsHandler,
-    _PROXY_MaxParallelRequestsHandler,  # pyright: ignore[reportPrivateUsage,reportUnusedImport]  # backwards-compatible package export
+    _PROXY_MaxParallelRequestsHandler,  # pyright: ignore[reportPrivateUsage]  # backwards-compatible package export
 )
 from litellm.proxy.hooks.parallel_request_limiter_v3 import (  # noqa: F401, RUF100  # legacy module exports
     PROXY_MaxParallelRequestsHandler_v3,
@@ -239,7 +246,11 @@ from litellm.proxy.hooks.sensitive_data_routing import (  # noqa: F401, RUF100  
 )
 from litellm.proxy.litellm_pre_call_utils import LiteLLMProxyRequestSetup, add_guardrails_from_auth_metadata
 from litellm.proxy.management_helpers.key_settings_audit import with_settings_updated_at
-from litellm.proxy.policy_engine.pipeline_executor import PipelineExecutor
+from litellm.proxy.policy_engine.pipeline_executor import (
+    PipelineExecutor,
+    pipeline_step_is_detect_only,
+    recorded_guardrail_information,
+)
 from litellm.proxy.policy_engine.policy_registry import get_policy_registry
 from litellm.proxy.policy_engine.policy_resolver import PolicyResolver
 from litellm.repositories.budget_repository import BudgetRepository
@@ -269,7 +280,7 @@ from litellm.types.passthrough_endpoints.pass_through_endpoints import EndpointT
 from litellm.types.proxy.policy_engine.pipeline_types import PipelineExecutionResult
 from litellm.types.utils import LLMResponseTypes, LoggedLiteLLMParams
 from litellm.utils import (
-    add_custom_logger_callback_to_specific_event,
+    add_configured_callback_to_specific_event,
     get_base_model_from_metadata,
 )
 
@@ -291,7 +302,7 @@ if TYPE_CHECKING:
     from litellm.proxy.db.spend_log_tool_index import ToolUsageTransaction
     from litellm.repositories.prisma_protocols import TableActions
     from litellm.types.mcp_server.mcp_server_manager import MCPServer
-    from litellm.types.proxy.policy_engine.pipeline_types import GuardrailPipeline
+    from litellm.types.proxy.policy_engine.pipeline_types import GuardrailPipeline, PipelineStep
 
     Span = _Span | object
 else:
@@ -602,8 +613,30 @@ def _policy_pipelines(data: Mapping[str, object]) -> tuple[tuple[str, "Guardrail
     )
 
 
+def _pipeline_steps(pipelines: Sequence[tuple[str, "GuardrailPipeline"]]) -> Iterator["PipelineStep"]:
+    for _policy_name, pipeline in pipelines:
+        yield from pipeline.steps
+
+
 def _pipeline_step_guardrail_names(pipelines: Sequence[tuple[str, "GuardrailPipeline"]]) -> frozenset[str]:
-    return frozenset(step.guardrail for _policy_name, pipeline in pipelines for step in pipeline.steps)
+    return frozenset(step.guardrail for step in _pipeline_steps(pipelines))
+
+
+def _pipeline_step_streams_live(step: "PipelineStep") -> bool:
+    """A detect-only step whose guardrail set ``streaming_buffer_until_moderated: false`` takes its verdict after
+    the chunks reach the client. A guardrail that masks response content keeps buffering, since the client would
+    already hold the unredacted stream, and a guardrail that is not loaded keeps buffering so the executor's
+    not-found outcome settles the stream before release"""
+    if not pipeline_step_is_detect_only(step):
+        return False
+    callback: Final = PipelineExecutor.find_guardrail_callback(step.guardrail)
+    if callback is None or callback.mask_response_content:
+        return False
+    return not unified_guardrail.resolve_streaming_flag(callback, "streaming_buffer_until_moderated", True)
+
+
+def _pipelines_stream_live(pipelines: Sequence[tuple[str, "GuardrailPipeline"]]) -> bool:
+    return all(_pipeline_step_streams_live(step) for step in _pipeline_steps(pipelines))
 
 
 def pipeline_managed_guardrail_names(
@@ -612,6 +645,120 @@ def pipeline_managed_guardrail_names(
     return _pipeline_step_guardrail_names(
         tuple((policy_name, pipeline) for policy_name, pipeline in _policy_pipelines(data) if pipeline.mode == mode)
     )
+
+
+def _ran_or_runs_outside_pipelines(
+    callback: CustomGuardrail | None,
+    data: Mapping[str, object],
+    pipeline_modes: frozenset[str],
+) -> bool:
+    return callback is not None and (
+        callback.pre_call_hook_ran_or_raised(data)
+        or callback.deployment_hook_ran(data)
+        or any(
+            callback._event_hook_is_event_type(hook)  # pyright: ignore[reportPrivateUsage]  # no public hook check
+            for hook in GuardrailEventHooks
+            if hook.value not in pipeline_modes
+        )
+    )
+
+
+def _runs_only_in_pipelines(
+    name: str, data: Mapping[str, object], pre_call: frozenset[str], post_call: frozenset[str]
+) -> bool:
+    return not _ran_or_runs_outside_pipelines(
+        PipelineExecutor.find_guardrail_callback(name),
+        data,
+        frozenset(mode for mode, names in (("pre_call", pre_call), ("post_call", post_call)) if name in names),
+    )
+
+
+def _request_steps_that_have_not_run(data: Mapping[str, object]) -> frozenset[str]:
+    """Pre_call policy pipeline steps a pipeline skipped, whose guardrail nothing else ran or runs for this request."""
+    pre_call: Final = pipeline_managed_guardrail_names(data, "pre_call")
+    return frozenset(name for name in pre_call if _runs_only_in_pipelines(name, data, pre_call, frozenset()))
+
+
+def _steps_that_ran(result: PipelineExecutionResult) -> frozenset[str]:
+    return frozenset(step.guardrail_name for step in result.step_results if step.outcome != "skip")
+
+
+def _whole_response_log_waits_for_its_pipelines(data: Mapping[str, object], call_type: str) -> bool:
+    """
+    The success log is parked until the response hooks finish, and the headers are built
+    after them. The LLM pass-through route builds its headers first, and the generateContent
+    adapter logs its nested completion before the response hooks run.
+    """
+    logging_obj: Final = data.get("litellm_logging_obj")
+    return (
+        call_type not in (CallTypes.allm_passthrough_route.value, CallTypes.agenerate_content.value)
+        and isinstance(logging_obj, Logging)
+        and logging_obj.enqueue_deferred_logging is not None
+    )
+
+
+def _stream_log_waits_for_its_pipelines(data: Mapping[str, object]) -> bool:
+    return getattr(data.get("litellm_logging_obj"), "_on_deferred_stream_complete", None) is not None
+
+
+def _pipelines_settled_by(
+    pipelines: Sequence[tuple[str, "GuardrailPipeline"]], index: int, result: PipelineExecutionResult
+) -> Sequence[tuple[str, "GuardrailPipeline"]]:
+    """This pipeline, plus every later response pipeline when its verdict ends the request before they run."""
+    if result.terminal_action == "allow":
+        return pipelines[index : index + 1]
+    return (
+        pipelines[index],
+        *((policy_name, pipeline) for policy_name, pipeline in pipelines[index + 1 :] if pipeline.mode == "post_call"),
+    )
+
+
+def _steps_later_pipelines_still_run(
+    pipelines: Sequence[tuple[str, "GuardrailPipeline"]], index: int, result: PipelineExecutionResult
+) -> frozenset[str]:
+    """The steps of the later response pipelines, which still run when this pipeline's verdict lets the request on."""
+    if result.terminal_action != "allow":
+        return frozenset()
+    later: Final = tuple(
+        (policy_name, pipeline) for policy_name, pipeline in pipelines[index + 1 :] if pipeline.mode == "post_call"
+    )
+    return _pipeline_step_guardrail_names(later)
+
+
+def _drop_response_steps_that_did_not_run(
+    data: dict[str, object],  # mutable-ok: the request's applied guardrails are trimmed in place
+    pipelines: Sequence[tuple[str, "GuardrailPipeline"]],
+    steps_to_keep: frozenset[str],
+) -> None:
+    """
+    Drop from the applied guardrails the steps of these response pipelines outside ``steps_to_keep``,
+    unless their guardrail also runs outside pipelines. Every step is named up front, so a
+    log built before the pipeline finished, such as a cache hit's, still lists the steps
+    that ran. The list is trimmed in place, since a route's logging object may hold a
+    shallow copy of the metadata.
+    """
+    pre_call: Final = pipeline_managed_guardrail_names(data, "pre_call")
+    post_call: Final = _pipeline_step_guardrail_names(pipelines)
+    not_run: Final = frozenset(
+        name for name in post_call - steps_to_keep if _runs_only_in_pipelines(name, data, pre_call, post_call)
+    )
+    if not not_run:
+        return
+    for bucket_key in ("metadata", "litellm_metadata"):
+        _drop_applied_guardrails_in_place(data.get(bucket_key), not_run)
+
+
+def _drop_applied_guardrails_in_place(bucket: object, names: frozenset[str]) -> None:
+    if not isinstance(bucket, dict):
+        return
+    metadata: Final = cast("dict[str, object]", bucket)  # cast-ok: metadata buckets are str-keyed
+    applied: Final = metadata.get("applied_guardrails")
+    if not isinstance(applied, list):
+        return
+    entries: Final = cast("list[object]", applied)  # cast-ok: entries are only compared with names
+    entries[:] = [name for name in entries if name not in names]
+    if not entries:
+        metadata.pop("applied_guardrails")
 
 
 def _partition_post_call_callbacks() -> tuple[tuple[CustomGuardrail, ...], tuple[CustomLogger, ...]]:
@@ -1332,56 +1479,10 @@ def _call_type_for_route(route: str | None) -> str | None:
 
 
 _PROXY_ONLY_LLM_API_ERRORS: Final = (HTTPException, ProxyException, GuardrailRaisedException)
-_LOG_DB_METRICS_CALL_TYPES: Final = frozenset(("get_data", "insert_data", "update_data", "delete_data"))
 _PROXY_ONLY_ERROR_LOGGED_FIELDS: Final = frozenset(
     {"model", "messages", "input", "prompt", "user", "stream", "litellm_call_id"}
 )
-
-
-def _as_str_mapping(value: object) -> Mapping[str, object]:
-    if not isinstance(value, Mapping):
-        return MappingProxyType({})
-    return cast(  # cast-ok: the runtime Mapping check validates the container shape
-        Mapping[str, object], value
-    )
-
-
-def _proxy_only_error_logged_metadata_keys(*, authenticated: bool, past_pre_call: bool) -> frozenset[str]:
-    return frozenset(
-        key
-        for key, logged in (("tags", authenticated), ("standard_logging_guardrail_information", past_pre_call))
-        if logged
-    )
-
-
-def _is_logged_metadata_value(key: str, value: object) -> bool:
-    return key != "tags" or (isinstance(value, list) and all(isinstance(item, str) for item in value))
-
-
-def _proxy_only_error_log_metadata(value: object, logged_keys: frozenset[str]) -> dict[str, object] | None:
-    if not isinstance(value, Mapping):
-        return None
-    metadata: Final = _as_str_mapping(value)
-    return {
-        key: value for key, value in metadata.items() if key in logged_keys and _is_logged_metadata_value(key, value)
-    }
-
-
-def _proxy_only_error_log_fields(
-    request_data: Mapping[str, object], logged_metadata_keys: frozenset[str]
-) -> Mapping[str, object]:
-    metadata_fields: Final = {
-        key: filtered_metadata
-        for key in ("metadata", "litellm_metadata")
-        if (filtered_metadata := _proxy_only_error_log_metadata(request_data.get(key), logged_metadata_keys))
-        is not None
-    }
-    return MappingProxyType(
-        {
-            **{key: value for key, value in request_data.items() if key in _PROXY_ONLY_ERROR_LOGGED_FIELDS},
-            **metadata_fields,
-        }
-    )
+_LOG_DB_METRICS_CALL_TYPES: Final = frozenset(("get_data", "insert_data", "update_data", "delete_data"))
 
 
 _EXCEPTION_CHAIN_MAX_DEPTH: Final = 16
@@ -1413,6 +1514,57 @@ def _client_disconnected(exception: Exception) -> bool:
 
 def _provider_billed_the_failure(exception: Exception) -> bool:
     return _timed_out_reading_from_provider(exception) or _client_disconnected(exception)
+
+
+def _as_str_mapping(value: object) -> Mapping[str, object]:
+    if not isinstance(value, Mapping):
+        return MappingProxyType({})
+    return cast(  # cast-ok: the runtime Mapping check validates the container shape
+        Mapping[str, object], value
+    )
+
+
+def _proxy_only_error_logged_metadata_keys(*, authenticated: bool, past_pre_call: bool) -> frozenset[str]:
+    return frozenset(
+        key
+        for key, logged in (("tags", authenticated), ("standard_logging_guardrail_information", past_pre_call))
+        if logged
+    )
+
+
+def _is_logged_metadata_value(key: str, value: object) -> bool:
+    if key != "tags":
+        return True
+    tags: Final = cast(list[object], value) if isinstance(value, list) else None  # cast-ok: isinstance checked the list
+    return tags is not None and all(isinstance(item, str) for item in tags)
+
+
+def _proxy_only_error_log_metadata(
+    value: object, logged_keys: frozenset[str]
+) -> dict[str, object] | None:  # mutable-ok: router attribution stamps the logged metadata in place
+    metadata: Final = _as_str_mapping(value)
+    if not isinstance(value, Mapping):
+        return None
+    return {
+        key: value for key, value in metadata.items() if key in logged_keys and _is_logged_metadata_value(key, value)
+    }
+
+
+def _proxy_only_error_log_fields(
+    request_data: Mapping[str, object], logged_metadata_keys: frozenset[str]
+) -> Mapping[str, object]:
+    metadata_fields: Final = {
+        key: filtered_metadata
+        for key in ("metadata", "litellm_metadata")
+        if (filtered_metadata := _proxy_only_error_log_metadata(request_data.get(key), logged_metadata_keys))
+        is not None
+    }
+    return MappingProxyType(
+        {
+            **{key: value for key, value in request_data.items() if key in _PROXY_ONLY_ERROR_LOGGED_FIELDS},
+            **metadata_fields,
+        }
+    )
 
 
 def _failure_fields_to_lift(request_data: Mapping[str, object], provider_billed: bool = False) -> Mapping[str, object]:
@@ -1533,6 +1685,10 @@ def _raise_malformed_listing_filter_return(error: MalformedListingFilterReturn) 
         param=None,
         code=500,
     )
+
+
+def _proxy_hook_factory(hook_name: str) -> Callable[..., CustomLogger]:
+    return get_proxy_hook(hook_name)
 
 
 class ProxyLogging:
@@ -1710,19 +1866,19 @@ class ProxyLogging:
         from litellm.proxy.proxy_server import prisma_client
 
         for hook in PROXY_HOOKS:
-            proxy_hook = get_proxy_hook(hook)
+            proxy_hook = _proxy_hook_factory(hook)
             expected_args = inspect.getfullargspec(proxy_hook).args
             if "prisma_client" in expected_args and prisma_client is None:
                 verbose_proxy_logger.debug(
                     "Skipping proxy hook %s: it requires a database and no prisma client is configured", hook
                 )
                 continue
-            passed_in_args: dict[str, Any] = {}
-            if "internal_usage_cache" in expected_args:
-                passed_in_args["internal_usage_cache"] = self.internal_usage_cache
-            if "prisma_client" in expected_args:
-                passed_in_args["prisma_client"] = prisma_client
-            proxy_hook_obj = cast(CustomLogger, proxy_hook(**passed_in_args))
+            available_args: Mapping[str, object] = {
+                "internal_usage_cache": self.internal_usage_cache,
+                "prisma_client": prisma_client,
+            }
+            passed_in_args = {name: value for name, value in available_args.items() if name in expected_args}
+            proxy_hook_obj = proxy_hook(**passed_in_args)
             litellm.logging_callback_manager.add_litellm_callback(proxy_hook_obj)
 
             self.proxy_hook_mapping[hook] = proxy_hook_obj
@@ -1740,18 +1896,21 @@ class ProxyLogging:
         # Track string callbacks and their initialized instances so we can
         # replace them in-place, preventing duplicates (string + instance) in
         # litellm.callbacks which caused double-counting of metrics.
-        string_callbacks_to_replace: Final[dict[int, CustomLogger]] = {}
-
-        for idx, callback in enumerate(litellm.callbacks):
-            if isinstance(callback, str):
-                initialized_callback = litellm.litellm_core_utils.litellm_logging._init_custom_logger_compatible_class(
-                    cast(_custom_logger_compatible_callbacks_literal, callback),
+        built_string_callbacks: Final = (
+            (
+                idx,
+                litellm.litellm_core_utils.litellm_logging.init_custom_logger_compatible_class_at_startup(
+                    callback,
                     internal_usage_cache=self.internal_usage_cache.dual_cache,
                     llm_router=llm_router,
-                )
-
-                if initialized_callback is not None:
-                    string_callbacks_to_replace[idx] = initialized_callback
+                ),
+            )
+            for idx, callback in enumerate(litellm.callbacks)
+            if isinstance(callback, str)
+        )
+        string_callbacks_to_replace: Final = MappingProxyType(
+            {idx: built for idx, built in built_string_callbacks if built is not None}
+        )
 
         # Replace string entries in litellm.callbacks with initialized instances
         for idx, initialized_callback in string_callbacks_to_replace.items():
@@ -1777,9 +1936,9 @@ class ProxyLogging:
         success_callbacks: Final = tuple(cb for cb in litellm.success_callback if isinstance(cb, str))
         failure_callbacks: Final = tuple(cb for cb in litellm.failure_callback if isinstance(cb, str))
         for callback in success_callbacks:
-            add_custom_logger_callback_to_specific_event(callback, "success")
+            add_configured_callback_to_specific_event(callback, "success")
         for callback in failure_callbacks:
-            add_custom_logger_callback_to_specific_event(callback, "failure")
+            add_configured_callback_to_specific_event(callback, "failure")
 
     async def update_request_status(self, litellm_call_id: str, status: Literal["success", "fail"]):
         # only use this if slack alerting is being used
@@ -2526,8 +2685,12 @@ class ProxyLogging:
             data.pop("prompt_version", None)
             data.pop("prompt_environment", None)
 
-    def _process_guardrail_metadata(self, data: dict) -> None:
-        """Process guardrails from metadata and add to applied_guardrails."""
+    def _process_guardrail_metadata(self, data: dict, *, skip_guardrails: bool = False) -> None:
+        """
+        Process guardrails from metadata and add to applied_guardrails, leaving out the pre_call
+        policy pipeline steps that have not run. With ``skip_guardrails`` the pipelines run on
+        another request, so every step is added.
+        """
         from litellm.proxy.common_utils.callback_utils import (
             add_guardrail_to_applied_guardrails_header,
         )
@@ -2551,8 +2714,17 @@ class ProxyLogging:
             if not isinstance(applied_guardrails, list):
                 applied_guardrails = []
 
+            not_run: Final = (
+                frozenset[str]()
+                if skip_guardrails
+                else _request_steps_that_have_not_run(cast(dict[str, object], data))  # cast-ok: request payload
+            )
             for guardrail_name in guardrails_in_metadata:
-                if isinstance(guardrail_name, str) and guardrail_name not in applied_guardrails:
+                if (
+                    isinstance(guardrail_name, str)
+                    and guardrail_name not in applied_guardrails
+                    and guardrail_name not in not_run
+                ):
                     add_guardrail_to_applied_guardrails_header(request_data=data, guardrail_name=guardrail_name)
 
     async def _maybe_execute_pipelines(
@@ -2584,7 +2756,10 @@ class ProxyLogging:
             return data, None
 
         current_response = response  # rebind-ok: chains each pipeline's replacement response into the next
-        for policy_name, pipeline in pipelines:
+        steps_that_ran: frozenset[str] = frozenset()  # rebind-ok: a later pipeline keeps a step an earlier one ran
+        request: Final = cast(dict[str, object], data)  # cast-ok: request payload, updated in place by every pipeline
+        log_waits: Final = event_hook == "post_call" and _whole_response_log_waits_for_its_pipelines(request, call_type)
+        for index, (policy_name, pipeline) in enumerate(pipelines):
             if pipeline.mode != event_hook:
                 continue
 
@@ -2599,6 +2774,14 @@ class ProxyLogging:
                 policy_name=policy_name,
                 raw_request_snapshot=raw_request_snapshot,
             )
+
+            steps_that_ran = steps_that_ran | _steps_that_ran(result)
+            if log_waits:
+                _drop_response_steps_that_did_not_run(
+                    request,
+                    _pipelines_settled_by(pipelines, index, result),
+                    steps_that_ran | _steps_later_pipelines_still_run(pipelines, index, result),
+                )
 
             data = self._handle_pipeline_result(
                 result=result,
@@ -2615,10 +2798,10 @@ class ProxyLogging:
     @staticmethod
     def _handle_pipeline_result(
         result: PipelineExecutionResult,
-        data: dict,
+        data: dict[str, object],
         policy_name: str,
         original_response: "LLMResponseTypes | Sequence[object] | None" = None,
-    ) -> dict:
+    ) -> dict[str, object]:
         """
         Handle a PipelineExecutionResult — allow, block, or modify_response.
 
@@ -2680,9 +2863,10 @@ class ProxyLogging:
             raise HTTPException(status_code=400, detail=error_detail)
 
         if result.terminal_action == "modify_response":
+            model: Final = data.get("model")
             raise ModifyResponseException(
                 message=result.modify_response_message or "Response modified by pipeline",
-                model=data.get("model", "unknown"),
+                model=model if isinstance(model, str) else "unknown",
                 request_data=data,
                 guardrail_name=f"pipeline:{policy_name}",
                 detection_info=None,
@@ -2838,7 +3022,7 @@ class ProxyLogging:
                 and (guardrails_only or not caps.has_pre_call_override)
             ):
                 if data is not None:
-                    self._process_guardrail_metadata(data)
+                    self._process_guardrail_metadata(data, skip_guardrails=skip_guardrails)
                 return data
 
             parallel_guardrails: Final[tuple[CustomGuardrail, ...]] = (
@@ -2942,17 +3126,17 @@ class ProxyLogging:
                 )
 
             if data is not None:
-                self._process_guardrail_metadata(data)
+                self._process_guardrail_metadata(data, skip_guardrails=skip_guardrails)
 
             return data
         except SensitiveDataRouteException as e:
             data = await self._handle_sensitive_data_route_exception(e, data, user_api_key_dict)
             if data is not None:
-                self._process_guardrail_metadata(data)
+                self._process_guardrail_metadata(data, skip_guardrails=skip_guardrails)
             return data
         except Exception:
             if data is not None:
-                self._process_guardrail_metadata(data)
+                self._process_guardrail_metadata(data, skip_guardrails=skip_guardrails)
             raise
 
     async def _run_parallel_pre_call_guardrails(
@@ -3537,14 +3721,14 @@ class ProxyLogging:
                 alerting_metadata=alerting_metadata,
                 **extra_kwargs,
             )
-        for client in self.alerting:
-            if client == "sentry":
-                if litellm.utils.sentry_sdk_instance is not None:
-                    litellm.utils.sentry_sdk_instance.capture_message(formatted_message)
-                else:
-                    raise Exception("Missing SENTRY_DSN from environment")
+        if "sentry" in self.alerting:
+            litellm.litellm_core_utils.litellm_logging.initialize_sentry()
+            sentry: Final = litellm.litellm_core_utils.litellm_logging.sentry_sdk_instance
+            if sentry is None:
+                raise Exception("Missing SENTRY_DSN from environment")
+            sentry.capture_message(formatted_message)
 
-    async def failure_handler(self, original_exception, duration: float, call_type: str, traceback_str=""):
+    async def failure_handler(self, original_exception: Exception, duration: float, call_type: str, traceback_str=""):
         """
         Log failed db read/writes
 
@@ -3585,8 +3769,9 @@ class ProxyLogging:
                 call_type=call_type,
             )
 
-        if litellm.utils.capture_exception:
-            litellm.utils.capture_exception(error=original_exception)
+        capture: Final = litellm.litellm_core_utils.litellm_logging.capture_exception
+        if capture is not None:
+            capture(error=original_exception)
 
     async def post_call_failure_hook(
         self,
@@ -3655,6 +3840,7 @@ class ProxyLogging:
             original_exception=original_exception,
             error_type=error_type,
             route=user_api_key_dict.request_route,
+            team_id=user_api_key_dict.team_id,
         ):
             await self._handle_logging_proxy_only_error(
                 request_data=request_data,
@@ -3717,6 +3903,7 @@ class ProxyLogging:
         original_exception: Exception,
         error_type: ProxyErrorTypes | None = None,
         route: str | None = None,
+        team_id: str | None = None,
     ) -> bool:
         """
         Return True if the error is a Proxy Only LLM API Error
@@ -3741,6 +3928,9 @@ class ProxyLogging:
             return False
         if not (RouteChecks.is_llm_api_route(route) or RouteChecks.is_info_route(route)):
             return False
+        # Dashboard session keys poll info routes in the background; their failures are not user requests.
+        if RouteChecks.is_dashboard_session_info_route(route, team_id):
+            return False
 
         return isinstance(original_exception, _PROXY_ONLY_LLM_API_ERRORS) or (error_type == ProxyErrorTypes.auth_error)
 
@@ -3758,8 +3948,10 @@ class ProxyLogging:
         Is triggered when self._is_proxy_only_error() returns True
         """
         litellm_logging_obj: Logging | None = request_data.get("litellm_logging_obj", None)
+        set_up_by_request: Final = litellm_logging_obj is not None
+        request_fields: Final = cast(Mapping[str, object], request_data)  # cast-ok: request bodies are str-keyed JSON
         logged_metadata_keys: Final = _proxy_only_error_logged_metadata_keys(
-            authenticated=error_type != ProxyErrorTypes.auth_error, past_pre_call=litellm_logging_obj is not None
+            authenticated=error_type != ProxyErrorTypes.auth_error, past_pre_call=set_up_by_request
         )
         user_api_key_logged_metadata: Final = LiteLLMProxyRequestSetup.get_sanitized_user_information_from_key(
             user_api_key_dict=user_api_key_dict
@@ -3773,7 +3965,9 @@ class ProxyLogging:
                 original_function=route or "IGNORE_THIS",
                 rules_obj=litellm.utils.Rules(),
                 start_time=datetime.now(),
-                **_proxy_only_error_log_fields(request_data, logged_metadata_keys),
+                **_proxy_only_error_log_fields(  # pyright: ignore[reportArgumentType]  # the allowlist never carries is_async_call
+                    request_fields, logged_metadata_keys
+                ),
             )
             request_data["litellm_logging_obj"] = litellm_logging_obj  # rebind-ok: lifted then popped by the caller
             if "metadata" not in request_data:
@@ -3782,17 +3976,19 @@ class ProxyLogging:
 
         if litellm_logging_obj is not None:
             ## UPDATE LOGGING INPUT
-            _optional_params: Final = {}
-            _litellm_params: Final = {}
+            _optional_params: Final[dict[str, object]] = {}  # mutable-ok: filled below, then handed to the logger
+            _litellm_params: Final[dict[str, object]] = {}  # mutable-ok: filled below, then handed to the logger
 
             litellm_param_keys: Final = LoggedLiteLLMParams.__annotations__.keys()
-            for k, v in _proxy_only_error_log_fields(request_data, logged_metadata_keys).items():
+            for k, v in _proxy_only_error_log_fields(request_fields, logged_metadata_keys).items():
                 if k in litellm_param_keys:
                     _litellm_params[k] = v
                 elif k not in ("model", "user", "litellm_logging_obj"):
                     _optional_params[k] = v
 
-            existing: Final = _as_str_mapping(litellm_logging_obj.litellm_params)
+            existing: Final = _as_str_mapping(
+                litellm_logging_obj.litellm_params  # pyright: ignore[reportUnknownMemberType, reportUnknownArgumentType]  # Logging.litellm_params is untyped
+            )
             litellm_params: Final = {
                 **_litellm_params,
                 "metadata": {
@@ -3844,7 +4040,9 @@ class ProxyLogging:
                 input = request_data["input"]
                 litellm_logging_obj.model_call_details["input"] = input
                 body_shape_call_type = CallTypes.aembedding.value
-            resolved_call_type: Final = _call_type_for_route(route) or body_shape_call_type
+            resolved_call_type: Final = _call_type_for_route(route) or (
+                None if set_up_by_request else body_shape_call_type
+            )
             if resolved_call_type is not None and litellm_logging_obj.call_type != CallTypes.pass_through.value:
                 litellm_logging_obj.call_type = resolved_call_type
                 litellm_logging_obj.model_call_details["call_type"] = resolved_call_type
@@ -4415,7 +4613,12 @@ class ProxyLogging:
             resolve_endpoint_translation(user_api_key_dict, None) if post_call_pipelines else None
         )
         if pipeline_translation is not None:
-            current_response = self._pipeline_gated_stream(
+            pipeline_stream: Final = (
+                self._pipeline_scanned_live_stream
+                if _pipelines_stream_live(post_call_pipelines)
+                else self._pipeline_gated_stream
+            )
+            current_response = pipeline_stream(
                 response=current_response,
                 user_api_key_dict=user_api_key_dict,
                 request_data=request_data,
@@ -4431,10 +4634,10 @@ class ProxyLogging:
                 yield chunk
         except (GeneratorExit, asyncio.CancelledError):
             await ProxyLogging._close_guarded_layers(guarded_layers)
-            ProxyLogging._record_served_stream_output(request_data, served_chunks)
+            await ProxyLogging._record_served_stream_output(request_data, served_chunks)
             raise
         except Exception as e:
-            ProxyLogging._record_served_stream_output(request_data, served_chunks)
+            await ProxyLogging._record_served_stream_output(request_data, served_chunks)
             if not ProxyLogging._discard_deferred_stream_logging_for_failure(request_data, e):
                 ProxyLogging.fire_deferred_stream_logging(request_data)
             raise
@@ -4443,14 +4646,57 @@ class ProxyLogging:
         # completed.  unified_guardrail writes guardrail_information during
         # its end-of-stream block (inside current_response), so by the time
         # we reach this point the metadata is fully populated.
-        ProxyLogging._record_served_stream_output(request_data, served_chunks)
+        await ProxyLogging._record_served_stream_output(request_data, served_chunks)
         ProxyLogging.fire_deferred_stream_logging(request_data)
+
+    async def async_post_call_event_stream_iterator_hook(
+        self,
+        response: AsyncIterable[object],
+        user_api_key_dict: UserAPIKeyAuth,
+        request_data: dict[str, object],  # mutable-ok: same request-payload shape the hooks mutate
+        guardrails: Sequence[tuple[CustomGuardrail, bool]],
+    ) -> AsyncGenerator[object, None]:
+        """
+        Run post_call guardrails over a provider event stream the proxy relays as it arrives, such as a Bedrock
+        Converse stream on the passthrough route. Each guardrail scans the stream through the unified guardrail, as
+        on /v1/messages; its flag says whether it holds the stream until moderated by default.
+        """
+        from litellm.proxy.proxy_server import llm_router
+
+        merged_request_data: Final[dict[str, object]] = check_and_merge_model_level_guardrails(  # pyright: ignore[reportUnknownVariableType]  # returns the untyped request dict  # mutable-ok: same request-payload shape the hooks mutate
+            data=request_data, llm_router=llm_router
+        )
+        current_response: AsyncIterable[object] = response  # rebind-ok: each guardrail wraps the previous layer
+        guarded_layers: Final[list[AsyncGenerator[object, None]]] = []  # mutable-ok: closed on disconnect
+        for guardrail, holds_until_moderated in guardrails:
+            if guarded_layers:
+                current_response = ProxyLogging._released_copies(current_response)
+                guarded_layers.append(current_response)
+            current_response = self._wrap_streaming_iterator_with_enrichment(
+                guardrail,
+                current_response,
+                partial(
+                    unified_guardrail.async_post_call_streaming_iterator_hook,  # pyright: ignore[reportUnknownMemberType]  # takes the untyped request dict
+                    user_api_key_dict=user_api_key_dict,
+                    request_data=merged_request_data,
+                    guardrail_to_apply=guardrail,
+                    buffer_until_moderated_default=holds_until_moderated,
+                ),
+                request_data=merged_request_data,
+            )
+            guarded_layers.append(current_response)
+        try:
+            async for item in current_response:
+                yield item
+        except (GeneratorExit, asyncio.CancelledError):
+            await ProxyLogging._close_guarded_layers(guarded_layers)
+            raise
 
     async def _pipeline_gated_stream(
         self,
         response: "AsyncGenerator[object, None]",
         user_api_key_dict: UserAPIKeyAuth,
-        request_data: dict,  # mutable-ok: same request-payload shape the hooks mutate
+        request_data: dict[str, object],  # mutable-ok: same request-payload shape the hooks mutate
         pipelines: "tuple[tuple[str, GuardrailPipeline], ...]",
         translation: "tuple[str, BaseTranslation]",
     ) -> "AsyncGenerator[object, None]":
@@ -4478,7 +4724,8 @@ class ProxyLogging:
 
         call_type, endpoint_translation = translation
 
-        for policy_name, pipeline in pipelines:
+        steps_that_ran: frozenset[str] = frozenset()  # rebind-ok: a later pipeline keeps a step an earlier one ran
+        for index, (policy_name, pipeline) in enumerate(pipelines):
             result: PipelineExecutionResult = await PipelineExecutor.execute_steps(
                 steps=pipeline.steps,
                 mode="post_call",
@@ -4489,6 +4736,13 @@ class ProxyLogging:
                 streaming_chunks=buffered,
                 endpoint_translation=endpoint_translation,
             )
+            steps_that_ran = steps_that_ran | _steps_that_ran(result)
+            if _stream_log_waits_for_its_pipelines(request_data):
+                _drop_response_steps_that_did_not_run(
+                    request_data,
+                    _pipelines_settled_by(pipelines, index, result),
+                    steps_that_ran | _steps_later_pipelines_still_run(pipelines, index, result),
+                )
             try:
                 ProxyLogging._handle_pipeline_result(
                     result, data=request_data, policy_name=policy_name, original_response=buffered
@@ -4511,6 +4765,132 @@ class ProxyLogging:
         for buffered_item in buffered:
             yield buffered_item
 
+    async def _pipeline_scanned_live_stream(
+        self,
+        response: "AsyncGenerator[object, None]",
+        user_api_key_dict: UserAPIKeyAuth,
+        request_data: dict[str, object],  # mutable-ok: same request-payload shape the hooks mutate
+        pipelines: "tuple[tuple[str, GuardrailPipeline], ...]",
+        translation: "tuple[str, BaseTranslation]",
+    ) -> "AsyncGenerator[object, None]":
+        """
+        Execute detect-only post_call policy pipelines against a streamed response the client receives live.
+
+        Every chunk reaches the client as the provider sends it. Once the stream ends, each pipeline's steps run
+        against a copy of the assembled output, the same end-of-stream scan ``_pipeline_gated_stream`` runs
+        before release. The steps can only allow or pass to the next one, so the scan records each guardrail's
+        verdict in guardrail_information without changing what was sent; the executor discards a rewrite right
+        after the step that returned it, with a warning, so every step scans the text the client received. A
+        stream cut short, by a client disconnect or by a provider error after some chunks went out, still gets
+        the scan over what the client received, shielded from cancellation, and a scan that raises then records
+        guardrail_failed_to_respond for every step guardrail without a verdict, so the spend log never shows a
+        silent skip.
+        """
+        released: Final[list[object]] = []  # mutable-ok: accumulates the chunks the client already received
+        try:
+            async for item in response:
+                released.append(item)
+                yield item
+        except (GeneratorExit, asyncio.CancelledError, Exception):
+            if released:
+                await self._scan_pipeline_stream_cut_short(
+                    released=released,
+                    user_api_key_dict=user_api_key_dict,
+                    request_data=request_data,
+                    pipelines=pipelines,
+                    translation=translation,
+                )
+            raise
+        if not released:
+            return
+        with anyio.CancelScope(shield=True):
+            await self._scan_released_pipeline_stream(
+                originals=released,
+                user_api_key_dict=user_api_key_dict,
+                request_data=request_data,
+                pipelines=pipelines,
+                translation=translation,
+            )
+
+    async def _scan_released_pipeline_stream(
+        self,
+        *,
+        originals: Sequence[object],
+        user_api_key_dict: UserAPIKeyAuth,
+        request_data: dict[str, object],  # mutable-ok: same request-payload shape the hooks mutate
+        pipelines: "tuple[tuple[str, GuardrailPipeline], ...]",
+        translation: "tuple[str, BaseTranslation]",
+    ) -> None:
+        call_type, endpoint_translation = translation
+        scanned: Final[list[object]] = list(copy.deepcopy(tuple(originals)))  # mutable-ok: executor scans in place
+        for policy_name, pipeline in pipelines:
+            result: PipelineExecutionResult = await PipelineExecutor.execute_steps(
+                steps=pipeline.steps,
+                mode="post_call",
+                data=request_data,
+                user_api_key_dict=user_api_key_dict,
+                call_type=call_type,
+                policy_name=policy_name,
+                streaming_chunks=scanned,
+                endpoint_translation=endpoint_translation,
+                stream_already_sent=True,
+            )
+            ProxyLogging._handle_pipeline_result(
+                result, data=request_data, policy_name=policy_name, original_response=originals
+            )
+
+    async def _scan_pipeline_stream_cut_short(
+        self,
+        *,
+        released: Sequence[object],
+        user_api_key_dict: UserAPIKeyAuth,
+        request_data: dict[str, object],  # mutable-ok: same request-payload shape the hooks mutate
+        pipelines: "tuple[tuple[str, GuardrailPipeline], ...]",
+        translation: "tuple[str, BaseTranslation]",
+    ) -> None:
+        _call_type, endpoint_translation = translation
+        recorded_before: Final = len(recorded_guardrail_information(request_data))
+        with anyio.CancelScope(shield=True):
+            try:
+                await self._scan_released_pipeline_stream(
+                    originals=endpoint_translation.released_stream_as_ended(copy.deepcopy(tuple(released))),
+                    user_api_key_dict=user_api_key_dict,
+                    request_data=request_data,
+                    pipelines=pipelines,
+                    translation=translation,
+                )
+            except Exception as e:  # noqa: BLE001  # the stream already ended, so the verdict can only be recorded
+                verbose_proxy_logger.warning(
+                    "Policy pipelines scanned a stream that was cut short and raised %s",
+                    type(e).__name__,
+                )
+                recorded_names: Final = frozenset(
+                    entry["guardrail_name"]
+                    for entry in recorded_guardrail_information(request_data)[recorded_before:]
+                    if "guardrail_name" in entry
+                )
+                unsettled: Final = tuple(
+                    PipelineExecutor.find_guardrail_callback(step.guardrail)
+                    for step in _pipeline_steps(pipelines)
+                    if step.guardrail not in recorded_names
+                )
+                for callback in unsettled:
+                    if callback is None:
+                        continue
+                    callback.add_standard_logging_guardrail_information_to_request_data(
+                        guardrail_json_response=e,
+                        request_data=request_data,
+                        guardrail_status="guardrail_failed_to_respond",
+                        event_type=GuardrailEventHooks.post_call,
+                    )
+
+    @staticmethod
+    async def _released_copies(items: AsyncIterable[object]) -> AsyncGenerator[object, None]:
+        """Each item a guardrail layer released, copied for the next layer, so a rewrite the earlier layer writes
+        back once its stream ends never reaches items the next layer is still holding."""
+        async for item in items:
+            yield copy.copy(item)
+
     @staticmethod
     async def _close_guarded_layers(layers: Sequence[AsyncGenerator[object, None]]) -> None:
         for layer in reversed(layers):
@@ -4522,11 +4902,12 @@ class ProxyLogging:
                 )
 
     @staticmethod
-    def _record_served_stream_output(request_data: Mapping[str, object], served_chunks: Sequence[object]) -> None:
+    async def _record_served_stream_output(request_data: Mapping[str, object], served_chunks: Sequence[object]) -> None:
         logging_obj: Final = request_data.get("litellm_logging_obj")
         if not isinstance(logging_obj, Logging):
             return
-        record_served_output_texts(logging_obj.model_call_details, served_stream_output_texts(served_chunks))
+        texts: Final = await offload_token_count(served_stream_output_texts)(served_chunks)
+        record_served_output_texts(logging_obj.model_call_details, texts)
 
     @staticmethod
     def fire_deferred_stream_logging(request_data: dict) -> None:
@@ -4594,6 +4975,14 @@ class ProxyLogging:
         await limiter.async_release_max_parallel_requests_on_disconnect(user_api_key_dict)
 
     _arelease_max_parallel_requests_on_disconnect = arelease_max_parallel_requests_on_disconnect
+
+    async def arelease_responses_websocket_slot(self, user_api_key_dict: UserAPIKeyAuth) -> None:
+        """Release the slot a Responses WebSocket took at admission. Only call this once that admission succeeded:
+        the legacy limiter keeps no record of its acquisitions and decrements unconditionally."""
+        limiter: Final = self.get_proxy_hook("parallel_request_limiter")
+        if not isinstance(limiter, (PROXY_MaxParallelRequestsHandler_v3, _PROXY_MaxParallelRequestsHandler)):
+            return
+        await limiter.async_release_max_parallel_requests_on_disconnect(user_api_key_dict)
 
     async def enforce_mcp_server_rate_limits(
         self,
@@ -4699,7 +5088,6 @@ async def _lookup_deprecated_key(
 
 # DualCache for LiteLLM_Config param_name reads.
 # Redis layer is attached in proxy_server._init_cache.
-LITELLM_CONFIG_CACHE_TTL_SECONDS: Final[int] = int(os.environ.get("LITELLM_CONFIG_PARAM_CACHE_TTL_SECONDS", "60"))
 _CONFIG_CACHE_MISS: Final[str] = "__litellm_config_param_miss__"
 
 litellm_config_cache: Final[DualCache] = DualCache(
@@ -4922,6 +5310,7 @@ class PrismaClient:
         self.db: PrismaWrapper | RoutingPrismaWrapper
         if read_replica_url:
             try:
+                reader_token_auth: Final = resolve_database_token_auth(read_replica=True)
                 # If token auth is enabled, the reader refreshes its own token on
                 # the same cadence as the writer. We parse the static endpoint
                 # pieces (host/port/user/db) once from the reader URL — only
@@ -4936,8 +5325,8 @@ class PrismaClient:
                 # and the first query falls through to the synchronous fallback
                 # path in `PrismaWrapper.__getattr__`, which deadlocks the event
                 # loop and times out after 30s.
-                if token_auth is not None and reader_iam_endpoint is not None:
-                    reader_token: Final = mint_database_token(token_auth, reader_iam_endpoint)
+                if reader_token_auth is not None and reader_iam_endpoint is not None:
+                    reader_token: Final = mint_database_token(reader_token_auth, reader_iam_endpoint)
                     read_replica_url = add_missing_query_params(
                         reader_iam_endpoint.build_url(reader_token),
                         token_refresh_params_from_url(read_replica_url),
@@ -4950,7 +5339,7 @@ class PrismaClient:
                     reader_prisma = Prisma(datasource=reader_datasource)
                 reader_wrapper: Final = PrismaWrapper(
                     original_prisma=reader_prisma,
-                    token_auth=token_auth,
+                    token_auth=reader_token_auth,
                     db_url_env_var="DATABASE_URL_READ_REPLICA",
                     iam_endpoint=reader_iam_endpoint,
                     recreate_uses_datasource=True,
@@ -4982,28 +5371,28 @@ class PrismaClient:
         self._db_health_watchdog_task: asyncio.Task | None = None
         self._view_setup_task: asyncio.Task[_ViewSetupOutcome] | None = None
         self._db_last_reconnect_attempt_ts: float = 0.0
-        self._db_reconnect_cooldown_seconds: int = max(1, int(os.getenv("PRISMA_RECONNECT_COOLDOWN_SECONDS", "15")))
+        self._db_reconnect_cooldown_seconds: int = max(1, get_env_int("PRISMA_RECONNECT_COOLDOWN_SECONDS", 15))
         self._db_read_only_recreate_ts: float = 0.0
         self._db_read_only_recreate_streak: int = 0
         self._db_health_watchdog_interval_seconds: int = max(
-            5, int(os.getenv("PRISMA_HEALTH_WATCHDOG_INTERVAL_SECONDS", "30"))
+            5, get_env_int("PRISMA_HEALTH_WATCHDOG_INTERVAL_SECONDS", 30)
         )
         self._db_health_watchdog_enabled: bool = (
             str_to_bool(os.getenv("PRISMA_HEALTH_WATCHDOG_ENABLED", "true")) is True
         )
         self._db_health_watchdog_probe_timeout_seconds: float = max(
             0.5,
-            float(os.getenv("PRISMA_HEALTH_WATCHDOG_PROBE_TIMEOUT_SECONDS", "5.0")),
+            get_env_float("PRISMA_HEALTH_WATCHDOG_PROBE_TIMEOUT_SECONDS", 5.0),
         )
         self._db_watchdog_reconnect_timeout_seconds: float = max(
-            1.0, float(os.getenv("PRISMA_WATCHDOG_RECONNECT_TIMEOUT_SECONDS", "30.0"))
+            1.0, get_env_float("PRISMA_WATCHDOG_RECONNECT_TIMEOUT_SECONDS", 30.0)
         )
         self._db_auth_reconnect_timeout_seconds: float = max(
-            0.5, float(os.getenv("PRISMA_AUTH_RECONNECT_TIMEOUT_SECONDS", "2.0"))
+            0.5, get_env_float("PRISMA_AUTH_RECONNECT_TIMEOUT_SECONDS", 2.0)
         )
         self._db_auth_reconnect_lock_timeout_seconds: float = max(
             0.0,
-            float(os.getenv("PRISMA_AUTH_RECONNECT_LOCK_TIMEOUT_SECONDS", "0.1")),
+            get_env_float("PRISMA_AUTH_RECONNECT_LOCK_TIMEOUT_SECONDS", 0.1),
         )
         self._consecutive_reconnect_failures: int = 0
         # Last generation of each read engine whose repair was attempted and
@@ -5014,7 +5403,7 @@ class PrismaClient:
         # back to a caller whose engine is still unrepaired. Bounded at two
         # entries: a client has one writer and at most one reader.
         self._failed_recreate_generations: Mapping[PrismaWrapper, int] = MappingProxyType({})
-        self._reconnect_escalation_threshold: int = max(1, int(os.getenv("PRISMA_RECONNECT_ESCALATION_THRESHOLD", "3")))
+        self._reconnect_escalation_threshold: int = max(1, get_env_int("PRISMA_RECONNECT_ESCALATION_THRESHOLD", 3))
         self._engine_pidfd: int = -1
         self._engine_pid: int = 0
         self._watching_engine: bool = False
@@ -6022,7 +6411,7 @@ class PrismaClient:
                 Batch write update queries
                 """
                 batcher = self.db.batch_()
-                for idx, user in enumerate(data_list):
+                for user in sorted(data_list, key=attrgetter("user_id")):
                     try:
                         data_json = self.jsonify_object(data=user.model_dump(exclude_none=True))
                     except Exception:
@@ -6270,9 +6659,9 @@ class PrismaClient:
             if prisma_obj.is_connected() is not True:
                 return 0
             engine: Final = prisma_obj._engine  # pyright: ignore[reportPrivateUsage]  # Prisma engine internals
-            process: Final = getattr(engine, "process", None) if engine is not None else None
+            process: Final = attribute_of(engine, "process")
             if process is not None:
-                pid: Final[object] = process.pid
+                pid: Final = attribute_of(process, "pid")
                 if isinstance(pid, int):
                     return pid
         except (AttributeError, TypeError):
@@ -9072,13 +9461,19 @@ async def _get_team_object_for_access_groups(
         return None
 
 
+@dataclass(frozen=True, slots=True)
+class _AccessGroupModels:
+    team: tuple[str, ...] = ()
+    key: tuple[str, ...] = ()
+
+
 async def _get_access_group_models(
     user_api_key_dict: "UserAPIKeyAuth",
     team_object: Optional["LiteLLM_TeamTableCachedObj"],
     prisma_client: Optional["PrismaClient"],
     user_api_key_cache: Optional["UserApiKeyCache"],
     proxy_logging_obj: Optional["ProxyLogging"],
-) -> tuple[str, ...]:
+) -> _AccessGroupModels:
     from litellm.proxy.auth.auth_checks import (
         get_authorized_resources_from_key_access_groups,
         get_models_from_access_groups,
@@ -9095,7 +9490,7 @@ async def _get_access_group_models(
         team_object=team_object,
         resource_field="access_model_names",
     )
-    return tuple(dict.fromkeys((*team_group_models, *key_group_models)))
+    return _AccessGroupModels(team=tuple(team_group_models), key=tuple(key_group_models))
 
 
 async def _agent_access_group_visible_models(
@@ -9175,6 +9570,10 @@ async def get_available_models_for_user(
     Returns:
         List of model names available to the user
     """
+    from litellm.proxy.auth.auth_checks import (
+        personal_key_team_model_access_applies,
+        personal_key_team_visible_models,
+    )
     from litellm.proxy.auth.model_checks import (
         get_complete_model_list,
         get_key_models,
@@ -9203,7 +9602,7 @@ async def get_available_models_for_user(
 
     key_models: Final[Sequence[str]] = (
         ()
-        if requested_team_object is not None
+        if requested_team_object is not None and requested_team_object.team_id != user_api_key_dict.team_id
         else get_key_models(
             user_api_key_dict=user_api_key_dict,
             proxy_model_list=proxy_model_list,
@@ -9238,14 +9637,28 @@ async def get_available_models_for_user(
             proxy_logging_obj=proxy_logging_obj,
         )
         if key_models or team_models
-        else ()
+        else _AccessGroupModels()
     )
 
-    granted_key_models: Final = (*key_models, *access_group_models) if key_models else key_models
-    granted_team_models: Final = (*team_models, *access_group_models) if team_models else team_models
+    key_model_names: Final = cast("list[str]", user_api_key_dict.models)  # cast-ok: key models are a string array
+    key_model_check_skipped: Final = (
+        bool(user_api_key_dict.config) or SpecialModelNames.all_team_models.value in key_model_names
+    )
+    granted_key_models: Final = (
+        (
+            *key_models,
+            *access_group_models.key,
+            *(access_group_models.team if key_model_check_skipped else ()),
+        )
+        if key_models
+        else key_models
+    )
+    granted_team_models: Final = (
+        (*team_models, *access_group_models.team, *access_group_models.key) if team_models else team_models
+    )
 
     # Get complete model list
-    all_models: Final = get_complete_model_list(
+    complete_models: Final = get_complete_model_list(
         key_models=granted_key_models,
         team_models=granted_team_models,
         proxy_model_list=proxy_model_list,
@@ -9257,6 +9670,20 @@ async def get_available_models_for_user(
         include_model_access_groups=include_model_access_groups,
         only_model_access_groups=only_model_access_groups,
         team_id=effective_team_id,
+    )
+    all_models: Final = (
+        list(
+            await personal_key_team_visible_models(
+                models=complete_models,
+                user_api_key_dict=user_api_key_dict,
+                llm_router=llm_router,
+                prisma_client=prisma_client,
+                user_api_key_cache=user_api_key_cache,
+                proxy_logging_obj=proxy_logging_obj,
+            )
+        )
+        if personal_key_team_model_access_applies(user_api_key_dict)
+        else complete_models
     )
 
     agent_visible: Final = await _agent_access_group_visible_models(
@@ -9493,12 +9920,15 @@ def validate_model_access(
 _PRESERVED_NONE_FIELDS: Final[list[tuple[str, str]]] = [
     ("message", "content"),  # null when tool_calls present (issue #6677)
     ("message", "role"),  # always required by OpenAI spec
+    ("message", "refusal"),
     ("delta", "content"),  # null in streaming chunks
 ]
+_PRESERVED_NONE_CHOICE_FIELDS: Final = ("logprobs",)
+_PRESERVED_NONE_RESPONSE_FIELDS: Final = ("system_fingerprint",)
 
 
 def model_dump_with_preserved_fields(
-    obj: Any,
+    obj: BaseModel,
     preserve_fields: list[str] | None = None,
     exclude_unset: bool = True,
 ) -> dict[str, object]:
@@ -9506,7 +9936,7 @@ def model_dump_with_preserved_fields(
     Serialize a Pydantic model to a dictionary while preserving specific fields
     even if they are None.
 
-    Fields listed in _PRESERVED_NONE_FIELDS are restored after
+    Explicit null values in the preserved field lists are restored after
     model_dump(exclude_none=True) strips them.
 
     Args:
@@ -9517,21 +9947,42 @@ def model_dump_with_preserved_fields(
     Returns:
         Dictionary representation with None values excluded except for preserved fields
     """
-    result: Final = obj.model_dump(exclude_none=True, exclude_unset=exclude_unset)
+    result: Final = cast(  # cast-ok: Pydantic model_dump returns serialized model fields
+        dict[str, object],
+        obj.model_dump(exclude_none=True, exclude_unset=exclude_unset),
+    )
 
-    choices: Final = result.get("choices")
+    for field_name in _PRESERVED_NONE_RESPONSE_FIELDS:
+        if field_name not in result and field_name in getattr(obj, "model_fields_set", ()):
+            result[field_name] = getattr(obj, field_name)
+
+    choices: Final = cast(  # cast-ok: model_dump serializes choices as a list of dicts
+        Sequence[dict[str, object]] | None,
+        result.get("choices"),
+    )
     if not choices:
         return result
 
-    obj_choices: Final = obj.choices
+    obj_choices: Final = cast(  # cast-ok: obj is duck-typed, choices is a list on ModelResponse
+        Sequence[object],
+        getattr(obj, "choices", ()),
+    )
     for choice_obj, choice_dict in zip(obj_choices, choices):
         for sub_object, field_name in _PRESERVED_NONE_FIELDS:
-            sub_dict = choice_dict.get(sub_object)
+            sub_dict = cast(  # cast-ok: message and delta dump as dicts
+                dict[str, object] | None, choice_dict.get(sub_object)
+            )
             if sub_dict is None:
                 continue
             if field_name not in sub_dict:
-                sub_obj = getattr(choice_obj, sub_object, None)
+                sub_obj = cast(  # cast-ok: getattr on a duck-typed choice
+                    object | None, getattr(choice_obj, sub_object, None)
+                )
                 if sub_obj is not None and hasattr(sub_obj, field_name):
                     sub_dict[field_name] = getattr(sub_obj, field_name)
+
+        for field_name in _PRESERVED_NONE_CHOICE_FIELDS:
+            if field_name not in choice_dict and hasattr(choice_obj, field_name):
+                choice_dict[field_name] = getattr(choice_obj, field_name)
 
     return result

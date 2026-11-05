@@ -6,7 +6,7 @@ from types import MappingProxyType
 from typing import Final, Literal, TypeAlias
 
 import httpx
-from pydantic import ConfigDict, TypeAdapter, ValidationError
+from pydantic import BaseModel, ConfigDict, StrictBool, TypeAdapter, ValidationError
 from pydantic_core import to_jsonable_python
 from typing_extensions import assert_never
 
@@ -293,6 +293,7 @@ def _unsupported_params(
     model: str,
     custom_llm_provider: str,
     headers: Mapping[str, str],
+    supports_box_questions: bool,
 ) -> tuple[str, ...]:
     refuses_safety_identifier: Final = (
         ir_request.safety_identifier is not None and not provider_config.supports_safety_identifier
@@ -301,9 +302,7 @@ def _unsupported_params(
         None if provider_config.supports_images_in(ir_request.input, headers) else image_param(ir_request.input)
     )
     refuses_assets: Final = bool(ir_request.assets) and not provider_config.supports_assets(headers)
-    refuses_box_questions: Final = _has_box_question(ir_request.questions) and not (
-        provider_config.supports_box_questions(model, custom_llm_provider, headers)
-    )
+    refuses_box_questions: Final = _has_box_question(ir_request.questions) and not supports_box_questions
     refuses_audio: Final = bool(ir_request.audio) and not provider_config.supports_audio_input(
         model, custom_llm_provider
     )
@@ -331,9 +330,8 @@ def _is_not_box_question(question: DecisionsIRQuestion) -> bool:
 def _without_unsupported_params(
     ir_request: DecisionsIRRequest,
     provider_config: BaseDecisionsConfig,
-    model: str,
-    custom_llm_provider: str,
     headers: Mapping[str, str],
+    supports_box_questions: bool,
 ) -> DecisionsIRRequest:
     return replace(
         ir_request,
@@ -346,7 +344,7 @@ def _without_unsupported_params(
         assets=ir_request.assets if provider_config.supports_assets(headers) else MappingProxyType({}),
         questions=(
             ir_request.questions
-            if provider_config.supports_box_questions(model, custom_llm_provider, headers)
+            if supports_box_questions
             else tuple(filter(_is_not_box_question, ir_request.questions))
         ),
     )
@@ -368,6 +366,19 @@ def _without_malformed_images(
     return well_formed
 
 
+class _DeploymentBoxQuestions(BaseModel):
+    model_config = ConfigDict(frozen=True, from_attributes=True)
+
+    supports_box_questions: StrictBool | None = None
+
+
+def _deployment_supports_box_questions(kwargs: Mapping[str, object]) -> bool | None:
+    try:
+        return _DeploymentBoxQuestions.model_validate(kwargs.get("model_info") or {}).supports_box_questions
+    except ValidationError:
+        return None
+
+
 def _provider_ir_request(
     ir_request: DecisionsIRRequest,
     *,
@@ -377,12 +388,17 @@ def _provider_ir_request(
     headers: Mapping[str, str],
     kwargs: Mapping[str, object],
 ) -> DecisionsIRRequest | _UnsupportedParams | _NothingLeftAfterDrop:
-    unsupported: Final = _unsupported_params(ir_request, provider_config, model, custom_llm_provider, headers)
+    supports_box_questions: Final = provider_config.supports_box_questions(
+        model, custom_llm_provider, headers, _deployment_supports_box_questions(kwargs)
+    )
+    unsupported: Final = _unsupported_params(
+        ir_request, provider_config, model, custom_llm_provider, headers, supports_box_questions
+    )
     if not unsupported:
         return ir_request
     if not _drops_params(kwargs):
         return _UnsupportedParams(names=unsupported)
-    supported: Final = _without_unsupported_params(ir_request, provider_config, model, custom_llm_provider, headers)
+    supported: Final = _without_unsupported_params(ir_request, provider_config, headers, supports_box_questions)
     if _leaves_no_input(supported.input):
         return _NothingLeftAfterDrop(names=unsupported, missing="input to decide on")
     if not supported.questions:
@@ -390,20 +406,13 @@ def _provider_ir_request(
     return supported
 
 
-def _provider_specific_header(
-    value: object,
-) -> ProviderSpecificHeader | tuple[ProviderSpecificHeader, ...] | None:
-    try:
-        return _PROVIDER_SPECIFIC_HEADER_ADAPTER.validate_python(value)
-    except ValidationError:
-        return None
-
-
 def _outbound_headers(
     extra_headers: Mapping[str, str] | None, custom_llm_provider: str, kwargs: Mapping[str, object]
 ) -> Mapping[str, str]:
     forwarded: Final = ProviderSpecificHeaderUtils.get_provider_specific_headers(
-        provider_specific_header=_provider_specific_header(kwargs.get("provider_specific_header")),
+        provider_specific_header=_PROVIDER_SPECIFIC_HEADER_ADAPTER.validate_python(
+            kwargs.get("provider_specific_header")
+        ),
         custom_llm_provider=custom_llm_provider,
     )
     return MappingProxyType({**(extra_headers or {}), **forwarded})
@@ -475,14 +484,18 @@ def prepare_call(
             llm_provider=provider,
         ) from error
 
-    resolved_api_base: Final = provider_config.resolve_api_base(dynamic_api_base or api_base)
+    try:
+        resolved_api_base, resolved_api_key = provider_config.resolve_connection(
+            dynamic_api_base or api_base, dynamic_api_key or api_key
+        )
+    except ValueError as error:
+        raise litellm.BadRequestError(message=str(error), model=model, llm_provider=provider) from error
     if resolved_api_base is None:
         raise litellm.BadRequestError(
             message=provider_config.missing_api_base_message(provider),
             model=model,
             llm_provider=provider,
         )
-    resolved_api_key: Final = provider_config.resolve_api_key(dynamic_api_key or api_key)
     if resolved_api_key is None and provider_config.api_key_required:
         raise litellm.AuthenticationError(
             message=f"Missing API key for Decisions provider '{provider}'",

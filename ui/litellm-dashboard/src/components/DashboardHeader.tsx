@@ -15,7 +15,13 @@ import ThemeToggle from "@/components/ThemeToggle/ThemeToggle";
 import { CommandPaletteTrigger } from "@/components/CommandPalette/CommandPaletteTrigger";
 import { uiHref } from "@/utils/uiHref";
 
-export function DashboardHeader({ navigationTrigger }: { navigationTrigger?: ReactNode }) {
+export function DashboardHeader({
+  navigationTrigger,
+  deploymentHealth,
+}: {
+  navigationTrigger?: ReactNode;
+  deploymentHealth?: ReactNode;
+}) {
   const { title } = getBreadcrumb(usePathname());
 
   return (
@@ -36,6 +42,7 @@ export function DashboardHeader({ navigationTrigger }: { navigationTrigger?: Rea
       <div className="flex shrink-0 items-center gap-1">
         <CommandPaletteTrigger mobile />
         <ThemeToggle />
+        {deploymentHealth}
       </div>
     </header>
   );

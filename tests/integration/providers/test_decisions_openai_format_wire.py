@@ -88,6 +88,17 @@ _USAGE: Final[dict[str, JsonValue]] = {
     "output_tokens_details": {"reasoning_tokens": 0},
     "total_tokens": _INPUT_TOKENS + _OUTPUT_TOKENS,
 }
+_NO_USAGE: Final[dict[str, JsonValue]] = {
+    "input_tokens": 0,
+    "input_tokens_details": {"cached_tokens": 0, "cache_write_tokens": 0},
+    "output_tokens": 0,
+    "output_tokens_details": {"reasoning_tokens": 0},
+    "total_tokens": 0,
+}
+_AI_DECIDE_ANSWERS: Final[dict[str, JsonValue]] = {
+    **_SYSTEM_ONE_ANSWERS,
+    "defect": {"type": "noul", "probability": 0.93},
+}
 _SDK_QUESTIONS: Final = TypeAdapter(list[dict[str, object]]).validate_python(_QUESTIONS)
 _SPEND_QUERY: Final = (
     "SELECT spend, status, call_type, model_group, custom_llm_provider, api_base, prompt_tokens, completion_tokens, "
@@ -106,11 +117,14 @@ class _Provider:
     cost_map_key: str | None
     speaks_openai: bool = False
     takes_images: bool = False
+    ai_decide: bool = False
     provider_reported_cost: float | None = None
 
     def upstream_body(self) -> dict[str, JsonValue]:
         if self.speaks_openai:
             return {"model": self.body_model, "input": _INPUT, "questions": _QUESTIONS}
+        if self.ai_decide:
+            return {"state": _INPUT, "questions": _SYSTEM_ONE_QUESTIONS}
         return {"model": self.body_model, "state": _INPUT, "questions": _SYSTEM_ONE_QUESTIONS}
 
     def _with_reported_cost(self, usage: dict[str, JsonValue]) -> dict[str, JsonValue]:
@@ -121,6 +135,8 @@ class _Provider:
     def upstream_reply(self) -> dict[str, JsonValue]:
         if self.speaks_openai:
             return {"model": self.body_model, "answers": _ANSWERS, "usage": self._with_reported_cost(_USAGE)}
+        if self.ai_decide:
+            return {"response": {"answers": _AI_DECIDE_ANSWERS}, "metadata": {"version": "1.0"}}
         answer: Final[dict[str, JsonValue]] = {
             "model": self.body_model,
             "answers": _SYSTEM_ONE_ANSWERS,
@@ -129,7 +145,12 @@ class _Provider:
         return {"result": answer, "success": True} if self.wraps_result else answer
 
     def litellm_response(self) -> dict[str, JsonValue]:
+        if self.ai_decide:
+            return {"model": self.model, "answers": _ANSWERS, "usage": _NO_USAGE}
         return {"model": self.body_model, "answers": _ANSWERS, "usage": _USAGE}
+
+    def billed_tokens(self) -> tuple[int, int]:
+        return (0, 0) if self.ai_decide else (_INPUT_TOKENS, _OUTPUT_TOKENS)
 
 
 _PROVIDERS: Final = (
@@ -167,6 +188,16 @@ _PROVIDERS: Final = (
         takes_images=True,
     ),
     _Provider("hosted_vllm", "hosted_vllm/Qwen/Qwen3-0.6B", "/v1/systemone", "Qwen/Qwen3-0.6B", None, False, None),
+    _Provider(
+        "databricks",
+        "databricks/ai_decide",
+        "/api/2.0/ai-functions/ai-decide",
+        "ai_decide",
+        _API_KEY,
+        False,
+        None,
+        ai_decide=True,
+    ),
     _Provider(
         "databricks",
         "databricks/databricks-openjev-qwen35-4b",
@@ -239,7 +270,7 @@ def _response_cost(response: httpx.Response) -> float:
 
 
 def _provider_id(provider: _Provider) -> str:
-    return provider.name
+    return provider.model
 
 
 def _number(value: JsonValue) -> float:
@@ -254,9 +285,13 @@ def _expected_spend(provider: _Provider) -> float:
         return 0.0
     cost_map: Final = _JSON_OBJECT.validate_json(Path("model_prices_and_context_window.json").read_bytes())
     prices: Final = object_value(cost_map[provider.cost_map_key])
-    return _INPUT_TOKENS * _number(prices["input_cost_per_token"]) + _OUTPUT_TOKENS * _number(
-        prices["output_cost_per_token"]
+    input_key: Final = (
+        "input_cost_per_token_decisions" if "input_cost_per_token_decisions" in prices else "input_cost_per_token"
     )
+    output_key: Final = (
+        "output_cost_per_token_decisions" if "output_cost_per_token_decisions" in prices else "output_cost_per_token"
+    )
+    return _INPUT_TOKENS * _number(prices[input_key]) + _OUTPUT_TOKENS * _number(prices[output_key])
 
 
 def _register(scenario: Scenario, body: dict[str, JsonValue], *, status: int = 200) -> ScenarioHandle:
@@ -370,8 +405,7 @@ def test_each_provider_gets_its_own_path_key_and_body_and_is_billed(gateway: Gat
             provider.name,
             model,
             f"{handle.api_base()}{provider.path}",
-            _INPUT_TOKENS,
-            _OUTPUT_TOKENS,
+            *provider.billed_tokens(),
         )
         assert math.isclose(_number(row["spend"]), expected_spend, rel_tol=1e-9), row
 
@@ -484,6 +518,24 @@ def test_openai_forwards_image_input_in_its_own_message_shape(gateway: Gateway) 
         assert response.status_code == 200, response.text
         (call,) = _upstream_calls(gateway, handle)
         assert call["body"] == {"model": _OPENAI.body_model, "input": _OPENAI_IMAGE_MESSAGES, "questions": _QUESTIONS}
+
+
+def test_openai_box_answers_reach_the_caller_as_boxes_not_refusals(gateway: Gateway) -> None:
+    with gateway.scenario() as scenario:
+        box: Final[dict[str, JsonValue]] = {"top": 0.1, "bottom": 0.4, "left": 0.2, "right": 0.6}
+        box_answer: Final[dict[str, JsonValue]] = {"type": "box", "name": "crack", "box": box, "confidence": 0.7}
+        handle: Final = _register(scenario, {**_OPENAI.upstream_reply(), "answers": [box_answer]})
+        model: Final = scenario.model(
+            model=_OPENAI.model,
+            api_base=handle.api_base(),
+            api_key=_OPENAI.api_key,
+            model_info={"supports_box_questions": True},
+        )
+        response: Final = _decide(
+            gateway, model, questions=[{"type": "box", "name": "crack", "instructions": "Where is the crack?"}]
+        )
+        assert response.status_code == 200, response.text
+        assert response.json()["answers"] == [box_answer], response.text
 
 
 def test_a_message_list_input_reaches_a_system_one_provider_as_its_flattened_text(gateway: Gateway) -> None:

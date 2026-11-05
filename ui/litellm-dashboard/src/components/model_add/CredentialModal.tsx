@@ -4,6 +4,7 @@ import { SimpleTooltip } from "@/components/ui/tooltip";
 import { Button } from "@/components/ui/button";
 import { useState } from "react";
 import { FormProvider, useForm } from "react-hook-form";
+import { authTypeFieldKeys } from "../add_model/provider_auth_types";
 import ProviderSpecificFields from "../add_model/provider_specific_fields";
 import { requiredRule } from "../common_components/formRules";
 import { labelWithHint } from "@/components/shared/form/LabelWithHint";
@@ -26,6 +27,7 @@ import {
 } from "./credential_form_helpers";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import FederationFields from "./FederationFields";
+import InternalIssuerJwks from "./InternalIssuerJwks";
 import { DEFAULT_IDENTITY_SOURCE, inferIdentitySource, type IdentitySourceId } from "./anthropic_federation";
 import {
   buildCreateCredentialValues,
@@ -34,6 +36,7 @@ import {
   federatedProviderOf,
   inferAuthMethod,
   isFederatedCredential,
+  jwksPanelFor,
   providerFieldValidators,
   selectionFor,
   type AuthMethod,
@@ -63,6 +66,7 @@ interface CredentialModalProps {
   existingCredential?: CredentialItem | null;
   initialProvider?: string | null;
   initialAuthMethod?: AuthMethod;
+  initialAuthTypeId?: string;
   providerLocked?: boolean;
 }
 
@@ -77,6 +81,7 @@ export default function CredentialModal({
   existingCredential = null,
   initialProvider = null,
   initialAuthMethod,
+  initialAuthTypeId,
   providerLocked = false,
 }: CredentialModalProps) {
   const isEdit = mode === "edit";
@@ -137,10 +142,16 @@ export default function CredentialModal({
       );
       return;
     }
-    const patch = sameProvider(selectedProvider, storedProvider)
-      ? buildCredentialPatch(storedValues, withoutRestrictedFields(values), storedSelection, selection)
-      : buildProviderChangePatch(storedValues, withoutRestrictedFields(values), selection);
-    onSubmit({ ...meta, credential_values: patch.credential_values }, patch.credential_values_to_delete);
+    const sameStoredProvider = sameProvider(selectedProvider, storedProvider);
+    const projectedValues = withoutRestrictedFields(values);
+    const patch = sameStoredProvider
+      ? buildCredentialPatch(storedValues, projectedValues, storedSelection, selection)
+      : buildProviderChangePatch(storedValues, projectedValues, selection);
+    const authTypeValuesToDelete = sameStoredProvider
+      ? authTypeFieldKeys(selectedProvider).filter((key) => key in storedValues && !(key in projectedValues))
+      : [];
+    const valuesToDelete = Array.from(new Set([...patch.credential_values_to_delete, ...authTypeValuesToDelete]));
+    onSubmit({ ...meta, credential_values: patch.credential_values }, valuesToDelete);
   };
 
   const closeAndReset = () => {
@@ -245,6 +256,7 @@ export default function CredentialModal({
               <ProviderSpecificFields
                 selectedProvider={selectedProvider}
                 hiddenFieldKeys={selection.authMethod === "federation" ? API_KEY_FIELDS : NO_HIDDEN_FIELDS}
+                initialAuthTypeId={initialAuthTypeId}
                 fieldValidators={providerFieldValidators(selection)}
               />
 
@@ -255,6 +267,8 @@ export default function CredentialModal({
                   storedValues={storedValues}
                 />
               )}
+
+              <InternalIssuerJwks panel={jwksPanelFor(existingCredential, selection)} />
 
               <div className="flex justify-between items-center">
                 <SimpleTooltip content="Get help on our github">

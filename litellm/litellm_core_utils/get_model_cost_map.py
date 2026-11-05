@@ -21,6 +21,7 @@ from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from importlib.resources import files
+from itertools import chain
 from pathlib import Path
 from types import MappingProxyType
 from typing import Final, Protocol
@@ -93,6 +94,7 @@ class GetModelCostMap:
         return GetModelCostMap.load_local_model_cost_map_with_revision().model_cost_map
 
     _loaded_catalog: Mapping[str, Mapping[str, object]] = MappingProxyType({})
+    _loaded_catalog_fields: frozenset[str] = frozenset()
 
     @classmethod
     def loaded_model_cost_map(cls) -> Mapping[str, Mapping[str, object]]:
@@ -100,9 +102,15 @@ class GetModelCostMap:
         return cls._loaded_catalog
 
     @classmethod
+    def loaded_model_cost_map_fields(cls) -> frozenset[str]:
+        """Every field name that at least one entry of the loaded catalog carries."""
+        return cls._loaded_catalog_fields
+
+    @classmethod
     def _snapshot_loaded_catalog(cls, model_cost: Mapping[str, object]) -> None:
         raw: Final = _CATALOG_ADAPTER.validate_python(model_cost)
         cls._loaded_catalog = MappingProxyType({key: MappingProxyType(entry) for key, entry in raw.items()})
+        cls._loaded_catalog_fields = frozenset(chain.from_iterable(entry.keys() for entry in raw.values()))
 
     @classmethod
     def get_backup_model_count(cls) -> int:
@@ -233,8 +241,9 @@ class _FetchAttemptRetryable:
 
 
 def _parse_retry_after_seconds(response: httpx.Response) -> float | None:
-    header: Final[str | None] = response.headers.get("Retry-After")
-    if header is None:
+    try:
+        header: Final = response.headers["Retry-After"]
+    except KeyError:
         return None
     try:
         seconds: Final = float(header)
@@ -246,7 +255,7 @@ def _parse_retry_after_seconds(response: httpx.Response) -> float | None:
 def _retry_wait_seconds(outcome: _FetchAttemptRetryable, attempt: int, rng: random.Random) -> float:
     if outcome.retry_after_seconds is not None:
         return min(outcome.retry_after_seconds, MODEL_COST_MAP_FETCH_MAX_WAIT_SECONDS)
-    return min(float(2**attempt) + rng.uniform(0.0, 1.0), MODEL_COST_MAP_FETCH_MAX_WAIT_SECONDS)
+    return min(2.0**attempt + rng.uniform(0.0, 1.0), MODEL_COST_MAP_FETCH_MAX_WAIT_SECONDS)
 
 
 class _AsyncGetClient(Protocol):
@@ -481,22 +490,42 @@ def get_model_cost_map_loaded_at() -> "datetime | None":
     return _cost_map_source_info.loaded_at
 
 
-def _expand_model_aliases(model_cost: dict) -> dict:
+class AliasedCostEntry(dict[str, object]):
+    __slots__ = ("names", "registered_fields")
+
+    def __init__(
+        self, entry: Mapping[str, object], names: tuple[str, ...], registered_fields: frozenset[str] = frozenset()
+    ) -> None:
+        super().__init__(entry)
+        self.names: tuple[str, ...] = names
+        self.registered_fields: frozenset[str] = registered_fields
+
+
+def _alias_groups(alias_owners: Mapping[str, str]) -> Mapping[str, tuple[str, ...]]:
+    return MappingProxyType(
+        {
+            owner: (owner, *(alias for alias, alias_owner in alias_owners.items() if alias_owner == owner))
+            for owner in dict.fromkeys(alias_owners.values())
+        }
+    )
+
+
+def _expand_model_aliases(model_cost: dict[str, dict[str, object]]) -> dict[str, dict[str, object]]:
     """
     Expand ``aliases`` lists in model cost entries into top-level entries.
 
-    Each alias gets a reference to the **same** dict object as the canonical
-    entry (zero memory overhead).  The ``aliases`` key is removed from the
-    entry so downstream code never sees it.
+    Each alias gets a reference to the **same** ``AliasedCostEntry`` as the
+    canonical entry, which carries every name it is served under.  The
+    ``aliases`` key is removed from the entry so downstream code never sees it.
 
     If an alias collides with an existing canonical entry the alias is
     skipped and a warning is logged.
     """
-    aliases_to_add: Final[dict[str, dict]] = {}
+    alias_owners: Final[dict[str, str]] = {}
     keys_with_aliases: Final[list[str]] = []
 
     for model_name, model_info in model_cost.items():
-        aliases: list | None = model_info.get("aliases")
+        aliases: object = model_info.get("aliases")
         if aliases is None:
             continue
         keys_with_aliases.append(model_name)
@@ -518,7 +547,7 @@ def _expand_model_aliases(model_cost: dict) -> dict:
                     model_name,
                 )
                 continue
-            if alias in aliases_to_add:
+            if alias in alias_owners:
                 verbose_logger.warning(
                     "LiteLLM model alias conflict: alias '%s' (from '%s') "
                     "was already claimed by another entry — skipping.",
@@ -526,13 +555,14 @@ def _expand_model_aliases(model_cost: dict) -> dict:
                     model_name,
                 )
                 continue
-            aliases_to_add[alias] = model_info  # same dict reference
+            alias_owners[alias] = model_name
 
     # Remove the ``aliases`` key from entries so it doesn't pollute model info
     for key in keys_with_aliases:
         model_cost[key].pop("aliases", None)
 
-    model_cost.update(aliases_to_add)
+    for owner, names in _alias_groups(alias_owners).items():
+        model_cost.update(dict.fromkeys(names, AliasedCostEntry(model_cost[owner], names)))
     return model_cost
 
 

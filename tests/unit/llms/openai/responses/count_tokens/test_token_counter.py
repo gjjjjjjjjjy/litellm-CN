@@ -221,7 +221,7 @@ async def test_anthropic_format_sends_the_document_image_and_tool_turns_to_the_c
                 "content": [
                     {"type": "input_text", "text": "Summarize."},
                     {"type": "input_file", "filename": "document.pdf", "file_data": "data:application/pdf;base64,JVBE"},
-                    {"type": "input_image", "image_url": "https://example.com/page.png"},
+                    {"type": "input_image", "image_url": "https://example.com/page.png", "detail": "auto"},
                 ],
             },
             {"type": "function_call", "call_id": "toolu_01", "name": "lookup", "arguments": "{}"},
@@ -255,7 +255,7 @@ async def test_openai_format_keeps_the_chat_conversion(monkeypatch: pytest.Monke
 async def test_anthropic_format_sends_affinity_wrapped_reasoning_unwrapped_as_inference_does(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    wrapped: Final = ResponsesAPIRequestUtils._wrap_encrypted_content_with_model_id("gAAAAoriginal", "deployment-1")  # pyright: ignore[reportPrivateUsage]  # the wrap inference applies
+    wrapped: Final = ResponsesAPIRequestUtils.wrap_encrypted_content_with_model_id("gAAAAoriginal", "deployment-1")
     messages: Final[list[dict[str, object]]] = [
         {"role": "user", "content": "hi"},
         {

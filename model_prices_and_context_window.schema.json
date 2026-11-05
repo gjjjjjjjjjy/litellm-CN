@@ -297,10 +297,6 @@
           "format": "date",
           "pattern": "^\\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\\d|3[01])$"
         },
-        "explicit_cache_read_input_token_cost": {
-          "type": "number",
-          "minimum": 0
-        },
         "gemini_audio_only_live": {
           "type": "boolean"
         },
@@ -553,7 +549,6 @@
             "completion",
             "embedding",
             "evaluation",
-            "extraction",
             "guardrail",
             "image_edit",
             "image_generation",
@@ -1057,9 +1052,6 @@
           "type": "boolean"
         },
         "supports_bedrock_converse_tool_result_images": {
-          "type": "boolean"
-        },
-        "supports_bedrock_native_structured_output": {
           "type": "boolean"
         },
         "supports_bedrock_runtime_chat_completions_inline_reasoning": {

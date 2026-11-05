@@ -304,6 +304,8 @@ def test_sync_converse_streaming_fails_at_the_request_timeout_not_the_upstreams_
         litellm.completion(client=slow_upstream_sync_client(), **_converse_streaming_kwargs())
 
 
+
+
 @pytest.mark.parametrize("stream", (False, True))
 def test_converse_profile_override_records_cost_without_changing_response_model(
     monkeypatch: pytest.MonkeyPatch, stream: bool

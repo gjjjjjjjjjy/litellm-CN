@@ -16,24 +16,74 @@ import sys
 import threading
 from collections.abc import Mapping
 from pathlib import Path
-from types import MappingProxyType, SimpleNamespace
+from types import SimpleNamespace
 from typing import Final
 from unittest.mock import patch
 
 import httpx
 import pytest
+import respx
+
+import litellm
+from litellm.llms.custom_httpx.http_handler import HTTPHandler
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../../..")))
 
-from litellm.llms.base_llm.anthropic_messages.transformation import (  # noqa: E402  # sys.path must be patched before importing litellm
-    BaseAnthropicMessagesConfig,
-)
 from litellm.proxy._types import SpecialHeaders  # noqa: E402  # sys.path must be patched before importing litellm
 
 # Fake tokens for testing (not real secrets)
 FAKE_OAUTH_TOKEN = "sk-ant-oat01-fake-token-for-testing-123456789abcdef"
 FAKE_REGULAR_KEY = "sk-ant-api03-regular-key-for-testing-123456789"
 FAKE_AUTH_TOKEN = "sk-ant-aut01-fake-auth-token-for-testing-123456789"
+
+
+@pytest.mark.parametrize(
+    ("url", "expected"),
+    [
+        pytest.param("https://api.anthropic.com/v1/messages", True, id="anthropic-host"),
+        pytest.param("http://127.0.0.1:8190/v1/messages", True, id="local-messages-route"),
+        pytest.param("https://gateway.example.com/anthropic/v1/messages/", True, id="alternate-host-messages-route"),
+        pytest.param("https://gateway.example.com/v1/messages/batches", False, id="generic-batches-route"),
+        pytest.param("https://gateway.example.com/v1/messages/count_tokens", False, id="generic-count-tokens-route"),
+        pytest.param("https://gateway.example.com/v1/other", False, id="generic-route"),
+    ],
+)
+def test_is_anthropic_messages_url(url: str, expected: bool) -> None:
+    from litellm.llms.anthropic.common_utils import is_anthropic_messages_url
+
+    assert is_anthropic_messages_url(url) is expected
+
+
+def test_anthropic_model_not_found_maps_to_not_found_but_authentication_error_does_not() -> None:
+    with respx.mock(assert_all_called=True) as router:
+        router.post("https://api.anthropic.com/v1/messages").mock(
+            return_value=httpx.Response(
+                404,
+                json={"type": "error", "error": {"type": "not_found_error", "message": "model not found"}},
+            )
+        )
+        with pytest.raises(litellm.NotFoundError):
+            litellm.completion(
+                model="anthropic/claude-opus-5",
+                messages=[{"role": "user", "content": "Hello"}],
+                api_key="test-api-key",
+                client=HTTPHandler(),
+            )
+
+    with respx.mock(assert_all_called=True) as router:
+        router.post("https://api.anthropic.com/v1/messages").mock(
+            return_value=httpx.Response(
+                401,
+                json={"type": "error", "error": {"type": "authentication_error", "message": "invalid key"}},
+            )
+        )
+        with pytest.raises(litellm.AuthenticationError):
+            litellm.completion(
+                model="anthropic/claude-opus-5",
+                messages=[{"role": "user", "content": "Hello"}],
+                api_key="test-api-key",
+                client=HTTPHandler(),
+            )
 
 
 @pytest.mark.parametrize(
@@ -1654,6 +1704,37 @@ class TestAnthropicThinkingSignatureSelfHeal:
         assert len(msgs[1]["content"]) == 2
         assert len(msgs[2]["content"]) == 4
 
+    def test_strip_encrypted_reasoning_unwraps_converse_wrapped_redacted_data(self):
+        """/v1/messages turns served by Bedrock Converse used to hand out the data base64-wrapped, which the
+        Anthropic API and Bedrock Invoke reject with "Invalid `data` in `redacted_thinking` block"."""
+        import base64
+
+        from litellm.llms.anthropic.common_utils import (
+            strip_encrypted_reasoning_blocks_from_anthropic_messages,
+        )
+
+        native = "EmwKAhgBEgy3va3pzix/LafPsn4aDFIT2Xlxh0L5L8rLVyIwxtE3rAFBa8cr3qpP"
+        untouched = {"role": "assistant", "content": [{"type": "redacted_thinking", "data": native}]}
+        msgs = [
+            {"role": "user", "content": "Solve it."},
+            {
+                "role": "assistant",
+                "content": [
+                    {"type": "redacted_thinking", "data": base64.b64encode(native.encode()).decode()},
+                    {"type": "text", "text": "The answer."},
+                ],
+            },
+            untouched,
+        ]
+
+        out = strip_encrypted_reasoning_blocks_from_anthropic_messages(msgs)
+
+        assert out[1] == {
+            "role": "assistant",
+            "content": [{"type": "redacted_thinking", "data": native}, {"type": "text", "text": "The answer."}],
+        }
+        assert out[2] is untouched
+
     def test_strip_encrypted_reasoning_leaves_malformed_messages_for_the_provider_to_reject(self):
         """A bare string in messages must reach Anthropic as a 400, not die in the stripper as a 500."""
         from litellm.llms.anthropic.common_utils import (
@@ -2619,7 +2700,9 @@ class TestWifZeroBehaviorChange:
         assert "ANTHROPIC_SERVICE_ACCOUNT_ID" in exc_info.value.message
         assert "ANTHROPIC_IDENTITY_TOKEN_FILE" in exc_info.value.message
 
-    def test_a_token_file_credential_missing_an_id_names_the_id_not_the_key(self, clean_anthropic_env: None, tmp_path: Path):
+    def test_a_token_file_credential_missing_an_id_names_the_id_not_the_key(
+        self, clean_anthropic_env: None, tmp_path: Path
+    ):
         import litellm
         from litellm.llms.anthropic.common_utils import AnthropicModelInfo
 
@@ -3827,7 +3910,10 @@ class TestWifServerOwnedParamsAreUnconditional:
         router.py merges request kwargs OVER deployment params, so it also beat the configured one."""
         from litellm.proxy.auth.auth_utils import is_request_body_safe
 
-        with pytest.raises(Exception, match="server-owned workload identity federation parameter"):
+        with pytest.raises(
+            Exception,
+            match="server-owned workload identity federation or OAuth token exchange parameter",
+        ):
             is_request_body_safe(
                 request_body={"model": "claude-sonnet-5", "anthropic_federation_workspace_id": "wrkspc_abc"},
                 general_settings={},
@@ -4170,120 +4256,120 @@ def test_shared_legacy_thinking_translation_preserves_supported_display(
         model="claude-opus-5",
         optional_params=optional_params,
         custom_llm_provider="azure_ai",
+        drop_params=False,
     )
 
     assert optional_params["thinking"] == expected_thinking
 
 
-LEGACY_THINKING_WITH_BLOCK_BINDING: Final = MappingProxyType(
-    {
-        "type": "enabled",
-        "budget_tokens": 2048,
-        "block_binding": {"prefix_mismatch_behavior": "error"},
-        "future_key": 1,
+@pytest.mark.usefixtures("local_model_cost_map")
+@pytest.mark.parametrize(("drop_params", "expected_unknown_keys"), ((True, {}), (False, {"not_a_thinking_key": True})))
+def test_shared_legacy_thinking_translation_carries_block_binding(
+    drop_params: bool, expected_unknown_keys: dict[str, object]
+) -> None:
+    from litellm.llms.anthropic.common_utils import AnthropicModelInfo
+
+    optional_params: Final = {
+        "thinking": {
+            "type": "enabled",
+            "budget_tokens": 2048,
+            "block_binding": {"prefix_mismatch_behavior": "error"},
+            "not_a_thinking_key": True,
+        },
     }
-)
-ADAPTIVE_THINKING_WITH_BLOCK_BINDING: Final = MappingProxyType(
-    {"type": "adaptive", "block_binding": {"prefix_mismatch_behavior": "error"}}
-)
+
+    AnthropicModelInfo.translate_legacy_thinking_for_adaptive_model(
+        model="claude-opus-5",
+        optional_params=optional_params,
+        custom_llm_provider="azure_ai",
+        drop_params=drop_params,
+    )
+
+    assert optional_params["thinking"] == {
+        "type": "adaptive",
+        "block_binding": {"prefix_mismatch_behavior": "error"},
+        **expected_unknown_keys,
+    }
 
 
 @pytest.mark.usefixtures("local_model_cost_map")
 @pytest.mark.parametrize(
-    ("model", "custom_llm_provider", "expected_thinking"),
+    ("custom_llm_provider", "model", "requested_thinking", "rejected_keys", "expected_thinking"),
     (
-        ("claude-opus-4-8", "anthropic", ADAPTIVE_THINKING_WITH_BLOCK_BINDING),
-        ("claude-opus-4-8", "azure_ai", ADAPTIVE_THINKING_WITH_BLOCK_BINDING),
-        ("invoke/us.anthropic.claude-opus-4-8", "bedrock", ADAPTIVE_THINKING_WITH_BLOCK_BINDING),
-        ("converse/us.anthropic.claude-opus-4-8", "bedrock", {"type": "adaptive"}),
-        ("mantle/anthropic.claude-opus-4-8", "bedrock", {"type": "adaptive"}),
-        ("claude_platform/claude-opus-4-8", "bedrock", {"type": "adaptive"}),
-        ("claude-opus-4-8", "vertex_ai", {"type": "adaptive"}),
-        ("databricks-claude-opus-4-8", "databricks", {"type": "adaptive"}),
+        (
+            "anthropic",
+            "claude-opus-5-5",
+            {"type": "enabled", "budget_tokens": 2048},
+            {"not_a_thinking_key": True},
+            {"type": "adaptive"},
+        ),
+        (
+            "bedrock",
+            "converse/us.anthropic.claude-opus-5-5",
+            {"type": "enabled", "budget_tokens": 2048},
+            {"not_a_thinking_key": True},
+            {"type": "adaptive"},
+        ),
+        (
+            "bedrock",
+            "invoke/us.anthropic.claude-opus-5-5",
+            {"type": "enabled", "budget_tokens": 2048},
+            {"not_a_thinking_key": True},
+            {"type": "adaptive"},
+        ),
+        (
+            "bedrock",
+            "invoke/us.anthropic.claude-opus-5-5",
+            {"type": "adaptive", "display": "updates"},
+            {"not_a_thinking_key": True, "budget_tokens": 2048},
+            {"type": "adaptive", "display": "updates"},
+        ),
+        (
+            "vertex_ai",
+            "claude-opus-5-5",
+            {"type": "enabled", "budget_tokens": 2048},
+            {"not_a_thinking_key": True},
+            {"type": "adaptive"},
+        ),
+        (
+            "databricks",
+            "databricks-claude-opus-5-5",
+            {"type": "enabled", "budget_tokens": 2048},
+            {"not_a_thinking_key": True},
+            {"type": "adaptive"},
+        ),
     ),
     ids=(
         "anthropic",
-        "azure_ai",
-        "bedrock_invoke",
         "bedrock_converse",
-        "bedrock_mantle",
-        "bedrock_claude_platform",
+        "bedrock_invoke",
+        "bedrock_invoke_display_updates",
         "vertex_ai",
         "databricks",
     ),
 )
-def test_chat_legacy_thinking_translation_carries_only_block_binding_where_supported(
-    model: str, custom_llm_provider: str, expected_thinking: Mapping[str, object]
+@pytest.mark.parametrize("drop_params_source", ("request", "global", None))
+def test_chat_thinking_drops_unknown_keys_only_under_drop_params(
+    custom_llm_provider: str,
+    model: str,
+    requested_thinking: dict[str, object],
+    rejected_keys: dict[str, object],
+    expected_thinking: dict[str, object],
+    drop_params_source: str | None,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from litellm.utils import get_optional_params
+    block_binding: Final = {"prefix_mismatch_behavior": "error"}
+    monkeypatch.setattr(litellm, "drop_params", drop_params_source == "global")
 
-    optional_params: Final = get_optional_params(
+    optional_params: Final = litellm.utils.get_optional_params(
         model=model,
         custom_llm_provider=custom_llm_provider,
-        thinking=dict(LEGACY_THINKING_WITH_BLOCK_BINDING),
+        thinking={**requested_thinking, "block_binding": block_binding, **rejected_keys},
+        drop_params=drop_params_source == "request",
     )
 
-    assert optional_params["thinking"] == expected_thinking
-
-
-@pytest.mark.usefixtures("local_model_cost_map", "local_beta_headers_config")
-@pytest.mark.parametrize(
-    ("model", "custom_llm_provider", "expected_thinking"),
-    (
-        ("claude-opus-4-8", "anthropic", ADAPTIVE_THINKING_WITH_BLOCK_BINDING),
-        ("claude-opus-4-8", "azure_ai", ADAPTIVE_THINKING_WITH_BLOCK_BINDING),
-        ("us.anthropic.claude-opus-4-8", "bedrock", ADAPTIVE_THINKING_WITH_BLOCK_BINDING),
-        ("mantle/anthropic.claude-opus-4-8", "bedrock", {"type": "adaptive"}),
-        ("anthropic.claude-opus-4-8", "bedrock_mantle", {"type": "adaptive"}),
-        ("claude_platform/claude-opus-4-8", "bedrock", {"type": "adaptive"}),
-        ("claude-opus-4-8", "vertex_ai", {"type": "adaptive"}),
-    ),
-    ids=(
-        "anthropic",
-        "azure_ai",
-        "bedrock_invoke",
-        "bedrock_mantle",
-        "bedrock_mantle_provider",
-        "bedrock_claude_platform",
-        "vertex_ai",
-    ),
-)
-def test_messages_legacy_thinking_translation_carries_only_block_binding_where_supported(
-    model: str, custom_llm_provider: str, expected_thinking: Mapping[str, object]
-) -> None:
-    from litellm.types.utils import LlmProviders
-    from litellm.utils import ProviderConfigManager
-
-    config: Final = ProviderConfigManager.get_provider_anthropic_messages_config(
-        model=model, provider=LlmProviders(custom_llm_provider)
-    )
-    assert config is not None
-
-    assert _thinking_sent_for_legacy_messages_request(config, model) == expected_thinking
-
-
-@pytest.mark.usefixtures("local_model_cost_map", "local_beta_headers_config")
-def test_openai_compatible_messages_passthrough_keeps_legacy_thinking_without_block_binding() -> None:
-    from litellm.llms.openai_like.messages.transformation import OpenAILikeAnthropicMessagesConfig
-
-    assert _thinking_sent_for_legacy_messages_request(OpenAILikeAnthropicMessagesConfig(), "claude-opus-4-8") == {
-        "type": "adaptive"
-    }
-
-
-def _thinking_sent_for_legacy_messages_request(config: BaseAnthropicMessagesConfig, model: str) -> object:
-    from litellm.types.router import GenericLiteLLMParams
-
-    return config.transform_anthropic_messages_request(
-        model=model,
-        messages=[{"role": "user", "content": "Reply with OK"}],
-        anthropic_messages_optional_request_params={
-            "max_tokens": 512,
-            "thinking": dict(LEGACY_THINKING_WITH_BLOCK_BINDING),
-        },
-        litellm_params=GenericLiteLLMParams(),
-        headers={},
-    ).get("thinking")
+    kept_rejected_keys: Final = {} if drop_params_source else rejected_keys
+    assert optional_params["thinking"] == {**expected_thinking, "block_binding": block_binding, **kept_rejected_keys}
 
 
 @pytest.mark.usefixtures("local_model_cost_map", "local_beta_headers_config")

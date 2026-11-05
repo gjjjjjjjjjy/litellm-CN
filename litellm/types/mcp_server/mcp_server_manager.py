@@ -1,4 +1,5 @@
 import json
+from collections.abc import Mapping
 from datetime import datetime
 from typing import Annotated, Any, Final, Literal
 
@@ -29,6 +30,7 @@ MCPInfo = Annotated[dict[str, Any], AfterValidator(_validate_mcp_protocol_metada
 
 
 class MCPOAuthMetadata(LiteLLMBaseModel):
+    authorization_server_metadata: Mapping[str, object] | None = Field(default=None, exclude=True)
     scopes: list[str] | None = None
     """Resource-driven scopes for the authorization request: the RFC 9728 protected-resource
     ``scopes_supported``, or the ``scope`` from the WWW-Authenticate 401 challenge when the resource
@@ -117,6 +119,7 @@ class MCPServer(LiteLLMBaseModel):
     # scope=="user" values must be supplied per-user.
     env_vars: list[dict[str, Any]] | None = None
     # OAuth-specific fields
+    authorization_server_metadata: Mapping[str, object] | None = Field(default=None, exclude=True)
     client_id: str | None = None
     client_secret: str | None = None
     issuer: str | None = None
@@ -179,6 +182,15 @@ class MCPServer(LiteLLMBaseModel):
     # posts the ID-JAG assertion to id_jag_resource_token_endpoint.
     id_jag_resource_token_endpoint: str | None = None
     id_jag_resource: str | None = None
+    id_jag_subject_source: str | None = None
+    id_jag_resource_client_id: str | None = Field(
+        default=None,
+        description="OAuth client identifier used at the ID-JAG resource authorization server.",
+    )
+    id_jag_resource_client_secret: str | None = Field(
+        default=None,
+        description="OAuth client secret used at the ID-JAG resource authorization server.",
+    )
     client_private_key: str | None = None
     client_private_key_id: str | None = None
     client_assertion_signing_alg: str = "RS256"
@@ -192,9 +204,11 @@ class MCPServer(LiteLLMBaseModel):
     access_groups: list[str] | None = None
     allow_all_keys: bool = False
     available_on_public_internet: bool = True
-    # Legacy opt-in to upstream-delegated authentication for ``oauth2``
-    # servers. LiteLLM admission still applies; use ``oauth_delegate`` for the
-    # supported client-forwarded OAuth flow.
+    # Deprecated opt-in to upstream-delegated authentication for ``oauth2``
+    # servers. A bare ``Authorization`` that is not a LiteLLM credential is the
+    # upstream token and is forwarded; see
+    # ``MCPRequestHandler._admit_legacy_delegate_bearer``. New servers should use
+    # ``true_passthrough`` or ``oauth_delegate``.
     #
     # Honored only for ``auth_type == oauth2``; ignored for any other
     # ``auth_type``. OAuth pass-through for non-oauth2 servers

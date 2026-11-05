@@ -5,14 +5,15 @@ This file contains common utils for anthropic calls.
 import copy
 import json
 import re
-from collections.abc import Mapping, MutableMapping, Sequence
+from collections.abc import Container, Mapping, MutableMapping, Sequence
 from datetime import datetime, timezone
 from types import MappingProxyType
-from typing import Any, ClassVar, Final, Literal, TypeVar
-from urllib.parse import quote
+from typing import Annotated, Any, ClassVar, Final, Literal, TypeVar
+from urllib.parse import quote, urlparse
 
 import httpx
-from pydantic import ConfigDict, Field, StrictBool, TypeAdapter, ValidationError
+from pydantic import BeforeValidator, ConfigDict, Field, StrictBool, TypeAdapter, ValidationError
+from typing_extensions import ReadOnly, TypedDict
 
 import litellm
 from litellm.constants import (
@@ -25,12 +26,14 @@ from litellm.exceptions import UnsupportedParamsError
 from litellm.litellm_core_utils.prompt_templates.common_utils import (
     get_file_ids_from_messages,
     is_encrypted_reasoning_block,
+    native_redacted_thinking_data,
 )
-from litellm.litellm_core_utils.prompt_templates.factory import (
-    THOUGHT_SIGNATURE_SEPARATOR,
+from litellm.litellm_core_utils.prompt_templates.factory import THOUGHT_SIGNATURE_SEPARATOR
+from litellm.litellm_core_utils.prompt_templates.mid_conversation_system import (
     find_anthropic_server_tool_result,
+    message_field,
+    parts_of,
 )
-from litellm.litellm_core_utils.prompt_templates.mid_conversation_system import message_field, parts_of
 from litellm.llms.anthropic.wif import (
     aget_anthropic_wif_token,
     anthropic_base_without_chat_suffix,
@@ -45,6 +48,7 @@ from litellm.types.llms.anthropic import (
     ANTHROPIC_MID_CONVERSATION_TOOL_CHANGES_BETA_HEADER,
     ANTHROPIC_OAUTH_BETA_HEADER,
     ANTHROPIC_OAUTH_TOKEN_PREFIX,
+    ANTHROPIC_SERVER_TOOL_USE_ID_PREFIX,
     ANTHROPIC_THINKING_DISPLAY_UPDATES_BETA_HEADER,
     ANTHROPIC_TOOL_SEARCH_TOOL_TYPES,
     AllAnthropicToolsValues,
@@ -107,11 +111,18 @@ _INFERENCE_PROFILE_MINOR_RE: Final = re.compile(r":\d+$")
 _DATED_RELEASE_SUFFIX_RE: Final = re.compile(r"-\d{8}$")
 _DOTTED_VERSION_RE: Final = re.compile(r"(\d)\.(\d)")
 _CLAUDE_CODE_BILLING_HEADER_PREFIX: Final = "x-anthropic-billing-header:"
-_OBJECT_MAPPING_ADAPTER: Final = TypeAdapter(dict[object, object])
+OBJECT_MAPPING_ADAPTER: Final = TypeAdapter(dict[object, object])
 OBJECT_LIST_ADAPTER: Final = TypeAdapter(list[object])
+_DECODED_JSON: Final = TypeAdapter(object)
 
 
 _CLAUDE_CODE_USER_AGENT_PREFIXES: Final = ("claude-cli/", "claude-code/")
+
+
+def is_anthropic_messages_url(url: str) -> bool:
+    """Check whether a URL addresses Anthropic's Messages API."""
+    parsed_url: Final = urlparse(url)
+    return parsed_url.hostname == "api.anthropic.com" or parsed_url.path.removesuffix("/").endswith("/v1/messages")
 
 
 def requires_native_compaction_beta(
@@ -192,14 +203,9 @@ def is_claude_code_user_agent(user_agent: str) -> bool:
 
 def validated_object_mapping(value: object) -> dict[object, object] | None:
     try:
-        return _OBJECT_MAPPING_ADAPTER.validate_python(value)
+        return OBJECT_MAPPING_ADAPTER.validate_python(value)
     except ValidationError:
         return None
-
-
-def thinking_block_binding(thinking: Mapping[object, object] | None) -> dict[str, object]:
-    block_binding: Final = thinking.get("block_binding") if thinking is not None else None
-    return {} if block_binding is None else {"block_binding": block_binding}
 
 
 def validated_object_list(value: object) -> Sequence[object] | None:
@@ -446,7 +452,7 @@ def _sanitized_anthropic_error(response: httpx.Response, detail: str | None = No
     if detail is not None:
         return f"HTTP {response.status_code}: {detail}"
     try:
-        body: Final = response.json()
+        body: Final = _DECODED_JSON.validate_python(response.json())
     except ValueError:
         return f"HTTP {response.status_code}"
     error: Final = body.get("error") if isinstance(body, dict) else None
@@ -954,7 +960,7 @@ class AnthropicModelInfo(BaseLLMModelInfo):
         model: str,
         optional_params: MutableMapping[str, object],  # mutable-ok: in-place out-param like the sibling helpers
         custom_llm_provider: str,
-        carry_block_binding: bool = False,
+        drop_params: bool,
     ) -> None:
         """Translate legacy ``thinking.type=enabled`` to adaptive for the
         adaptive-thinking models that reject it (4.7+ and the 5 families).
@@ -980,8 +986,10 @@ class AnthropicModelInfo(BaseLLMModelInfo):
         existing_output_config: Final = optional_params.get("output_config")
         display: Final = thinking.get("display")
         supported_display: Final = {"display": display} if display in ("summarized", "omitted") else {}
-        carried_block_binding: Final = thinking_block_binding(thinking) if carry_block_binding else {}
-        optional_params["thinking"] = {**carried_block_binding, "type": "adaptive", **supported_display}
+        carried_keys: Final = carried_thinking_keys(
+            thinking, rebuilt_keys=frozenset(("type", "budget_tokens", "display")), drop_params=drop_params
+        )
+        optional_params["thinking"] = {**carried_keys, "type": "adaptive", **supported_display}
         optional_params["output_config"] = {
             "effort": effort,
             **(existing_output_config if isinstance(existing_output_config, dict) else MappingProxyType({})),
@@ -1649,6 +1657,22 @@ def is_anthropic_invalid_thinking_block_error(error_text: str) -> bool:
     return "must contain thinking" in lower
 
 
+_ADAPTIVE_THINKING_KEYS: Final = (
+    AnthropicThinkingParam.__required_keys__ | AnthropicThinkingParam.__optional_keys__
+) - {"budget_tokens"}
+
+
+def carried_thinking_keys(
+    thinking: Mapping[object, object], rebuilt_keys: frozenset[str], drop_params: bool
+) -> Mapping[object, object]:
+    drops_unknown_keys: Final = drop_params or litellm.drop_params is True
+    return {
+        key: value
+        for key, value in thinking.items()
+        if key not in rebuilt_keys and (key in _ADAPTIVE_THINKING_KEYS or not drops_unknown_keys)
+    }
+
+
 def is_anthropic_thinking_binding_mismatch_error(error_text: str) -> bool:
     """messages.N.content.M: Invalid `signature` in `thinking` block. The block is bound to a different conversation."""
     return "bound to a different conversation" in error_text.lower()
@@ -1689,18 +1713,31 @@ def strip_thinking_blocks_from_anthropic_messages(messages: Sequence[object]) ->
     return out
 
 
-def _without_encrypted_reasoning_blocks(message: dict) -> dict | None:  # mutable-ok: Anthropic message payload shape
+def _replayable_message(message: dict) -> dict | None:  # mutable-ok: Anthropic message payload shape
     if not isinstance(message, Mapping):
         return message
     content: Final = message.get("content")
     if not isinstance(content, list):
         return message
-    kept: Final = [b for b in content if not is_encrypted_reasoning_block(b)]
-    if len(kept) == len(content):
+    kept: Final = [_with_native_redacted_data(b) for b in content if not is_encrypted_reasoning_block(b)]
+    if kept == content:
         return message
     if not kept:
         return None
     return {**message, "content": kept}
+
+
+_CONTENT_BLOCK: Final = TypeAdapter(dict[str, object])
+
+
+def _with_native_redacted_data(block: object) -> object:
+    if not isinstance(block, Mapping):
+        return block
+    match _CONTENT_BLOCK.validate_python(block):
+        case {"type": "redacted_thinking", "data": str() as data} as redacted:
+            return {**redacted, "data": native_redacted_thinking_data(data)}
+        case _:
+            return block
 
 
 def strip_encrypted_reasoning_blocks_from_anthropic_messages(
@@ -1709,14 +1746,15 @@ def strip_encrypted_reasoning_blocks_from_anthropic_messages(
     """
     Drop thinking / redacted_thinking blocks that carry another provider's encrypted
     reasoning (a turn the Responses API bridge served) before the request reaches
-    Anthropic, which cannot verify them. Anthropic's own signed blocks are kept.
+    Anthropic, which cannot verify them. Anthropic's own signed blocks are kept, with a
+    redacted block's Bedrock Converse-wrapped `data` unwrapped back to Claude's own.
     """
-    stripped: Final = (_without_encrypted_reasoning_blocks(m) for m in messages)
+    stripped: Final = (_replayable_message(m) for m in messages)
     return [m for m in stripped if m is not None]
 
 
 def strip_thinking_blocks_from_anthropic_messages_request_dict(
-    data: dict[str, Any],
+    data: dict[str, object],
 ) -> None:
     """
     Mutate an Anthropic Messages-style request dict: strip thinking blocks from
@@ -1944,9 +1982,18 @@ def _replayed_server_tool_use(block: object) -> _ReplayedServerToolUse | None:
         return None
 
 
-def tool_call_is_rebuilt_as_server_tool_use(tool_call_id: object, provider_specific_fields: object) -> bool:
+def tool_call_is_rebuilt_as_server_tool_use(
+    tool_call_id: object, provider_specific_fields: object, answered_tool_ids: Container[str] = frozenset()
+) -> bool:
+    if (
+        not isinstance(tool_call_id, str)
+        or not tool_call_id.startswith(ANTHROPIC_SERVER_TOOL_USE_ID_PREFIX)
+        or tool_call_id in answered_tool_ids
+        or provider_specific_fields is None
+    ):
+        return False
     fields: Final = validated_object_mapping(provider_specific_fields)
-    if not isinstance(tool_call_id, str) or fields is None:
+    if fields is None:
         return False
     return (
         find_anthropic_server_tool_result(
@@ -2205,3 +2252,35 @@ def create_anthropic_model_list_response(
         "first_id": data[0]["id"] if data else None,
         "last_id": data[-1]["id"] if data else None,
     }
+
+
+class RefusalStopFields(TypedDict, total=False):
+    stop_reason: ReadOnly[object]
+    stop_details: ReadOnly[object]
+
+
+def _is_dict(value: object) -> bool:
+    return isinstance(value, dict)
+
+
+def _no_stop_fields() -> Mapping[str, object]:
+    return {}
+
+
+def _dict_or_empty(value: object) -> object:
+    return value if _is_dict(value) else _no_stop_fields()
+
+
+REFUSAL_STOP_FIELDS: Final[TypeAdapter[RefusalStopFields]] = TypeAdapter(
+    Annotated[RefusalStopFields, BeforeValidator(_dict_or_empty)]
+)
+
+
+def refusal_provider_specific_fields(message: Mapping[str, object]) -> Mapping[str, object]:
+    stop_reason: Final = message.get("stop_reason")
+    stop_details: Final = message.get("stop_details")
+    if stop_details is not None:
+        return {"stop_reason": stop_reason, "stop_details": stop_details}
+    if stop_reason == "refusal":
+        return {"stop_reason": stop_reason}
+    return {}
