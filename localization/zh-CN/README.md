@@ -2,7 +2,7 @@
 
 中文词库、术语规则和构建脚本随 Fork 一起维护。构建时在临时源码副本中应用译文，并把 Fork 的后端代码（如新增的 Moark / Gitee AI 服务商）一起打包，生成镜像 `litellm-local:zh-cn`
 
-`litellm_zh_cn` 分支当前基于 `v1.108.0` 稳定版维护中文功能，`main` 分支用于同步官方上游。`origin` 指向自己的 Fork，`upstream` 指向 `BerriAI/litellm`
+`litellm_zh_cn` 分支当前基于 `v1.108.0` 稳定版维护 QosLLM 功能，后续先维护 `1.108.x`。`origin` 指向自己的 Fork，`upstream` 指向 `BerriAI/litellm`。上游版本的维护方式见下文
 
 ## 构建和启动
 
@@ -10,10 +10,10 @@
 
 首次部署时，将 `local-dev/.env.example` 复制为根目录 `.env`，填写管理员凭据、数据库密码和内网 IP。将 `local-dev/config.example.yaml` 复制为 `local-dev/config.yaml`。已有部署继续使用原配置
 
-Fork 源码和后端基础镜像需使用同一版本，版本不一致时构建直接报错。当前分支的构建命令为
+构建脚本读取 `pyproject.toml` 的版本号，选择同版本官方后端镜像。源码和基础镜像的版本不一致时构建直接报错
 
 ```bash
-./localization/zh-CN/build.sh "$PWD" ghcr.io/berriai/litellm:v1.108.0
+./localization/zh-CN/build.sh "$PWD"
 ./local-dev/start.sh
 ```
 
@@ -32,12 +32,12 @@ docker compose -p litellm-cn -f docker-compose.yml -f docker-compose.local-zh.ym
 ```bash
 HTTPS_PROXY=http://host.docker.internal:7897 \
 HTTP_PROXY=http://host.docker.internal:7897 \
-./localization/zh-CN/build.sh "$PWD" ghcr.io/berriai/litellm:v1.108.0
+./localization/zh-CN/build.sh "$PWD"
 ```
 
-构建执行补丁测试、TypeScript 检查和 Next.js 静态页面生成。构建结束后自动删除临时源码与依赖
+构建执行补丁测试、TypeScript 检查和 Next.js 静态页面生成。构建结束后自动删除临时源码，依赖和 npm 下载缓存保存在 Docker 卷中，供后续构建复用
 
-`build.sh` 依次调用 `build-ui.sh`（编译中文前端）和 `stage-backend.sh`（整理后端代码并换上 QosLLM 标志），再打包镜像。本机启动和公网发布都使用这些构建步骤
+`build.sh` 依次调用 `build-ui.sh`（编译中文前端）和 `stage-backend.sh`（整理后端代码并换上 QosLLM 标志），再打包镜像。本机启动和公网发布都使用这些构建步骤。需要指定镜像或目标平台时，仍可运行 `./localization/zh-CN/build.sh "$PWD" 后端基础镜像 [目标平台 镜像名称]`
 
 每次构建都以同版本官方镜像为基础，Docker 复用相同的基础层和构建缓存，应用层包含本次的 Fork 后端和中文前端。更新时继续使用上面的构建命令，镜像按层增量传输
 
@@ -81,34 +81,30 @@ docker run --rm --mount "type=bind,source=$PWD,target=/repo" \
   '
 ```
 
-## 同步上游
+## 维护上游版本
 
-保持 `main` 为官方主分支的镜像
+日常开发在 `litellm_zh_cn` 上进行，当前以 `1.108.x` 为基础。按修复需要合入该系列的正式补丁版。跨系列升级集中评估上游变更、依赖和数据库迁移后再进行。官方稳定版使用 `vX.Y.Z` 标签，补丁版用于修复问题，版本命名见[官方说明](https://docs.litellm.ai/blog/cleaner-release-versions)
+
+`main` 可作为上游参考分支独立同步。QosLLM 的日常开发和发布都使用当前选定的正式版本，升级时直接合并对应标签
+
+更新时，将下面的 `vX.Y.Z` 替换为选定的正式版本标签。先完成合并，有冲突时解决后运行 `git merge --continue`，再构建并启动本机预览
 
 ```bash
-git fetch upstream main --tags
-git switch main
-git merge --ff-only upstream/main
-git push origin main
 git switch litellm_zh_cn
-```
-
-中文分支更新稳定版本时，先获取并合并目标稳定版标签，再选择同版本后端镜像重新构建。下面的 `vX.Y.Z` 表示所选稳定版标签
-
-```bash
+git pull --ff-only origin litellm_zh_cn
 git fetch upstream tag vX.Y.Z
 git merge --no-edit vX.Y.Z
-./localization/zh-CN/build.sh "$PWD" ghcr.io/berriai/litellm:vX.Y.Z
-```
-
-检查翻译报告、构建结果和页面后，提交中文分支并启动新镜像
-
-```bash
-git push origin litellm_zh_cn
+./localization/zh-CN/build.sh "$PWD"
 ./local-dev/start.sh
 ```
 
-浅克隆计算不出合并基点时，不必补齐全部历史：中文分支已完整包含上一个稳定版标签，用它作为基点合并即可，例如 `git merge-recursive v1.106.6 -- HEAD vX.Y.Z`，解决冲突后写入 `.git/MERGE_HEAD` 再提交。新版本改变根布局或构建工具时，按实际错误调整 `prepare-ui.mjs` 或构建脚本
+检查翻译报告、构建结果、相关测试和实际页面后，推送分支并按[公网部署说明](../../deploy/qosllm/README.md)发布镜像。手动运行的 QosLLM workflow 会检查并发布所选分支的镜像
+
+```bash
+git push origin litellm_zh_cn
+```
+
+浅克隆缺少共同历史时，先用 `git fetch --deepen=500 upstream tag vX.Y.Z` 加深历史，再执行正常合并。按需继续加深，直到 Git 能找到共同祖先。新版本改变根布局或构建工具时，根据构建错误调整 `prepare-ui.mjs` 或构建脚本
 
 ## 许可证
 

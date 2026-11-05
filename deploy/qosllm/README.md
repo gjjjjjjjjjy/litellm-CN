@@ -4,6 +4,8 @@
 
 服务由 PostgreSQL、QosLLM 网关、音视频探测服务和 Caddy 组成。只有 Caddy 对外开放 80 和 443，网关、探测服务和数据库使用 Docker 内部网络
 
+上游按选定的稳定版本系列维护，日常发布使用当前 Fork 的代码。构建与检查从 `pyproject.toml` 读取上游版本，升级步骤见[维护上游版本](../../localization/zh-CN/README.md#维护上游版本)
+
 ## 检查和发布
 
 `.github/workflows/qosllm.yml` 只能手动运行，推送和 PR 都不会触发。需要时在 GitHub 仓库的 Actions 页面选择 QosLLM，点 Run workflow 并选择分支。检查以分支所基于的上游版本为基准，即 `pyproject.toml` 版本号对应的上游标签，只检查 Fork 改动的部分。后端对 Fork 新增的 Python 文件运行 ruff，并运行 Fork 改过的测试以及改过模块对应的测试。前端运行 TypeScript 检查和翻译检查，对 Fork 改过的文件运行 eslint、prettier 和对应的 vitest 测试，出现未翻译的文案时检查失败
