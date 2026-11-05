@@ -150,15 +150,6 @@ class ReviewVideoRow(LiteLLMBaseModel):
     status: QosReviewVideoStatus
 
 
-class DeploymentCredentials(LiteLLMBaseModel):
-    """What fetching a video's file needs from the deployment that generated it."""
-
-    model_config = ConfigDict(frozen=True, extra="ignore")
-
-    api_key: str | None = None
-    api_base: str | None = None
-
-
 class RecordedReview(LiteLLMBaseModel):
     model_config = ConfigDict(frozen=True)
 

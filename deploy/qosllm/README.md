@@ -88,6 +88,8 @@ docker compose cp caddy:/data/caddy/pki/authorities/local/root.crt ./qosllm-root
 
 在模型管理中选择 `Moark (Gitee AI)`，`API Base` 可以填写 `https://api.moark.com/v1` 或 `https://ai.gitee.com/v1`，API Key 填写对应端点可用的密钥。留空使用 `https://api.moark.com/v1`
 
+添加模型时填写的 API Key 默认保存为凭据，凭据名取服务商名称，例如 `moark`，同时填写的 API Base 也存进去。之后再选同一个服务商，表单会自动选用这个凭据，不用再输入 Key。该服务商有多个凭据时，从“已有凭据”里选一个。不想保存时取消勾选“保存为凭据”，Key 就只属于这个模型。凭据在“模型与端点 → LLM 凭据”里修改，所有用它的模型一起生效
+
 需要同时接入时，用同一个对外模型名分别添加两个部署，各自填写 API Base 和上游模型名称。QoS 会将两个端点都显示为 Moark，并保留各自的部署 ID 和接口地址；压测时可以单独选择一个部署，也可以比较两个部署的结果
 
 ## 账号锁定

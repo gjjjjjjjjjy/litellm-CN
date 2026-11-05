@@ -34,6 +34,8 @@ from litellm.proxy.management_endpoints.qos_video_reviews import (
     REVIEW_SUMMARY_SQL,
     REVIEW_VIDEOS_SQL,
 )
+from litellm.types.router import Deployment, LiteLLM_Params
+from litellm.types.utils import CredentialItem
 from litellm.types.videos.utils import encode_video_id_with_provider
 
 NOW: Final = datetime(2026, 10, 22, 12, 0, 0)
@@ -69,7 +71,7 @@ def _row(**overrides: object) -> dict[str, object]:
     }
 
 
-def _router(deployments: dict[str, MagicMock]) -> MagicMock:
+def _router(deployments: dict[str, Deployment]) -> MagicMock:
     """A router serving these deployments, keyed by id; like the real one it names a model once per deployment."""
     llm_router = MagicMock()
     llm_router.get_model_names.return_value = [deployment.model_name for deployment in deployments.values()]
@@ -80,13 +82,19 @@ def _router(deployments: dict[str, MagicMock]) -> MagicMock:
     return llm_router
 
 
-def _deployment(model_name: str, model: str, api_base: str | None, provider: str | None = None) -> MagicMock:
-    deployment = MagicMock()
-    deployment.model_name = model_name
-    deployment.litellm_params.model = model
-    deployment.litellm_params.api_base = api_base
-    deployment.litellm_params.custom_llm_provider = provider
-    return deployment
+def _deployment(
+    model_name: str, model: str, api_base: str | None, provider: str | None = None, credential: str | None = None
+) -> Deployment:
+    return Deployment(
+        model_name=model_name,
+        litellm_params=LiteLLM_Params(
+            model=model, api_base=api_base, custom_llm_provider=provider, litellm_credential_name=credential
+        ),
+    )
+
+
+def _gitee_credential(**values: str) -> CredentialItem:
+    return CredentialItem(credential_name="gitee", credential_values=values, credential_info={})
 
 
 _QWEN_ON_TWO_PROVIDERS: Final = {
@@ -368,6 +376,25 @@ class TestBenchmarkEndpoints:
                 },
             ],
         }
+
+    def test_a_deployment_on_a_stored_credential_is_listed_with_the_endpoint_its_requests_use(self) -> None:
+        deployments: Final = {
+            "node-credential": _deployment("glm-5", "openai/GLM-5", None, credential="gitee"),
+            "node-own-base": _deployment("glm-5", "openai/GLM-5", "https://api.moark.com/v1", credential="gitee"),
+        }
+
+        with (
+            patch("litellm.proxy.proxy_server.llm_router", _router(deployments)),
+            patch.object(litellm, "credential_list", [_gitee_credential(api_base="https://ai.gitee.com/v1")]),
+        ):
+            response = _client(LitellmUserRoles.PROXY_ADMIN_VIEW_ONLY).get("/qos/targets")
+
+        assert response.status_code == 200, response.text
+        (model,) = response.json()["models"]
+        assert [(node["model_id"], node["vendor"], node["api_base"]) for node in model["deployments"]] == [
+            ("node-credential", "moark", "https://ai.gitee.com/v1"),
+            ("node-own-base", "moark", "https://api.moark.com/v1"),
+        ]
 
     def test_a_deployment_whose_provider_comes_from_its_endpoint_is_listed_instead_of_failing_the_page(self) -> None:
         groq_by_endpoint: Final = {"node-groq": _deployment("llama", "llama-4", "https://api.groq.com/openai/v1")}
@@ -776,15 +803,10 @@ class TestHealthEndpoint:
         ]
         prisma = MagicMock()
         prisma.db.query_raw = AsyncMock(side_effect=[history, probes])
-        deployment = MagicMock()
-        deployment.litellm_params.api_base = "https://ai.gitee.com/v1"
-        deployment.litellm_params.model = "openai/GLM-5.3"
-        deployment.litellm_params.custom_llm_provider = None
-        default_base_deployment = MagicMock()
-        default_base_deployment.litellm_params.api_base = None
-        default_base_deployment.litellm_params.model = "Qwen3.8-27B"
-        default_base_deployment.litellm_params.custom_llm_provider = "moark"
-        deployments = {"node-a": deployment, "node-default-base": default_base_deployment}
+        deployments = {
+            "node-a": _deployment("GLM-5.3", "openai/GLM-5.3", "https://ai.gitee.com/v1"),
+            "node-default-base": _deployment("Qwen3.8-27B", "Qwen3.8-27B", None, "moark"),
+        }
         llm_router = MagicMock()
         llm_router.get_deployment.side_effect = deployments.get
         llm_router.get_model_ids.return_value = list(deployments)
@@ -1144,6 +1166,32 @@ class TestVideoReviews:
         llm_router.get_model_list.assert_called_once_with(model_name="LTX-2")
         fetch.assert_awaited_once_with(
             video_id=video_id, custom_llm_provider="moark", api_key="sk-moark", api_base="https://ai.gitee.com/v1"
+        )
+
+    def test_plays_a_video_with_the_stored_credential_of_the_deployment_that_made_it(self) -> None:
+        video_id: Final = encode_video_id_with_provider("TASK-1", "moark", "LTX-2")
+        llm_router: Final = MagicMock()
+        llm_router.resolve_model_name_from_model_id = MagicMock(return_value="LTX-2")
+        llm_router.get_model_list = MagicMock(
+            return_value=[
+                {"model_name": "LTX-2", "litellm_params": {"model": "moark/LTX-2", "litellm_credential_name": "gitee"}}
+            ]
+        )
+        fetch: Final = AsyncMock(return_value=b"\x00\x00\x00\x18ftypisom")
+        credential: Final = _gitee_credential(api_key="sk-gitee", api_base="https://ai.gitee.com/v1")
+
+        with (
+            patch("litellm.proxy.proxy_server.llm_router", llm_router),
+            patch("litellm.avideo_content", fetch),
+            patch.object(litellm, "credential_list", [credential]),
+        ):
+            response: Final = _client(LitellmUserRoles.PROXY_ADMIN).get(
+                "/qos/videos/content", params={"video_id": video_id}
+            )
+
+        assert response.status_code == 200, response.text
+        fetch.assert_awaited_once_with(
+            video_id=video_id, custom_llm_provider="moark", api_key="sk-gitee", api_base="https://ai.gitee.com/v1"
         )
 
     @pytest.mark.parametrize(("model", "deployments"), (("LTX-2", None), ("LTX-2", []), (None, None)))

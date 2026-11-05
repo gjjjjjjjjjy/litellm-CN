@@ -2,6 +2,7 @@ import { toast } from "@/lib/toast";
 import { Model, modelCreateCall } from "../networking";
 import { provider_map } from "../provider_info_helpers";
 import { ptuPickerToUtcIso } from "../../utils/ptuDatetime";
+import { SAVE_PROVIDER_CREDENTIAL } from "./provider_credential";
 
 const hasValue = (value: unknown): boolean => value !== undefined && value !== null && value !== "";
 
@@ -80,6 +81,9 @@ export const prepareModelAddRequest = async (formValues: Record<string, any>, ac
       // Iterate through the key-value pairs in formValues
       for (const [key, value] of Object.entries(pricedValues)) {
         if (key.startsWith("qos_image_")) {
+          continue;
+        }
+        if (key === SAVE_PROVIDER_CREDENTIAL) {
           continue;
         }
         if (value === "") {

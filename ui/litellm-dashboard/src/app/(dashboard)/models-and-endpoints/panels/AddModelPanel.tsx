@@ -5,6 +5,7 @@ import { useForm, useWatch } from "react-hook-form";
 import { useQueryClient } from "@tanstack/react-query";
 import AddModelForm from "@/components/add_model/AddModelForm";
 import { handleAddModelSubmit } from "@/components/add_model/handle_add_model_submit";
+import { planProviderCredential } from "@/components/add_model/provider_credential";
 import {
   projectMountedValues,
   useMountRegistry,
@@ -12,10 +13,14 @@ import {
 } from "@/components/common_components/MountedFormField";
 import { getPlaceholder, getProviderModels } from "@/components/provider_info_helpers";
 import { useModelCostMap } from "@/app/(dashboard)/hooks/models/useModelCostMap";
-import { useCredentials } from "@/app/(dashboard)/hooks/credentials/useCredentials";
+import { credentialsKeys, useCredentials } from "@/app/(dashboard)/hooks/credentials/useCredentials";
+import { useProviderFields } from "@/app/(dashboard)/hooks/providers/useProviderFields";
 import { useTeams } from "@/app/(dashboard)/hooks/teams/useTeams";
 import useAuthorized from "@/app/(dashboard)/hooks/useAuthorized";
 import { buildDecisionCatalog } from "@/lib/decisionModels";
+import { credentialCreateCall } from "@/components/networking";
+import { extractProxyErrorMessage } from "@/lib/http/client";
+import { toast } from "@/lib/toast";
 import { Button } from "@/components/ui/button";
 
 const INITIAL_VALUES: MountedFormValues = { litellm_credential_name: null };
@@ -27,6 +32,8 @@ export default function AddModelPanel() {
   const queryClient = useQueryClient();
   const { data: modelCostMapData } = useModelCostMap(true, true);
   const { data: credentialsResponse } = useCredentials();
+  const credentials = credentialsResponse?.credentials || [];
+  const { data: providerMetadata } = useProviderFields();
   const { data: teams } = useTeams();
   const pickedProvider = useWatch({ control: form.control, name: "custom_llm_provider" });
   const providerModels = useMemo(
@@ -45,8 +52,20 @@ export default function AddModelPanel() {
     if (!isValid) {
       return false;
     }
+    const values = mountedValues();
+    const provider = providerMetadata?.find((info) => info.provider === values.custom_llm_provider);
+    const plan = planProviderCredential(values, provider, credentials);
+    if (plan.credential !== null) {
+      try {
+        await credentialCreateCall(accessToken, plan.credential);
+      } catch (error) {
+        toast.error(extractProxyErrorMessage(error));
+        return false;
+      }
+      await queryClient.invalidateQueries({ queryKey: credentialsKeys.all });
+    }
     return handleAddModelSubmit(
-      mountedValues(),
+      plan.modelValues,
       accessToken,
       { resetFields: () => form.reset(INITIAL_VALUES) },
       refresh,
@@ -63,7 +82,7 @@ export default function AddModelPanel() {
       showAdvancedSettings={showAdvancedSettings}
       setShowAdvancedSettings={setShowAdvancedSettings}
       teams={teams ?? null}
-      credentials={credentialsResponse?.credentials || []}
+      credentials={credentials}
       decisionCatalog={decisionCatalog}
     />;
 }

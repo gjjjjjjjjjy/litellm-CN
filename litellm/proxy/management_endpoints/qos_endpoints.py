@@ -21,6 +21,7 @@ from litellm.proxy.management_endpoints.qos_access import (
 )
 from litellm.proxy.management_endpoints.qos_benchmark import QOS_RUN_PREFIX, concurrency_of, new_run_id, start_benchmark
 from litellm.proxy.management_endpoints.qos_deployments import (
+    deployment_connection,
     deployment_model_groups,
     deployment_target_lookup,
     target_deployment,
@@ -96,7 +97,6 @@ from litellm.proxy.management_endpoints.qos_video_reviews import (
     REVIEW_SUMMARY_SQL,
     REVIEW_VIDEO_ROWS,
     REVIEW_VIDEOS_SQL,
-    DeploymentCredentials,
     review_video,
 )
 from litellm.types.llms.base import LiteLLMBaseModel
@@ -492,7 +492,7 @@ async def get_qos_video_content(
     deployments: Final = None if llm_router is None or model is None else llm_router.get_model_list(model_name=model)
     if not deployments:
         raise HTTPException(status_code=404, detail="The model that generated this video is no longer configured")
-    credentials: Final = DeploymentCredentials.model_validate(deployments[0]["litellm_params"])
+    credentials: Final = deployment_connection(deployments[0]["litellm_params"])
     try:
         content: Final = await litellm.avideo_content(
             video_id=video_id,

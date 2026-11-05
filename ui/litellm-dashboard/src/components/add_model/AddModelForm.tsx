@@ -38,6 +38,7 @@ import ConditionalPublicModelName from "./conditional_public_model_name";
 import LiteLLMModelNameField from "./litellm_model_name";
 import ConnectionErrorDisplay from "./model_connection_test";
 import ProviderSpecificFields from "./provider_specific_fields";
+import { SAVE_PROVIDER_CREDENTIAL, savedCredentialFor } from "./provider_credential";
 import { TEST_MODES } from "./add_model_modes";
 import DecisionModelNote from "./DecisionModelNote";
 import { type DecisionCatalog } from "@/lib/decisionModels";
@@ -169,10 +170,11 @@ const AddModelForm: React.FC<AddModelFormProps> = ({
 
   const credentialSelectOptions: SearchSelectOption[] = useMemo(() => credentialOptions(credentials), [credentials]);
 
-  const applyProviderSelection = () => {
+  const applyProviderSelection = (provider: string | null) => {
     form.setValue("model", []);
     form.setValue("model_name", undefined);
     form.setValue("custom_model_name", undefined);
+    form.setValue("litellm_credential_name", provider === null ? null : savedCredentialFor(credentials, provider));
   };
 
   const providerMetadataErrorText = providerMetadataError
@@ -183,6 +185,7 @@ const AddModelForm: React.FC<AddModelFormProps> = ({
 
   const isAdmin = all_admin_roles.includes(userRole);
   const canDeploySharedImages = isProxyAdminRole(userRole ?? "") && !isViewOnly;
+  const canSaveProviderCredential = isProxyAdminRole(userRole ?? "") && !isViewOnly && selectedProvider !== null;
   const modeOptions = canDeploySharedImages ? TEST_MODES : TEST_MODES.filter((entry) => entry.value !== "image_generation");
   const isTeamAdmin = isUserTeamAdminForAnyTeam(teams, userId);
   // Same owner the Auto-Routers tab uses, so the two creation forms cannot disagree about
@@ -261,7 +264,7 @@ const AddModelForm: React.FC<AddModelFormProps> = ({
                             value={typeof control.value === "string" ? control.value : null}
                             onValueChange={(value) => {
                               control.onChange(value);
-                              applyProviderSelection();
+                              applyProviderSelection(value);
                             }}
                           />
                         )}
@@ -403,6 +406,19 @@ const AddModelForm: React.FC<AddModelFormProps> = ({
                             <div className="grow border-t border-border"></div>
                           </div>
                           <ProviderSpecificFields selectedProvider={selectedProvider} />
+                          {canSaveProviderCredential && (
+                            <MountedFormField name={SAVE_PROVIDER_CREDENTIAL} defaultValue={true} className="mb-4">
+                              {(control) => (
+                                <label className="flex items-center gap-2 text-sm">
+                                  <Checkbox
+                                    checked={control.value === true}
+                                    onCheckedChange={(value) => control.onChange(value === true)}
+                                  />
+                                  Save as a credential for the next models of this provider
+                                </label>
+                              )}
+                            </MountedFormField>
+                          )}
                           {canCreateFederatedCredential && (
                             <div className="mb-4 flex flex-col items-start gap-2">
                               <span className="text-sm text-muted-foreground">

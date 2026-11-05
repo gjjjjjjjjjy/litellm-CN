@@ -2,9 +2,13 @@ import { useSyncExternalStore } from "react";
 import { act, renderWithProviders, screen, waitFor, within } from "../../../../../tests/test-utils";
 import userEvent, { PointerEventsCheckLevel } from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { CredentialItem } from "@/components/networking";
+import { toast } from "@/lib/toast";
 import AddModelPanel from "./AddModelPanel";
 
 const modelCreateCall = vi.fn();
+const credentialCreateCall = vi.fn();
+let savedCredentials: CredentialItem[] = [];
 const mockPtuEnabled = vi.fn();
 const mockAuthorized = vi.fn();
 
@@ -13,6 +17,7 @@ vi.mock("@/components/networking", async (importOriginal) => {
   return {
     ...actual,
     modelCreateCall: (accessToken: string, model: unknown) => modelCreateCall(accessToken, model),
+    credentialCreateCall: (accessToken: string, credential: unknown) => credentialCreateCall(accessToken, credential),
     modelAvailableCall: vi.fn().mockResolvedValue({ data: [{ id: "group-a" }] }),
   };
 });
@@ -29,8 +34,9 @@ vi.mock("@/app/(dashboard)/hooks/models/useModelCostMap", () => ({
   useModelCostMap: (...args: unknown[]) => mockUseModelCostMap(...args),
 }));
 
-vi.mock("@/app/(dashboard)/hooks/credentials/useCredentials", () => ({
-  useCredentials: () => ({ data: { credentials: [] } }),
+vi.mock("@/app/(dashboard)/hooks/credentials/useCredentials", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/app/(dashboard)/hooks/credentials/useCredentials")>()),
+  useCredentials: () => ({ data: { credentials: savedCredentials } }),
 }));
 
 vi.mock("@/app/(dashboard)/hooks/teams/useTeams", () => ({
@@ -173,6 +179,10 @@ const setup = async () => {
 
   return { user, openAdvanced, closeAdvanced, fillRequired, submit, submitExpectingRejection };
 };
+
+beforeEach(() => {
+  savedCredentials = [];
+});
 
 describe("AddModelPanel submit payload contract", () => {
   beforeEach(() => {
@@ -593,5 +603,116 @@ describe("AddModelPanel decision models", () => {
     const note = await screen.findByRole("note", { name: "Decision model notice" });
     expect(note).toHaveTextContent("/v1/decisions");
     expect(note).not.toHaveTextContent("/chat/completions");
+  });
+});
+
+const credential = (credential_name: string, provider: string): CredentialItem => ({
+  credential_name,
+  credential_values: {},
+  credential_info: { custom_llm_provider: provider },
+});
+
+describe("AddModelPanel provider credentials", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockUseModelCostMap.mockReturnValue({ data: {} });
+    mockPtuEnabled.mockReturnValue(false);
+    mockAuthorized.mockReturnValue(PROXY_ADMIN);
+    credentialCreateCall.mockResolvedValue({ success: true });
+  });
+
+  const { api_key: _typedKey, ...withoutKey } = alwaysMounted;
+
+  it("saves a typed API key as the provider's credential and creates the model on it", async () => {
+    const { user, fillRequired, submit } = await setup();
+    await fillRequired();
+    await user.type(screen.getByLabelText("API Key"), "sk-typed");
+    await submit();
+
+    const saved = {
+      credential_name: "openai",
+      display_name: "OpenAI",
+      credential_values: { api_key: "sk-typed" },
+      credential_info: { custom_llm_provider: "OpenAI" },
+    };
+    expect(credentialCreateCall).toHaveBeenCalledExactlyOnceWith("test-access-token", saved);
+    expect(credentialCreateCall.mock.invocationCallOrder[0]).toBeLessThan(modelCreateCall.mock.invocationCallOrder[0]);
+    expect(lastCreatedModel().litellm_params).toStrictEqual({ ...withoutKey, litellm_credential_name: "openai" });
+  });
+
+  it("keeps the key on the model alone when saving it as a credential is switched off", async () => {
+    const { user, fillRequired, submit } = await setup();
+    await fillRequired();
+    await user.type(screen.getByLabelText("API Key"), "sk-typed");
+    await user.click(
+      screen.getByRole("checkbox", { name: "Save as a credential for the next models of this provider" }),
+    );
+    await submit();
+
+    expect(credentialCreateCall).not.toHaveBeenCalled();
+    expect(lastCreatedModel().litellm_params).toStrictEqual({ ...alwaysMounted, api_key: "sk-typed" });
+  });
+
+  it("picks the provider's saved credential so its key is not asked for again", async () => {
+    savedCredentials = [credential("anthropic-team", "Anthropic"), credential("openai-team", "OpenAI")];
+    const { fillRequired, submit } = await setup();
+    await fillRequired();
+
+    expect(screen.queryByLabelText("API Key")).not.toBeInTheDocument();
+    await submit();
+    expect(credentialCreateCall).not.toHaveBeenCalled();
+    expect(lastCreatedModel().litellm_params).toStrictEqual({
+      custom_llm_provider: "openai",
+      model: "gpt-4o",
+      litellm_credential_name: "openai-team",
+    });
+  });
+
+  it("asks which credential to use when the provider has several, and names a new one apart from them", async () => {
+    savedCredentials = [credential("openai", "OpenAI"), credential("openai-2", "openai")];
+    const { user, fillRequired, submit } = await setup();
+    await fillRequired();
+    await user.type(screen.getByLabelText("API Key"), "sk-typed");
+    await user.type(screen.getByLabelText("API Base"), "https://gateway.example/v1");
+    await submit();
+
+    const saved = {
+      credential_name: "openai-3",
+      display_name: "OpenAI · https://gateway.example/v1",
+      credential_values: { api_key: "sk-typed", api_base: "https://gateway.example/v1" },
+      credential_info: { custom_llm_provider: "OpenAI" },
+    };
+    expect(credentialCreateCall).toHaveBeenCalledExactlyOnceWith("test-access-token", saved);
+    expect(lastCreatedModel().litellm_params).toStrictEqual({
+      custom_llm_provider: "openai",
+      model: "gpt-4o",
+      litellm_credential_name: "openai-3",
+    });
+  });
+
+  it("creates no model when the credential cannot be saved", async () => {
+    credentialCreateCall.mockRejectedValue(new Error("Credential 'openai' already exists"));
+    const shown = vi.spyOn(toast, "error");
+    const { user, fillRequired } = await setup();
+    await fillRequired();
+    await user.type(screen.getByLabelText("API Key"), "sk-typed");
+    await user.click(screen.getByTestId("add-model-btn"));
+
+    await waitFor(() => expect(shown).toHaveBeenCalledWith("Credential 'openai' already exists"));
+    expect(modelCreateCall).not.toHaveBeenCalled();
+    shown.mockRestore();
+  });
+
+  it("saves nothing when only an endpoint is typed, since there is no key to remember", async () => {
+    const { user, fillRequired, submit } = await setup();
+    await fillRequired();
+    await user.type(screen.getByLabelText("API Base"), "https://gateway.example/v1");
+    await submit();
+
+    expect(credentialCreateCall).not.toHaveBeenCalled();
+    expect(lastCreatedModel().litellm_params).toStrictEqual({
+      ...alwaysMounted,
+      api_base: "https://gateway.example/v1",
+    });
   });
 });
