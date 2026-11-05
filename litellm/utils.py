@@ -7750,11 +7750,13 @@ class TextCompletionStreamWrapper:
             text_choices: Final = TextChoices()
             if isinstance(chunk, Choices):  # chunk should always be of type StreamingChoices
                 raise Exception
-            delta: Final = chunk["choices"][0]["delta"]
-            text_choices["text"] = delta["content"]
-            text_choices["reasoning_content"] = delta.get("reasoning_content")
-            text_choices["index"] = chunk["choices"][0]["index"]
-            text_choices["finish_reason"] = chunk["choices"][0]["finish_reason"]
+            # a usage-only chat chunk has no choices; every text completion chunk carries one, left empty here
+            if chunk["choices"]:
+                stream_choice: Final = chunk["choices"][0]
+                text_choices["text"] = stream_choice["delta"]["content"]
+                text_choices["reasoning_content"] = stream_choice["delta"].get("reasoning_content")
+                text_choices["index"] = stream_choice["index"]
+                text_choices["finish_reason"] = stream_choice["finish_reason"]
             response["choices"] = [text_choices]
 
             # only pass usage when stream_options["include_usage"] is True
