@@ -52,7 +52,7 @@ docker run -e LITELLM_API_KEY=sk-... -e TZ=Asia/Shanghai litellm-media-probe \
 
 `--at` 为每天的运行时间，按容器的时区（`TZ`）计算，多个时间用逗号分隔，不加时只运行一次。到点时如果机器在睡眠，或者上一轮还没结束，晚了 10 分钟以上的那一轮直接跳过，不补跑。每条视频最多等 2 小时 20 分钟，所以相邻两个时间至少要隔两个半小时。`--judge-model` 是打分和写 Prompt 用的视觉模型，默认 `qwen3.8-27b`，设为空字符串则不打分。`--dry-run` 只列出参与探测的模型和参数。截帧需要 PyAV 和 Pillow，网关镜像里没有，所以用 `qos/media-probe.Dockerfile` 单独构建。每次探测按服务商标价计费，打分另按视觉模型的 token 计费，运行次数要按预算设置
 
-`--listen` 打开一个只给网关用的端口，视频评审里的「开始测评」经它启动：网关把 Prompt 转给探测脚本，脚本立即让各模型生成视频，规则和定时探测一样。除定时探测的那句 Prompt 外，图生视频模型以文生视频模型第一条完成视频的第一帧为首帧，保证所有模型从同一画面开始。网关要设置 `QOS_MEDIA_PROBE_URL` 指向这个端口，请求用网关的 master key 鉴权，所以探测脚本的 `LITELLM_API_KEY` 也要用 master key
+`--listen` 打开一个只给网关用的端口，视频评审里的「开始测评」经它启动：网关把 Prompt 转给探测脚本，脚本立即让各模型生成视频，规则和定时探测一样。除定时探测的那句 Prompt 外，图生视频模型以文生视频模型第一条完成视频的第一帧为首帧，保证所有模型从同一画面开始。网关要设置 `QOS_MEDIA_PROBE_URL` 指向这个端口，请求用网关的 master key 鉴权，所以探测脚本的 `LITELLM_API_KEY` 也要用 master key。公网部署的 `deploy/qosllm/compose.yaml` 已包含探测服务并设置好这个变量，见 `deploy/qosllm/README.md` 的“音视频测评”
 
 探测请求带 `x-litellm-tags: qos-media-probe` 标签，网关只为这类请求记录视频的 Prompt，其他请求的 Prompt 照旧不保存
 

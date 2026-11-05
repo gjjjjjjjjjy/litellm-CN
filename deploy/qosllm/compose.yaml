@@ -31,6 +31,7 @@ services:
       LITELLM_TELEMETRY: "False"
       LITELLM_ENABLE_ADMIN_MCP: "false"
       NO_DOCS: "True"
+      QOS_MEDIA_PROBE_URL: http://media-probe:8090
     volumes:
       - ./config.yaml:/app/config.yaml:ro
     command: ["--config", "/app/config.yaml", "--host", "0.0.0.0", "--port", "4000"]
@@ -45,6 +46,19 @@ services:
       timeout: 10s
       retries: 12
       start_period: 60s
+
+  media-probe:
+    image: ${LITELLM_IMAGE:?set LITELLM_IMAGE in .env}-media-probe
+    pull_policy: never
+    restart: unless-stopped
+    environment:
+      LITELLM_API_KEY: ${LITELLM_MASTER_KEY:?set LITELLM_MASTER_KEY in .env}
+      TZ: Asia/Shanghai
+    command: ["--base-url", "http://litellm:4000", "--listen", "8090"]
+    volumes:
+      - media_probe_audio:/data/audio
+    networks:
+      - internal
 
   caddy:
     image: caddy:2.8.4
@@ -74,3 +88,4 @@ volumes:
   postgres_data:
   caddy_data:
   caddy_config:
+  media_probe_audio:
