@@ -4,11 +4,11 @@
 
 服务由 PostgreSQL、QosLLM 网关、音视频探测服务和 Caddy 组成。只有 Caddy 对外开放 80 和 443，网关、探测服务和数据库使用 Docker 内部网络
 
-## 自动检查和发布
+## 检查和发布
 
-推送到 `litellm_zh_cn` 或向它发起 PR 时，GitHub Actions 运行 `.github/workflows/qosllm.yml`。检查以分支所基于的上游版本为基准，即 `pyproject.toml` 版本号对应的上游标签，只检查 Fork 改动的部分。后端对 Fork 新增的 Python 文件运行 ruff，并运行 Fork 改过的测试以及改过模块对应的测试。前端运行 TypeScript 检查和翻译检查，对 Fork 改过的文件运行 eslint、prettier 和对应的 vitest 测试，出现未翻译的文案时检查失败
+`.github/workflows/qosllm.yml` 只能手动运行，推送和 PR 都不会触发。需要时在 GitHub 仓库的 Actions 页面选择 QosLLM，点 Run workflow 并选择分支。检查以分支所基于的上游版本为基准，即 `pyproject.toml` 版本号对应的上游标签，只检查 Fork 改动的部分。后端对 Fork 新增的 Python 文件运行 ruff，并运行 Fork 改过的测试以及改过模块对应的测试。前端运行 TypeScript 检查和翻译检查，对 Fork 改过的文件运行 eslint、prettier 和对应的 vitest 测试，出现未翻译的文案时检查失败
 
-推送到分支且检查全部通过后，自动构建镜像并推送到镜像仓库，镜像标签与本机 `publish.sh` 相同，为提交编号的前 12 位，显示在运行结果的摘要中。同一次发布还会推送音视频探测镜像，标签是网关标签加 `-media-probe`。首次使用前在 GitHub 仓库的 Settings > Secrets and variables > Actions 中添加三个 Secret
+检查全部通过后，构建镜像并推送到镜像仓库，镜像标签与本机 `publish.sh` 相同，为提交编号的前 12 位，显示在运行结果的摘要中。同一次发布还会推送音视频探测镜像，标签是网关标签加 `-media-probe`。首次使用前在 GitHub 仓库的 Settings > Secrets and variables > Actions 中添加三个 Secret
 
 | 名称 | 内容 |
 |---|---|
