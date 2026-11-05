@@ -6000,7 +6000,7 @@ async def test_async_completion_openai_response_headers(monkeypatch: pytest.Monk
         messages=[{"role": "user", "content": "hello"}],
         stream=True,
     )
-    stream_text: Final = "".join([chunk.choices[0].delta.content or "" async for chunk in stream])
+    stream_text: Final = "".join([choice.delta.content or "" async for chunk in stream for choice in chunk.choices])
     embedding: Final = await litellm.aembedding(model="text-embedding-3-small", input="hello")
 
     assert len(route.calls) == 2
