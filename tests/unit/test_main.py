@@ -3278,6 +3278,7 @@ def _expected_custom_price(response: litellm.ModelResponse) -> float:
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("use_async", (False, True))
+@pytest.mark.usefixtures("restore_model_registry")
 async def test_mock_completion_prices_azure_ai_router_deployment_with_custom_pricing(use_async: bool):
     router: Final = litellm.Router(model_list=[_AZURE_AI_CUSTOM_PRICED_DEPLOYMENT])
     messages: Final = [{"role": "user", "content": "hello"}]
