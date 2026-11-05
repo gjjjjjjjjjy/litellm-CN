@@ -8434,6 +8434,38 @@ class TestAddModelToDbBlocked:
         assert "blocked" not in kwargs["data"]
 
 
+class TestAddNewModelSharedImageGate:
+    @pytest.mark.asyncio
+    async def test_only_a_proxy_admin_can_deploy_a_shared_image_model(self):
+        from litellm.proxy._types import ProxyException
+        from litellm.proxy.management_endpoints.model_management_endpoints import (
+            add_new_model,
+        )
+
+        team_admin = UserAPIKeyAuth(user_id="team_admin", user_role=LitellmUserRoles.INTERNAL_USER)
+        mock_prisma = MagicMock()
+
+        with (
+            patch(  # test-quality-ok: the proxy wiring under test is what this patches
+                "litellm.proxy.proxy_server.prisma_client", mock_prisma
+            ),
+            patch(  # test-quality-ok: the proxy wiring under test is what this patches
+                "litellm.proxy.proxy_server.store_model_in_db", True
+            ),
+        ):
+            with pytest.raises(ProxyException) as exc_info:
+                await add_new_model(
+                    model_params=Deployment(
+                        model_name="shared-image",
+                        litellm_params=LiteLLM_Params(model="openai/gpt-image-1"),
+                        model_info={"id": "image-gate-0", "mode": "image_generation"},
+                    ),
+                    user_api_key_dict=team_admin,
+                )
+        assert "shared image models" in str(exc_info.value.message)
+        mock_prisma.db.litellm_proxymodeltable.create.assert_not_called()
+
+
 class TestAddNewModelBlockedAuthGate:
     """Same proxy-admin-only rule patch_model applies to `blocked` must hold at create time
     too: a team admin authorized for a team-scoped model must not be able to create it already
