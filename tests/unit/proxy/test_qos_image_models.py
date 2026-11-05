@@ -29,7 +29,7 @@ def test_builtin_profiles_have_distinct_prices_and_capabilities(monkeypatch):
 
 
 def test_sync_model_does_not_receive_seed_or_negative_prompt():
-    item = ImageItem(id="0001", prompt_id="p1", prompt="A red apple", seed=42)
+    item = ImageItem(id="0001", prompt_id="p1", prompt="A red apple", check="", seed=42)
     payload = _request_payload("stable-diffusion-3.5-large-turbo", "1024x1024", item, MODEL_PROFILES["stable-diffusion-3.5-large-turbo"])
     assert payload == {
         "model": "stable-diffusion-3.5-large-turbo", "prompt": "A red apple",
@@ -38,7 +38,7 @@ def test_sync_model_does_not_receive_seed_or_negative_prompt():
 
 
 def test_qwen_adapter_retains_seed_and_negative_prompt():
-    item = ImageItem(id="0001", prompt_id="p1", prompt="A bowl of ramen", negative_prompt="chopsticks", seed=42)
+    item = ImageItem(id="0001", prompt_id="p1", prompt="A bowl of ramen", check="", negative_prompt="chopsticks", seed=42)
     payload = _request_payload("qwen-image-2.1-viggle-turbo", "1024x1024", item, MODEL_PROFILES["qwen-image-2.1-viggle-turbo"])
     assert payload["extra_body"] == {"seed": 42, "negative_prompt": "chopsticks"}
 
@@ -66,9 +66,9 @@ def test_image_home_summary_uses_completed_requests_and_success_latency(tmp_path
         status="complete", started_at=now - timedelta(hours=1), concurrency=1,
         size="1024x1024", unit_cost_cny=0.03, estimated_cost_cny=0.09,
         supports_seed=False, items=(
-            ImageItem(id="0001", prompt_id="p1", prompt="A", seed=1, status="success", e2e_s=4.5),
-            ImageItem(id="0002", prompt_id="p2", prompt="B", seed=1, status="failure", e2e_s=8.0),
-            ImageItem(id="0003", prompt_id="p3", prompt="C", seed=1),
+            ImageItem(id="0001", prompt_id="p1", prompt="A", check="", seed=1, status="success", e2e_s=4.5),
+            ImageItem(id="0002", prompt_id="p2", prompt="B", check="", seed=1, status="failure", e2e_s=8.0),
+            ImageItem(id="0003", prompt_id="p3", prompt="C", check="", seed=1),
         ),
     )
     old = recent.model_copy(update={"id": "img-fedcba9876543210", "started_at": now - timedelta(days=2)})

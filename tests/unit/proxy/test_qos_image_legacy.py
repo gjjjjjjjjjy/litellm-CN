@@ -6,11 +6,12 @@ import unittest
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Final
 from unittest.mock import patch
 
 from fastapi import HTTPException
 
-from litellm.proxy._types import LitellmUserRoles
+from litellm.proxy._types import LitellmUserRoles, UserAPIKeyAuth
 from litellm.proxy.management_endpoints import qos_images
 
 
@@ -74,6 +75,24 @@ class LegacyImageRunTests(unittest.TestCase):
         all_runs = asyncio.run(qos_images.list_image_runs(admin))
         self.assertEqual([run.id for run in recent], ["img-0000000000000001"])
         self.assertEqual(len(all_runs), 2)
+
+    def test_run_list_shows_personal_runs_to_their_owner_and_shared_runs_to_admins(self) -> None:
+        for index, owner in enumerate(("alice", "bob", None), start=1):
+            qos_images._write_run(qos_images.ImageRun(
+                id=f"img-{index:016x}", model="image-model", status="complete",
+                started_at=datetime(2026, 1, 1, tzinfo=timezone.utc), concurrency=1, size="1024x1024",
+                unit_cost_cny=0.03, estimated_cost_cny=0.03, owner_user_id=owner, items=(),
+            ))
+        viewers: Final = (
+            ("alice", LitellmUserRoles.INTERNAL_USER, {"img-0000000000000001"}),
+            ("bob", LitellmUserRoles.INTERNAL_USER, {"img-0000000000000002"}),
+            ("admin", LitellmUserRoles.PROXY_ADMIN, {"img-0000000000000003"}),
+        )
+        for user_id, role, expected in viewers:
+            with self.subTest(user_id=user_id):
+                user: Final = UserAPIKeyAuth(user_role=role, user_id=user_id)
+                runs: Final = asyncio.run(qos_images.list_image_runs(user))
+                self.assertEqual({run.id for run in runs}, expected)
 
 
 if __name__ == "__main__":

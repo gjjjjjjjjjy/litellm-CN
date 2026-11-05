@@ -37,7 +37,7 @@ HTTP_PROXY=http://host.docker.internal:7897 \
 
 构建执行补丁测试、TypeScript 检查和 Next.js 静态页面生成。构建结束后自动删除临时源码，依赖和 npm 下载缓存保存在 Docker 卷中，供后续构建复用
 
-`build.sh` 依次调用 `build-ui.sh`（编译中文前端）和 `stage-backend.sh`（整理后端代码并换上 QosLLM 标志），再打包镜像。本机启动和公网发布都使用这些构建步骤。需要指定镜像或目标平台时，仍可运行 `./localization/zh-CN/build.sh "$PWD" 后端基础镜像 [目标平台 镜像名称]`
+`build.sh` 依次调用 `build-ui.sh`（编译中文前端）和 `stage-backend.sh`（整理后端代码并换上 QosLLM 标志），再打包镜像。本机构建、镜像发布和离线导出都由它读取源码版本并选择后端基础镜像。指定目标平台和镜像名时，运行 `./localization/zh-CN/build.sh "$PWD" linux/amd64 litellm-local:zh-cn-amd64`。显式指定基础镜像的调用方式为 `./localization/zh-CN/build.sh "$PWD" 后端基础镜像 [目标平台 镜像名称]`
 
 每次构建都以同版本官方镜像为基础，Docker 复用相同的基础层和构建缓存，应用层包含本次的 Fork 后端和中文前端。更新时继续使用上面的构建命令，镜像按层增量传输
 

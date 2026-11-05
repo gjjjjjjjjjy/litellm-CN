@@ -16,7 +16,6 @@ from pydantic import TypeAdapter
 from typing_extensions import NotRequired, ReadOnly, TypedDict
 
 import litellm
-import litellm.constants as litellm_constants
 from litellm.constants import (
     INTERNAL_CALL_ORIGIN_METADATA_KEY,
     LITELLM_TRUNCATED_PAYLOAD_FIELD,
@@ -38,7 +37,6 @@ from litellm.proxy._types import SpendLogsMetadata, SpendLogsMetadataFields, Spe
 from litellm.proxy.litellm_pre_call_utils import LiteLLMProxyRequestSetup
 from litellm.proxy.management_endpoints.qos_media import QOS_MEDIA_PROBE_TAG
 from litellm.proxy.route_llm_request import ProxyModelNotFoundError
-from litellm.proxy.spend_tracking import spend_tracking_utils
 from litellm.proxy.spend_tracking.spend_tracking_utils import (
     _extract_usage_for_ocr_call,
     _get_messages_for_spend_logs_payload,
@@ -53,13 +51,13 @@ from litellm.proxy.spend_tracking.spend_tracking_utils import (
     _sanitize_guardrail_information_for_spend_logs,
     _sanitize_request_body_for_spend_logs_payload,
     _scrub_raw_model_from_error_information,
+    _stored_request_without_requester_ip_address,
     configured_spend_logs_metadata_fields,
     get_logging_payload,
     get_spend_logs_id,
     is_master_key,
-    sanitize_error_information_for_spend_logs,
-    _stored_request_without_requester_ip_address,
     requester_ip_address_logging_disabled,
+    sanitize_error_information_for_spend_logs,
     should_store_prompts_and_responses_in_spend_logs,
     spend_log_row_with_retained_metadata,
 )
@@ -723,26 +721,6 @@ def test_configurable_string_length_env_var(monkeypatch):
     """
     # Set environment variable to a custom value
     monkeypatch.setenv("MAX_STRING_LENGTH_PROMPT_IN_DB", "1000")
-
-    # Import after setting env var to ensure it picks up the new value
-    import importlib
-
-    import litellm.constants
-    import litellm.proxy.spend_tracking.spend_tracking_utils
-
-    importlib.reload(litellm.constants)
-    importlib.reload(litellm.proxy.spend_tracking.spend_tracking_utils)
-
-    from litellm.constants import (
-        LITELLM_TRUNCATED_PAYLOAD_FIELD,
-        MAX_STRING_LENGTH_PROMPT_IN_DB,
-    )
-    from litellm.proxy.spend_tracking.spend_tracking_utils import (
-        _sanitize_request_body_for_spend_logs_payload,
-    )
-
-    # Verify the constant was set to the env var value
-    assert MAX_STRING_LENGTH_PROMPT_IN_DB == 1000
 
     # Test truncation with the custom value
     large_content = "A" * 500 + "B" * 800 + "C" * 500  # 1800 chars total

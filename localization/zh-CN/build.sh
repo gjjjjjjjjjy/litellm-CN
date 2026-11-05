@@ -6,12 +6,16 @@ case $# in
     target_platform="$(docker version --format '{{.Server.Os}}/{{.Server.Arch}}')"
     image_tag=litellm-local:zh-cn
     ;;
+  3)
+    target_platform="$2"
+    image_tag="$3"
+    ;;
   4)
     target_platform="$3"
     image_tag="$4"
     ;;
   *)
-    printf '用法：%s /绝对路径/litellm [后端基础镜像 [目标平台 镜像名称]]\n' "$0" >&2
+    printf '用法：%s /绝对路径/litellm [目标平台 镜像名称]\n      %s /绝对路径/litellm 后端基础镜像 [目标平台 镜像名称]\n' "$0" "$0" >&2
     exit 2
     ;;
 esac
@@ -19,11 +23,14 @@ esac
 patch_root="$(cd "$(dirname "$0")" && pwd)"
 repo_root="$(cd "$1" && pwd)"
 source_version="$(sed -n 's/^version = "\(.*\)"$/\1/p' "$repo_root/pyproject.toml" | head -n 1)"
-if [[ $# -eq 1 ]]; then
-  base_image="ghcr.io/berriai/litellm:v$source_version"
-else
-  base_image="$2"
-fi
+case $# in
+  1|3)
+    base_image="ghcr.io/berriai/litellm:v$source_version"
+    ;;
+  2|4)
+    base_image="$2"
+    ;;
+esac
 build_root="$(mktemp -d -t litellm-zh-cn.XXXXXXXX)"
 trap 'rm -rf "$build_root"' EXIT
 

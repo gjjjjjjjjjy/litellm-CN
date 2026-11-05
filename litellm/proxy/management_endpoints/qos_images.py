@@ -22,7 +22,6 @@ from litellm.proxy._types import LitellmUserRoles, UserAPIKeyAuth
 from litellm.proxy.auth.user_api_key_auth import user_api_key_auth
 from litellm.proxy.management_endpoints.qos_access import require_admin, require_image_writer, require_reader
 
-
 router: Final = APIRouter()
 RESULTS_ROOT: Final = Path(os.environ.get("QOS_IMAGE_RESULTS_DIR", "/data/qos-image-runs"))
 MAX_IMAGES: Final = 32
@@ -475,9 +474,12 @@ async def list_image_runs(
         run = ImageRun.model_validate_json(path.read_bytes())
         if since is not None and run.started_at < since:
             continue
-        if run.owner_user_id == user_api_key_dict.user_id and run.owner_user_id is not None:
-            visible.append(run)
-        elif run.owner_user_id is None and user_api_key_dict.user_role == LitellmUserRoles.PROXY_ADMIN:
+        can_view: Final = (
+            user_api_key_dict.user_role == LitellmUserRoles.PROXY_ADMIN
+            if run.owner_user_id is None
+            else run.owner_user_id == user_api_key_dict.user_id
+        )
+        if can_view:
             visible.append(run)
         if len(visible) == 50:
             break

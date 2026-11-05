@@ -16,8 +16,8 @@ from litellm.proxy.auth.user_api_key_auth import user_api_key_auth
 from litellm.proxy.management_endpoints.qos_access import (
     require_admin,
     require_content_reader,
-    require_reader,
     require_media_reviewer,
+    require_reader,
 )
 from litellm.proxy.management_endpoints.qos_benchmark import QOS_RUN_PREFIX, concurrency_of, new_run_id, start_benchmark
 from litellm.proxy.management_endpoints.qos_deployments import (
@@ -35,6 +35,7 @@ from litellm.proxy.management_endpoints.qos_health import (
     health_probe,
     probe_key,
 )
+from litellm.proxy.management_endpoints.qos_images import router as image_router
 from litellm.proxy.management_endpoints.qos_media_summary import (
     AUDIO_ROWS,
     AUDIO_SUMMARY_SQL,
@@ -51,7 +52,6 @@ from litellm.proxy.management_endpoints.qos_requests import (
     REQUESTS_SQL,
     request_log,
 )
-from litellm.proxy.management_endpoints.qos_images import router as image_router
 from litellm.proxy.management_endpoints.qos_response_check import ResponseCheckRecorder, write_response_checks
 from litellm.proxy.management_endpoints.qos_summary import (
     BENCHMARK_DELETE_SQL,

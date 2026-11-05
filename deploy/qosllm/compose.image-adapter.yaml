@@ -25,12 +25,6 @@ services:
   litellm:
     environment:
       IMAGE_ADAPTER_KEY: ${IMAGE_ADAPTER_KEY:?set IMAGE_ADAPTER_KEY in .env}
-      QOS_IMAGE_RESULTS_DIR: /data/qos-image-runs
-    volumes:
-      - qos_image_runs:/data/qos-image-runs
     depends_on:
       moark-image-adapter:
         condition: service_healthy
-
-volumes:
-  qos_image_runs:

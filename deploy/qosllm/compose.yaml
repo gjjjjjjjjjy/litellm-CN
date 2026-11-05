@@ -32,8 +32,10 @@ services:
       LITELLM_ENABLE_ADMIN_MCP: "false"
       NO_DOCS: "True"
       QOS_MEDIA_PROBE_URL: http://media-probe:8090
+      QOS_IMAGE_RESULTS_DIR: /data/qos-image-runs
     volumes:
       - ./config.yaml:/app/config.yaml:ro
+      - qos_image_runs:/data/qos-image-runs
     command: ["--config", "/app/config.yaml", "--host", "0.0.0.0", "--port", "4000"]
     depends_on:
       db:
@@ -89,3 +91,4 @@ volumes:
   caddy_data:
   caddy_config:
   media_probe_audio:
+  qos_image_runs:

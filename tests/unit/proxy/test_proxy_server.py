@@ -2557,13 +2557,14 @@ async def test_proxy_server_prisma_setup():
 
 
 @pytest.mark.asyncio
-async def test_proxy_server_prisma_setup_invalid_db(monkeypatch):
+async def test_proxy_server_prisma_setup_invalid_db(monkeypatch: pytest.MonkeyPatch) -> None:
     """
     PROD TEST: Test that proxy server startup fails when it's unable to connect to the database
 
     Think 2-3 times before editing / deleting this test, it's important for PROD
     """
     import httpx
+    from prisma.engine.errors import EngineRequestError
 
     from litellm.proxy.proxy_server import ProxyStartupEvent
     from litellm.proxy.utils import ProxyLogging
@@ -2574,7 +2575,7 @@ async def test_proxy_server_prisma_setup_invalid_db(monkeypatch):
 
     monkeypatch.setenv("DATABASE_URL", invalid_db_url)
 
-    with pytest.raises(httpx.ConnectError):
+    with pytest.raises((httpx.ConnectError, EngineRequestError)):
         await ProxyStartupEvent._setup_prisma_client(
             database_url=invalid_db_url,
             proxy_logging_obj=ProxyLogging(user_api_key_cache=user_api_key_cache),

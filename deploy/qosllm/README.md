@@ -133,13 +133,15 @@ curl http://127.0.0.1:4000/v1/images/generations \
   -d '{"model":"qwen-image-2.1-viggle-turbo","prompt":"极简风格海报，白色背景，中央是黑色粗体大字“国产算力”，下方一行小字“2026 上海”","size":"1024x1024"}'
 ```
 
-服务质量页面的 Images 标签提供图片专用测试。先选两条提示词、一个 seed，确认预算后启动；页面显示成功率、P50/P95 延迟、上游排队和生成时间，并提供原图及逐张人工评分。对话压测与图片测试分开，不用 TTFT、TPOT 判断图片服务。图片和评分保存在 `qos_image_runs` 卷，重建网关不会删除；不要运行 `docker compose down -v`。
+服务质量页面的 Images 标签提供图片专用测试。先选两条提示词、一个 seed，确认预算后启动。页面显示成功率、P50/P95 延迟、上游排队和生成时间，并提供原图及逐张人工评分。图片和评分保存在主 Compose 文件定义的 `qos_image_runs` 卷，实际名称为 `qosllm_qos_image_runs`。同步图像模型与异步适配器共用这个卷。保留评测数据时使用 `./stop.sh` 停止服务，`docker compose down -v` 会删除数据卷
+
+较早部署若把图片结果保存在容器文件系统中，首次启用该卷前先备份 `/data/qos-image-runs` 并将文件迁入数据卷，再重建网关
 
 ### 通过模型管理共享图像模型
 
 管理员在“模型与端点 → 添加模型”选择图像生成模式，填写上游模型、API Base、共享 API Key、单张预估费用和能力参数。模力方舟同步模型使用 OpenAI 兼容接口 `https://api.moark.com/v1`；异步 `qwen-image-2.1-viggle-turbo` 使用网关配置的图片适配器及 `.env` 中的 `MOARK_API_KEY`。保存模型配置不会发起付费生图请求。
 
-图像模型与其他网关模型一样由管理员部署和管理。目前只有管理员能在“服务质量 → 图像”发起评测和查看共享评测记录。已存在的旧个人评测记录仍按原用户归属保留，可继续读取；旧个人 API Key 的保存和推理入口已移除。更新代码不会清除 `qos_image_runs` 卷中的任何文件；若要清除旧凭据文件，应先备份并单独检查卷中的 `personal-models` 目录。
+图像模型与其他网关模型一样由管理员部署和管理。目前只有管理员能在“服务质量 → 图像”发起评测和查看共享评测记录。已存在的旧个人评测记录仍按原用户归属保留，可继续读取。旧个人 API Key 的保存和推理入口已移除。清除旧凭据文件前，应先备份并单独检查卷中的 `personal-models` 目录
 
 ## 音视频测评
 
@@ -154,21 +156,6 @@ curl http://127.0.0.1:4000/v1/images/generations \
 视频模型可以在 `qos_probe` 里加 `"image": true` 表示图生视频，`params` 原样作为请求字段，例如 `{"qos_probe": {"params": {"num_frames": 73}}}`。语音合成需要的固定参数（例如 IndexTTS-2 的 `prompt_audio_url`）放在 LiteLLM 参数里。视频打分和写 Prompt 默认用网关上的 `qwen3.8-27b`，这个模型要先在网关上配置好
 
 合成的语音保存在 `qosllm_media_probe_audio` 卷，评审页面回放时从这里读取。每次测评按服务商标价计费，规则和参数见 `qos/README.md`
-
-## 首页资讯
-
-首页看板的 AI 资讯来自几个 RSS 源，默认是量子位、InfoQ、Hugging Face、OpenAI 和 Google AI，网关每 30 分钟抓取一次。国内服务器可能访问不到海外源，看板会在资讯栏底部列出抓取失败的源。要换成别的源，在 `config.yaml` 的 `general_settings` 中写出完整列表，然后运行 `docker compose restart litellm`
-
-```yaml
-general_settings:
-  qos_news_feeds:
-    - name: 量子位
-      url: https://www.qbitai.com/feed
-    - name: InfoQ
-      url: https://www.infoq.cn/feed
-```
-
-公告由管理员在首页看板右侧发布和删除，所有用户可见
 
 ## 日常更新
 
