@@ -28,7 +28,7 @@ from litellm.types.videos.utils import encode_video_id_with_provider, extract_or
 
 if TYPE_CHECKING:
     from litellm.litellm_core_utils.litellm_logging import Logging as LiteLLMLoggingObj
-    from litellm.llms.custom_httpx.http_handler import HTTPHandler
+    from litellm.llms.custom_httpx.http_handler import AsyncHTTPHandler, HTTPHandler
 
 DOWNLOAD_TIMEOUT_SECONDS: Final = 300.0
 _VIDEO_STATUS: Final = MappingProxyType(
@@ -207,7 +207,12 @@ class MoarkVideoConfig(BaseVideoConfig):
     ) -> tuple[str, dict[str, object]]:  # mutable-ok: mirrors override contract
         return f"{api_base}/task/{_task_path(video_id)}", {}
 
-    def transform_video_content_response(self, raw_response: httpx.Response, logging_obj: "LiteLLMLoggingObj") -> bytes:
+    def transform_video_content_response(
+        self,
+        raw_response: httpx.Response,
+        logging_obj: "LiteLLMLoggingObj",
+        client: "HTTPHandler | None" = None,
+    ) -> bytes:
         file_url: Final = _file_url(_task(raw_response))
         return _downloaded(httpx.get(file_url, timeout=DOWNLOAD_TIMEOUT_SECONDS, follow_redirects=True))
 
@@ -215,10 +220,11 @@ class MoarkVideoConfig(BaseVideoConfig):
         self,
         raw_response: httpx.Response,
         logging_obj: "LiteLLMLoggingObj",
+        client: "AsyncHTTPHandler | None" = None,
     ) -> bytes:
         file_url: Final = _file_url(_task(raw_response))
-        async with httpx.AsyncClient(timeout=DOWNLOAD_TIMEOUT_SECONDS, follow_redirects=True) as client:
-            return _downloaded(await client.get(file_url))
+        async with httpx.AsyncClient(timeout=DOWNLOAD_TIMEOUT_SECONDS, follow_redirects=True) as download_client:
+            return _downloaded(await download_client.get(file_url))
 
     def transform_video_remix_request(
         self,

@@ -15,7 +15,7 @@ from litellm.llms.moark.common_utils import MoarkError
 from litellm.llms.moark.videos.transformation import MoarkVideoConfig
 from litellm.types.qos import PROVIDER_TASK_HIDDEN_PARAM
 from litellm.types.router import GenericLiteLLMParams
-from litellm.types.videos.utils import decode_video_id_with_provider
+from litellm.types.videos.utils import decode_video_id_with_provider, encode_video_id_with_provider
 
 _BASE: Final = TypeAdapter(dict[str, str | list[str]]).validate_python(
     json.loads((Path(litellm.__file__).parent / "llms" / "openai_like" / "providers.json").read_text())["moark"]
@@ -183,21 +183,29 @@ def test_status_of_a_created_video_polls_its_moark_task() -> None:
 
 
 @pytest.mark.asyncio
-async def test_the_video_is_downloaded_from_its_file_url_without_the_moark_key(monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize("asynchronous", [False, True], ids=["sync", "async"])
+async def test_the_video_is_downloaded_from_its_file_url_without_the_moark_key(
+    monkeypatch: pytest.MonkeyPatch, asynchronous: bool
+) -> None:
     monkeypatch.setattr(litellm, "disable_aiohttp_transport", True)
+    video_id: Final = encode_video_id_with_provider("TASK-1", "moark", "MiniMax-H3")
     with respx.mock(assert_all_called=True) as mock:
+        task: Final = mock.get(f"{_BASE}/task/TASK-1").mock(
+            return_value=httpx.Response(
+                200, json=_task("success", output={"file_url": "https://cdn.example.com/out.mp4"})
+            )
+        )
         download: Final = mock.get("https://cdn.example.com/out.mp4").mock(
             return_value=httpx.Response(200, content=b"mp4-bytes")
         )
-
-        content: Final = await MoarkVideoConfig().async_transform_video_content_response(
-            raw_response=httpx.Response(
-                200, json=_task("success", output={"file_url": "https://cdn.example.com/out.mp4"})
-            ),
-            logging_obj=Mock(),
+        content: Final = (
+            await litellm.avideo_content(video_id=video_id, api_key="moark-test-key")
+            if asynchronous
+            else litellm.video_content(video_id=video_id, api_key="moark-test-key")
         )
 
     assert content == b"mp4-bytes"
+    assert task.calls.last.request.headers["authorization"] == "Bearer moark-test-key"
     assert "authorization" not in download.calls.last.request.headers
 
 
