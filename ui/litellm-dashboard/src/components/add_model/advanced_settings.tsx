@@ -5,6 +5,7 @@ import { Switch } from "@/components/ui/switch";
 import { SimpleTooltip } from "@/components/ui/tooltip";
 import type { Dayjs } from "dayjs";
 import { ChevronDown, Info } from "lucide-react";
+import { useWatch } from "react-hook-form";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -18,6 +19,7 @@ import CacheControlInjectionPoints, {
   CACHE_CONTROL_TOOLTIP,
   NEW_CACHE_CONTROL_POINT,
 } from "./cache_control_settings";
+import { MediaModelInfoHint, MediaModelParamsHint } from "./MediaModelFieldHints";
 import VectorStoreSelector from "../vector_store_management/VectorStoreSelector";
 import { Tag } from "../tag_management/types";
 import { formItemValidateJSON } from "../../utils/textUtils";
@@ -86,6 +88,7 @@ const AdvancedSettings: React.FC<AdvancedSettingsProps> = ({
   const [pricingModel, setPricingModel] = React.useState<"per_token" | "per_second">("per_token");
   const [showCacheControl, setShowCacheControl] = React.useState(false);
   const ptuCostAttributionEnabled = usePtuCostAttributionEnabled();
+  const mode = useWatch({ name: "mode" });
 
   const handlePricingModelChange =
     (onChange: (value: string) => void) =>
@@ -474,18 +477,21 @@ const AdvancedSettings: React.FC<AdvancedSettingsProps> = ({
               rules={{ validate: validatorRules({ validator: formItemValidateJSON }) }}
             >
               {(control) => (
-                <Textarea
-                  id={control.id}
-                  value={(control.value as string | undefined) ?? ""}
-                  onChange={control.onChange}
-                  onBlur={control.onBlur}
-                  rows={4}
-                  placeholder='{
+                <>
+                  <Textarea
+                    id={control.id}
+                    value={(control.value as string | undefined) ?? ""}
+                    onChange={control.onChange}
+                    onBlur={control.onBlur}
+                    rows={4}
+                    placeholder='{
                   "rpm": 100,
                   "timeout": 0,
                   "stream_timeout": 0
                 }'
-                />
+                  />
+                  <MediaModelParamsHint mode={mode} />
+                </>
               )}
             </MountedFormField>
             <div className="grid grid-cols-24 mb-4">
@@ -511,16 +517,17 @@ const AdvancedSettings: React.FC<AdvancedSettingsProps> = ({
               rules={{ validate: validatorRules({ validator: formItemValidateJSON }) }}
             >
               {(control) => (
-                <Textarea
-                  id={control.id}
-                  value={(control.value as string | undefined) ?? ""}
-                  onChange={control.onChange}
-                  onBlur={control.onBlur}
-                  rows={4}
-                  placeholder='{
-                  "mode": "chat"
-                }'
-                />
+                <>
+                  <Textarea
+                    id={control.id}
+                    value={(control.value as string | undefined) ?? ""}
+                    onChange={control.onChange}
+                    onBlur={control.onBlur}
+                    rows={4}
+                    placeholder="{}"
+                  />
+                  <MediaModelInfoHint mode={mode} />
+                </>
               )}
             </MountedFormField>
           </div>

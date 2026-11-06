@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import StartVideoEvaluationDialog from "./StartVideoEvaluationDialog";
 import { apiClient } from "@/components/networking";
+import { uiHref } from "@/utils/uiHref";
 import { renderWithProviders, testQueryClient } from "../../../../../tests/test-utils";
 
 vi.mock("@/components/networking", () => ({ apiClient: { get: vi.fn(), post: vi.fn() } }));
@@ -124,6 +125,21 @@ describe("StartVideoEvaluationDialog", () => {
     expect(await within(dialog).findByText(/No media probe is set up/)).toBeInTheDocument();
     expect(within(dialog).getByRole("button", { name: "Write a prompt that tests every rating" })).toBeDisabled();
     fireEvent.change(within(dialog).getByLabelText("Prompt"), { target: { value: STREET } });
+    expect(startButton(dialog)).toBeDisabled();
+  });
+
+  it("shows how to enroll a video model when a prompt is ready but there are no models to test", async () => {
+    vi.mocked(apiClient.get).mockResolvedValue({ ...options, models: [] });
+    const { dialog } = renderDialog();
+
+    fireEvent.change(within(dialog).getByLabelText("Prompt"), { target: { value: STREET } });
+
+    const hint = await within(dialog).findByRole("alert");
+    expect(hint).toHaveTextContent('"qos_probe": {} to Model Info');
+    expect(within(hint).getByRole("link", { name: "Open model management" })).toHaveAttribute(
+      "href",
+      uiHref("models-and-endpoints"),
+    );
     expect(startButton(dialog)).toBeDisabled();
   });
 

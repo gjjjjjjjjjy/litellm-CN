@@ -27,6 +27,7 @@ import CacheControlInjectionPoints, {
   CACHE_CONTROL_TOOLTIP,
   type CacheControlInjectionPoint,
 } from "./add_model/cache_control_settings";
+import { MediaModelInfoHint, MediaModelParamsHint } from "./add_model/MediaModelFieldHints";
 import type { Team } from "./key_team_helpers/key_list";
 import type { CredentialItem } from "./networking";
 import NumericalInput from "./shared/numerical_input";
@@ -761,12 +762,15 @@ const ModelInfoEditForm: React.FC<ModelInfoEditFormProps> = ({
               {isEditing ? (
                 <FormField control={form.control} name="model_info">
                   {({ value, ...control }) => (
-                    <Textarea
-                      {...control}
-                      rows={4}
-                      placeholder={'{"gpt-4": 100, "claude-v1": 200}'}
-                      defaultValue={JSON.stringify(modelData.model_info, null, 2)}
-                    />
+                    <>
+                      <Textarea
+                        {...control}
+                        rows={4}
+                        placeholder={'{"gpt-4": 100, "claude-v1": 200}'}
+                        defaultValue={JSON.stringify(modelData.model_info, null, 2)}
+                      />
+                      <MediaModelInfoHint mode={localModelData.model_info?.mode} />
+                    </>
                   )}
                 </FormField>
               ) : (
@@ -789,12 +793,15 @@ const ModelInfoEditForm: React.FC<ModelInfoEditFormProps> = ({
               {isEditing ? (
                 <FormField control={form.control} name="litellm_extra_params">
                   {({ value, ...control }) => (
-                    <Textarea
-                      {...control}
-                      value={(value as string) ?? ""}
-                      rows={4}
-                      placeholder={'{\n  "rpm": 100,\n  "timeout": 0,\n  "stream_timeout": 0\n}'}
-                    />
+                    <>
+                      <Textarea
+                        {...control}
+                        value={(value as string) ?? ""}
+                        rows={4}
+                        placeholder={'{\n  "rpm": 100,\n  "timeout": 0,\n  "stream_timeout": 0\n}'}
+                      />
+                      <MediaModelParamsHint mode={localModelData.model_info?.mode} />
+                    </>
                   )}
                 </FormField>
               ) : (

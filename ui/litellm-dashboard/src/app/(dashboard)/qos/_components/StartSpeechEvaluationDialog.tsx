@@ -18,6 +18,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { extractErrorMessage } from "@/utils/errorUtils";
+import { MediaEvaluationSetupHint } from "./MediaEvaluationSetupHint";
 import { AUDIO_MODALITY_LABELS, type QosSpeechEvaluationStarted } from "./qosData";
 
 interface StartSpeechEvaluationDialogProps {
@@ -60,11 +61,7 @@ export default function StartSpeechEvaluationDialog({
             ))}
           </ul>
         )}
-        {data !== undefined && data.models.length === 0 && (
-          <p className="text-sm text-muted-foreground">
-            No speech synthesis or transcription model has a qos_probe setting, so there is nothing to test.
-          </p>
-        )}
+        {data?.available === true && data.models.length === 0 && <MediaEvaluationSetupHint />}
         {data?.available === false && (
           <Alert variant="destructive">
             <AlertDescription>

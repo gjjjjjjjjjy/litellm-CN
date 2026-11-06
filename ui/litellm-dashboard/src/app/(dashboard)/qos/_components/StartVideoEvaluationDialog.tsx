@@ -23,6 +23,7 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { extractErrorMessage } from "@/utils/errorUtils";
+import { MediaEvaluationSetupHint } from "./MediaEvaluationSetupHint";
 import { evaluationCost, formatPrice, type QosVideoEvaluationOptions, type QosVideoEvaluationStarted } from "./qosData";
 
 const PROMPT_SOURCES = ["new", "used", "custom"] as const;
@@ -197,7 +198,8 @@ export default function StartVideoEvaluationDialog({
             }}
           />
 
-          {data !== undefined && <EvaluationModels options={data} />}
+          {data !== undefined && data.models.length > 0 && <EvaluationModels options={data} />}
+          {data?.available === true && data.models.length === 0 && <MediaEvaluationSetupHint />}
 
           {data?.available === false && (
             <Alert variant="destructive">

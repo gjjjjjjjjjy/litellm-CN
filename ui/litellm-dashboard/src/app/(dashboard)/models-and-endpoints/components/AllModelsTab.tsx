@@ -326,6 +326,11 @@ const AllModelsTab = ({
   return (
     <div className="w-full">
       <div className="flex flex-col gap-3">
+        {!isViewOnly && modelData.data.length > 0 && (
+          <p className="text-sm text-muted-foreground">
+            Click a Model ID to open its details, then choose Edit Settings to update the deployed model.
+          </p>
+        )}
         <AllModelsTable
           data={modelData.data}
           rowCount={rawModelData?.total_count ?? 0}
