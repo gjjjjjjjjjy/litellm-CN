@@ -39,6 +39,7 @@ from litellm.types.utils import CredentialItem
 from litellm.types.videos.utils import encode_video_id_with_provider
 
 NOW: Final = datetime(2026, 10, 22, 12, 0, 0)
+BENCHMARK_RUN: Final = "qos-20261022-110000-qwen3-max"
 
 
 def _row(**overrides: object) -> dict[str, object]:
@@ -125,7 +126,7 @@ _READ_PATHS: Final = (
     "/qos/media",
     "/qos/health",
     "/qos/benchmarks",
-    "/qos/benchmarks/qos-run-1",
+    f"/qos/benchmarks/{BENCHMARK_RUN}",
 )
 
 
@@ -295,26 +296,34 @@ class TestBenchmarkEndpoints:
         assert (body["deployment_ids"], body["total_requests"]) == (["node-gitee", "node-moark"], (1 + 4) * 2 * 2)
         assert start.call_args.args[3].targets == ("node-gitee", "node-moark")
 
-    def test_run_details_reject_ids_that_are_not_benchmark_runs(self) -> None:
-        with patch("litellm.proxy.proxy_server.prisma_client", MagicMock()):
-            response = _client(LitellmUserRoles.PROXY_ADMIN).get("/qos/benchmarks/not-a-run")
+    @pytest.mark.parametrize("run_id", ("not-a-run", "qos-media-probe", "qos-video-judge"))
+    @pytest.mark.parametrize("suffix", ("", "/requests"))
+    def test_benchmark_reads_reject_ids_that_are_not_benchmark_runs(self, run_id: str, suffix: str) -> None:
+        prisma: Final = MagicMock()
+        prisma.db.query_raw = AsyncMock()
+        with patch("litellm.proxy.proxy_server.prisma_client", prisma):
+            response: Final = _client(LitellmUserRoles.PROXY_ADMIN).get(f"/qos/benchmarks/{run_id}{suffix}")
         assert response.status_code == 400
+        prisma.db.query_raw.assert_not_awaited()
 
     def test_run_details_list_levels_by_concurrency_parsed_from_their_tags(self) -> None:
         prisma = MagicMock()
         prisma.db.query_raw = AsyncMock(
             side_effect=[
-                [_row(model_id="", level_tag="qos-run-1@c16"), _row(model_id="", level_tag="qos-run-1@c4")],
+                [
+                    _row(model_id="", level_tag=f"{BENCHMARK_RUN}@c16"),
+                    _row(model_id="", level_tag=f"{BENCHMARK_RUN}@c4"),
+                ],
                 [_row()],
                 [
-                    _row(model_id="node-moark", level_tag="qos-run-1@c16"),
-                    _row(model_id="node-gitee", level_tag="qos-run-1@c4"),
-                    _row(model_id="node-moark", level_tag="qos-run-1@c4", ttft_p50=150.0, crosstalk_responses=3),
+                    _row(model_id="node-moark", level_tag=f"{BENCHMARK_RUN}@c16"),
+                    _row(model_id="node-gitee", level_tag=f"{BENCHMARK_RUN}@c4"),
+                    _row(model_id="node-moark", level_tag=f"{BENCHMARK_RUN}@c4", ttft_p50=150.0, crosstalk_responses=3),
                 ],
                 [
-                    _interference("node-moark", "qos-run-1@c16", same_deployment=0, same_endpoint=0),
-                    _interference("node-gitee", "qos-run-1@c4", same_deployment=2, same_endpoint=1),
-                    _interference("node-moark", "qos-run-1@c4", same_deployment=5, same_endpoint=0),
+                    _interference("node-moark", f"{BENCHMARK_RUN}@c16", same_deployment=0, same_endpoint=0),
+                    _interference("node-gitee", f"{BENCHMARK_RUN}@c4", same_deployment=2, same_endpoint=1),
+                    _interference("node-moark", f"{BENCHMARK_RUN}@c4", same_deployment=5, same_endpoint=0),
                 ],
             ]
         )
@@ -322,7 +331,7 @@ class TestBenchmarkEndpoints:
             patch("litellm.proxy.proxy_server.prisma_client", prisma),
             patch("litellm.proxy.proxy_server.llm_router", _router(_QWEN_ON_TWO_PROVIDERS)),
         ):
-            response = _client(LitellmUserRoles.PROXY_ADMIN_VIEW_ONLY).get("/qos/benchmarks/qos-run-1")
+            response = _client(LitellmUserRoles.PROXY_ADMIN_VIEW_ONLY).get(f"/qos/benchmarks/{BENCHMARK_RUN}")
 
         assert response.status_code == 200
         body: Final = response.json()
@@ -343,11 +352,11 @@ class TestBenchmarkEndpoints:
         ]
         calls: Final = prisma.db.query_raw.await_args_list
         assert [(call.args[0], call.args[3:5]) for call in calls[:3]] == [
-            (BENCHMARK_LEVEL_SUMMARY_SQL, (None, "qos-run-1")),
-            (DEPLOYMENT_SUMMARY_SQL, (None, "qos-run-1")),
-            (BENCHMARK_DEPLOYMENT_LEVEL_SUMMARY_SQL, (None, "qos-run-1")),
+            (BENCHMARK_LEVEL_SUMMARY_SQL, (None, BENCHMARK_RUN)),
+            (DEPLOYMENT_SUMMARY_SQL, (None, BENCHMARK_RUN)),
+            (BENCHMARK_DEPLOYMENT_LEVEL_SUMMARY_SQL, (None, BENCHMARK_RUN)),
         ]
-        assert (calls[3].args[0], calls[3].args[3]) == (BENCHMARK_INTERFERENCE_SQL, "qos-run-1")
+        assert (calls[3].args[0], calls[3].args[3]) == (BENCHMARK_INTERFERENCE_SQL, BENCHMARK_RUN)
 
     def test_targets_list_each_model_with_the_provider_and_endpoint_of_every_deployment(self) -> None:
         with patch("litellm.proxy.proxy_server.llm_router", _router(_QWEN_ON_TWO_PROVIDERS)):
@@ -840,7 +849,7 @@ class TestBenchmarkRequestLogs:
     @pytest.mark.parametrize("role", (LitellmUserRoles.PROXY_ADMIN, LitellmUserRoles.PROXY_ADMIN_VIEW_ONLY))
     def test_proxy_admins_and_read_only_admins_can_read_saved_text(self, role: LitellmUserRoles) -> None:
         with patch("litellm.proxy.proxy_server.prisma_client", None):
-            response: Final = _client(role).get("/qos/benchmarks/qos-run-1/requests")
+            response: Final = _client(role).get(f"/qos/benchmarks/{BENCHMARK_RUN}/requests")
         assert response.status_code == 500
         assert response.json()["detail"] == CommonProxyErrors.db_not_connected_error.value
 
@@ -852,7 +861,7 @@ class TestBenchmarkRequestLogs:
         self, role: LitellmUserRoles | None
     ) -> None:
         with patch("litellm.proxy.proxy_server.prisma_client", None):
-            response: Final = _client(role).get("/qos/benchmarks/qos-run-1/requests")
+            response: Final = _client(role).get(f"/qos/benchmarks/{BENCHMARK_RUN}/requests")
         assert response.status_code == 403
 
     def test_filters_both_queries_to_the_run_and_returns_a_stable_page_of_saved_text(self) -> None:
@@ -872,7 +881,7 @@ class TestBenchmarkRequestLogs:
         prisma.db.query_raw = AsyncMock(side_effect=[[{"total": 3}], [row]])
         with patch("litellm.proxy.proxy_server.prisma_client", prisma):
             response: Final = _client(LitellmUserRoles.PROXY_ADMIN_VIEW_ONLY).get(
-                "/qos/benchmarks/qos-run-1/requests", params={"page": 2, "page_size": 1}
+                f"/qos/benchmarks/{BENCHMARK_RUN}/requests", params={"page": 2, "page_size": 1}
             )
         assert response.status_code == 200, response.text
         body: Final = response.json()
@@ -880,8 +889,8 @@ class TestBenchmarkRequestLogs:
         (request,) = body["requests"]
         assert (request["exchange"], request["vendor"], request["concurrency"]) == (exchange, "moark", 32)
         count_call, rows_call = (call.args for call in prisma.db.query_raw.await_args_list)
-        assert (count_call[0], count_call[2]) == (REQUEST_COUNT_SQL, "qos-run-1")
-        assert rows_call == (REQUESTS_SQL, count_call[1], "qos-run-1", 1, 1)
+        assert (count_call[0], count_call[2]) == (REQUEST_COUNT_SQL, BENCHMARK_RUN)
+        assert rows_call == (REQUESTS_SQL, count_call[1], BENCHMARK_RUN, 1, 1)
 
     @pytest.mark.parametrize("params", ({"page": 0}, {"page_size": 0}, {"page_size": 51}))
     def test_rejects_invalid_pagination_before_querying(self, params: dict[str, int]) -> None:
@@ -889,7 +898,7 @@ class TestBenchmarkRequestLogs:
         prisma.db.query_raw = AsyncMock()
         with patch("litellm.proxy.proxy_server.prisma_client", prisma):
             response: Final = _client(LitellmUserRoles.PROXY_ADMIN).get(
-                "/qos/benchmarks/qos-run-1/requests", params=params
+                f"/qos/benchmarks/{BENCHMARK_RUN}/requests", params=params
             )
         assert response.status_code == 422
         prisma.db.query_raw.assert_not_awaited()
@@ -900,15 +909,16 @@ class TestBenchmarkDeletion:
         prisma = MagicMock()
         prisma.db.query_raw = AsyncMock()
         with patch("litellm.proxy.proxy_server.prisma_client", prisma):
-            response = _client(LitellmUserRoles.PROXY_ADMIN_VIEW_ONLY).delete("/qos/benchmarks/qos-run-1")
+            response = _client(LitellmUserRoles.PROXY_ADMIN_VIEW_ONLY).delete(f"/qos/benchmarks/{BENCHMARK_RUN}")
         assert response.status_code == 403
         prisma.db.query_raw.assert_not_awaited()
 
-    def test_ids_that_are_not_benchmark_runs_cannot_be_deleted(self) -> None:
+    @pytest.mark.parametrize("run_id", ("litellm-internal-health-check", "qos-media-probe", "qos-video-judge"))
+    def test_ids_that_are_not_benchmark_runs_cannot_be_deleted(self, run_id: str) -> None:
         prisma = MagicMock()
         prisma.db.query_raw = AsyncMock()
         with patch("litellm.proxy.proxy_server.prisma_client", prisma):
-            response = _client(LitellmUserRoles.PROXY_ADMIN).delete("/qos/benchmarks/litellm-internal-health-check")
+            response = _client(LitellmUserRoles.PROXY_ADMIN).delete(f"/qos/benchmarks/{run_id}")
         assert response.status_code == 400
         prisma.db.query_raw.assert_not_awaited()
 
@@ -916,12 +926,12 @@ class TestBenchmarkDeletion:
         prisma = MagicMock()
         prisma.db.query_raw = AsyncMock(return_value=[{"deleted_requests": 42}])
         with patch("litellm.proxy.proxy_server.prisma_client", prisma):
-            response = _client(LitellmUserRoles.PROXY_ADMIN).delete("/qos/benchmarks/qos-run-1")
+            response = _client(LitellmUserRoles.PROXY_ADMIN).delete(f"/qos/benchmarks/{BENCHMARK_RUN}")
 
         assert response.status_code == 200
-        assert response.json() == {"run_id": "qos-run-1", "deleted_requests": 42}
+        assert response.json() == {"run_id": BENCHMARK_RUN, "deleted_requests": 42}
         sql, since, run_id = prisma.db.query_raw.await_args.args
-        assert (sql, run_id) == (BENCHMARK_DELETE_SQL, "qos-run-1")
+        assert (sql, run_id) == (BENCHMARK_DELETE_SQL, BENCHMARK_RUN)
         assert datetime.now(timezone.utc).replace(tzinfo=None) - since >= QOS_MAX_WINDOW
 
 

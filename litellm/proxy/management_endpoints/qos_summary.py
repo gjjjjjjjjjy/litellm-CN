@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Final
 from fastapi import HTTPException
 from pydantic import ConfigDict, TypeAdapter
 
+from litellm.proxy.management_endpoints.qos_benchmark import QOS_RUN_ID_PATTERN
 from litellm.proxy.management_endpoints.qos_health import vendor_of
 from litellm.proxy.management_endpoints.qos_sql import (
     MODEL_TRAFFIC,
@@ -81,8 +82,7 @@ CROSS JOIN LATERAL jsonb_array_elements_text(
 ) AS run_tag
 WHERE "startTime" >= $1::timestamp
     AND "startTime" < $2::timestamp
-    AND left(run_tag, 4) = 'qos-'
-    AND strpos(run_tag, '@c') = 0
+    AND run_tag ~ '^{QOS_RUN_ID_PATTERN}$'
 GROUP BY run_tag
 ORDER BY started_at DESC
 LIMIT 100

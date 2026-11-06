@@ -19,7 +19,12 @@ from litellm.proxy.management_endpoints.qos_access import (
     require_media_reviewer,
     require_reader,
 )
-from litellm.proxy.management_endpoints.qos_benchmark import QOS_RUN_PREFIX, concurrency_of, new_run_id, start_benchmark
+from litellm.proxy.management_endpoints.qos_benchmark import (
+    QOS_RUN_ID_PATTERN,
+    concurrency_of,
+    new_run_id,
+    start_benchmark,
+)
 from litellm.proxy.management_endpoints.qos_deployments import (
     deployment_connection,
     deployment_model_groups,
@@ -126,7 +131,7 @@ router: Final = APIRouter()
 SETTINGS: Final = TypeAdapter(Mapping[str, object])
 RESPONSE_CHECK_RECORD_ATTEMPTS: Final = 30
 RESPONSE_CHECK_RETRY_SECONDS: Final = 5.0
-_RUN_ID: Final = re.compile(rf"{QOS_RUN_PREFIX}[A-Za-z0-9.-]+")
+_RUN_ID: Final = re.compile(QOS_RUN_ID_PATTERN)
 
 
 @router.get(

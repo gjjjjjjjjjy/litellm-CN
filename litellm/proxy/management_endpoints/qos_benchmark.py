@@ -25,6 +25,7 @@ from litellm.proxy.management_endpoints.qos_response_check import (
 from litellm.types.qos import QosBenchmarkRequest
 
 QOS_RUN_PREFIX: Final = "qos-"
+QOS_RUN_ID_PATTERN: Final = rf"{QOS_RUN_PREFIX}[0-9]{{8}}-[0-9]{{6}}-[A-Za-z0-9._-]+"
 _LEVEL_SEPARATOR: Final = "@c"
 _RUN_ID_UNSAFE: Final = re.compile(r"[^A-Za-z0-9.-]+")
 BENCHMARK_PROMPTS: Final = (
