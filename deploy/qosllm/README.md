@@ -153,7 +153,23 @@ curl http://127.0.0.1:4000/v1/images/generations \
 {"qos_probe": {}}
 ```
 
-视频模型可以在 `qos_probe` 里加 `"image": true` 表示图生视频，`params` 原样作为请求字段，例如 `{"qos_probe": {"params": {"num_frames": 73}}}`。语音合成需要的固定参数（例如 IndexTTS-2 的 `prompt_audio_url`）放在 LiteLLM 参数里。视频打分和写 Prompt 默认用网关上的 `qwen3.8-27b`，这个模型要先在网关上配置好
+视频模型可以在 `qos_probe` 里加 `"image": true` 表示图生视频，`params` 原样作为请求字段，例如 `{"qos_probe": {"params": {"num_frames": 73}}}`。
+
+IndexTTS-2 等语音合成模型需要参考音频时，在“高级设置 → LiteLLM 参数”里填入下面的 JSON。将示例地址换成上游服务可直接下载的音频 URL。
+
+```json
+{"prompt_audio_url": "https://example.com/reference.wav"}
+```
+
+视频打分和写 Prompt 使用同一个视觉模型，默认名称是 `qwen3.8-27b`。如果网关上的模型名不同（包括大小写），在部署目录的 `compose.override.yaml` 中指定“模型与端点”里显示的完整名称：
+
+```yaml
+services:
+  media-probe:
+    command: ["--base-url", "http://litellm:4000", "--listen", "8090", "--judge-model", "Qwen3.8-27B"]
+```
+
+等正在进行的音视频测评结束后，运行 `docker compose up -d --no-deps media-probe`，只更新探测服务。
 
 合成的语音保存在 `qosllm_media_probe_audio` 卷，评审页面回放时从这里读取。每次测评按服务商标价计费，规则和参数见 `qos/README.md`
 
