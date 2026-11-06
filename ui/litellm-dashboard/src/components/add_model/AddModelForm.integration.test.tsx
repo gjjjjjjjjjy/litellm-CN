@@ -305,6 +305,18 @@ describe("AddModelForm", () => {
     expect(await screen.findByRole("heading", { name: "Add Model" })).toBeInTheDocument();
   });
 
+  it("shows media setup examples before opening Advanced Settings", async () => {
+    const mockUseAuthorized = vi.mocked(await import("@/app/(dashboard)/hooks/useAuthorized"));
+    mockUseAuthorized.default.mockReturnValue(mockAuthorizedUser("proxy_admin", "user-1", true));
+
+    renderWithProviders(<AddModelForm {...createTestProps()} />);
+
+    const guide = await screen.findByRole("region", { name: "Audio and video setup" });
+    expect(within(guide).getByText('{"qos_probe": {}}')).toBeVisible();
+    expect(within(guide).getByText('{"qos_probe": {"image": true}}')).toBeVisible();
+    expect(guide).toHaveTextContent("prompt_audio_url");
+  });
+
   it("should show proxy admin only (not team admin) - should not see Select Team dropdown unless switch is toggled", async () => {
     const mockUseAuthorized = vi.mocked(await import("@/app/(dashboard)/hooks/useAuthorized"));
     mockUseAuthorized.default.mockReturnValue(mockAuthorizedUser("proxy_admin", "user-1", true));

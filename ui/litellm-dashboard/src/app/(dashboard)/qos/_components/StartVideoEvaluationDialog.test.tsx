@@ -140,6 +140,10 @@ describe("StartVideoEvaluationDialog", () => {
       "href",
       uiHref("models-and-endpoints"),
     );
+    expect(within(hint).getByRole("link", { name: "Add Model" })).toHaveAttribute(
+      "href",
+      `${uiHref("models-and-endpoints")}?tab=add`,
+    );
     expect(startButton(dialog)).toBeDisabled();
   });
 

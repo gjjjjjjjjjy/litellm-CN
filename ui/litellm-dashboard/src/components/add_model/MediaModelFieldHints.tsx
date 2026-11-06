@@ -2,6 +2,32 @@ interface MediaModelFieldHintProps {
   mode: unknown;
 }
 
+export function AddMediaModelGuide() {
+  return (
+    <section
+      aria-label="Audio and video setup"
+      className="mt-2 mb-4 space-y-1 rounded-lg border bg-muted/30 p-3 text-sm"
+    >
+      <h3 className="font-medium">Audio and video setup</h3>
+      <div className="space-y-1 text-muted-foreground">
+        <p>
+          Choose <code>/videos</code> for video, <code>/audio/speech</code> for speech synthesis, or{" "}
+          <code>/audio/transcriptions</code> for transcription.
+        </p>
+        <p>
+          In Advanced Settings, use Model Info for evaluation. Enter <code>{'{"qos_probe": {}}'}</code> for audio or
+          text-to-video, or <code>{'{"qos_probe": {"image": true}}'}</code> for image-to-video.
+        </p>
+        <p>
+          For speech models that need reference audio, enter{" "}
+          <code className="break-all">{'{"prompt_audio_url": "https://example.com/reference.wav"}'}</code> in LiteLLM
+          Params and replace the example URL.
+        </p>
+      </div>
+    </section>
+  );
+}
+
 export function MediaModelInfoHint({ mode }: MediaModelFieldHintProps) {
   switch (mode) {
     case "video_generation":

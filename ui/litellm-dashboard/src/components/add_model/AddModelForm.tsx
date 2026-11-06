@@ -37,6 +37,7 @@ import AdvancedSettings from "./advanced_settings";
 import ConditionalPublicModelName from "./conditional_public_model_name";
 import LiteLLMModelNameField from "./litellm_model_name";
 import ConnectionErrorDisplay from "./model_connection_test";
+import { AddMediaModelGuide } from "./MediaModelFieldHints";
 import ProviderSpecificFields from "./provider_specific_fields";
 import { SAVE_PROVIDER_CREDENTIAL, savedCredentialFor } from "./provider_credential";
 import { authTypesFor } from "./provider_auth_types";
@@ -325,6 +326,7 @@ const AddModelForm: React.FC<AddModelFormProps> = ({
                           </Select>
                         )}
                       </MountedFormField>
+                      <AddMediaModelGuide />
                       {isImageMode && canDeploySharedImages && (
                         <div className="mb-5 space-y-4 rounded-lg border bg-muted/20 p-4">
                           <div>
