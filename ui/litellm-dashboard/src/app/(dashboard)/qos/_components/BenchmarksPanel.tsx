@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import type { UseQueryResult } from "@tanstack/react-query";
 import type { ColumnDef, RowSelectionState } from "@tanstack/react-table";
 import { Download, Loader2, Play, Trash2 } from "lucide-react";
 
@@ -28,6 +29,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { ApiError } from "@/lib/http/client";
 import { extractErrorMessage } from "@/utils/errorUtils";
 import { isProxyAdminRole } from "@/utils/roles";
 import BenchmarkRequests from "./BenchmarkRequests";
@@ -146,6 +148,76 @@ const RunProgress = ({ detail, total }: { detail: QosBenchmarkDetail | undefined
   );
 };
 
+interface BenchmarkRunDetailProps {
+  readonly accessToken: string | null;
+  readonly runId: string;
+  readonly query: UseQueryResult<QosBenchmarkDetail>;
+  readonly expectedTotal: number | null;
+  readonly onClose: () => void;
+}
+
+const BenchmarkRunDetail = ({ accessToken, runId, query, expectedTotal, onClose }: BenchmarkRunDetailProps) => {
+  if (query.error !== null) {
+    return (
+      <Alert variant="destructive">
+        <AlertTitle>Could not load benchmark results</AlertTitle>
+        <AlertDescription>
+          {query.error instanceof ApiError && query.error.status === 400
+            ? "This link uses an invalid text benchmark ID. Choose a run from the list."
+            : extractErrorMessage(query.error)}
+        </AlertDescription>
+        <Button type="button" variant="outline" size="sm" className="mt-2 w-fit" onClick={onClose}>
+          Back to benchmark list
+        </Button>
+      </Alert>
+    );
+  }
+
+  const detail = query.data;
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="font-mono text-base">{runId}</CardTitle>
+        <CardDescription>
+          Results per concurrency level and per node for this run. Each request asks the model to repeat a code unique
+          to it, so a response carrying another request&apos;s code reveals cross-talk. Other traffic counts requests
+          outside this test that reached the same node while a level ran.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-6">
+        {expectedTotal !== null && <RunProgress detail={detail} total={expectedTotal} />}
+        {detail !== undefined && comparesProviders(detail) ? (
+          <div className="flex flex-col gap-2">
+            <h3 className="text-base font-semibold">Provider comparison</h3>
+            <DataTable
+              data={[...detail.deployment_levels]}
+              columns={deploymentLevelColumns}
+              getRowId={(level) => `${level.concurrency}-${level.model_id}`}
+              noDataMessage="No requests recorded for this run yet"
+            />
+          </div>
+        ) : (
+          <DataTable
+            data={detail === undefined ? [] : [...detail.levels]}
+            columns={levelColumns}
+            getRowId={(level) => String(level.concurrency)}
+            isLoading={query.isLoading}
+            noDataMessage="No requests recorded for this run yet"
+          />
+        )}
+        <DataTable
+          data={detail === undefined ? [] : [...detail.deployments]}
+          columns={deploymentColumns}
+          getRowId={(deployment) => deployment.model_id}
+          size="compact"
+          noDataMessage="No node results yet"
+        />
+        {detail !== undefined && <BenchmarkRequests key={runId} accessToken={accessToken} runId={runId} />}
+      </CardContent>
+    </Card>
+  );
+};
+
 interface BenchmarksPanelProps {
   readonly accessToken: string | null;
   readonly activeRun: QosBenchmarkStarted | null;
@@ -172,7 +244,7 @@ export default function BenchmarksPanel({
   const [pendingDelete, setPendingDelete] = React.useState<QosBenchmarkRun | null>(null);
   const [selection, setSelection] = React.useState<RowSelectionState>({});
   const runs = runsQuery.data === undefined ? [] : runsQuery.data;
-  const error = runsQuery.error ?? detailQuery.error ?? deleteRun.error;
+  const listError = runsQuery.error ?? deleteRun.error;
   const runningRunId = running && activeRun !== null ? activeRun.run_id : null;
   const columns = React.useMemo(
     () => (canManage ? [...runColumns, deleteColumn(setPendingDelete, runningRunId)] : runColumns),
@@ -206,10 +278,10 @@ export default function BenchmarksPanel({
         </div>
       </div>
 
-      {error !== null && (
+      {listError !== null && (
         <Alert variant="destructive">
           <AlertTitle>Could not load benchmark results</AlertTitle>
-          <AlertDescription>{extractErrorMessage(error)}</AlertDescription>
+          <AlertDescription>{extractErrorMessage(listError)}</AlertDescription>
         </Alert>
       )}
 
@@ -226,46 +298,13 @@ export default function BenchmarksPanel({
       />
 
       {selectedRunId !== null && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="font-mono text-base">{selectedRunId}</CardTitle>
-            <CardDescription>
-              Results per concurrency level and per node for this run. Each request asks the model to repeat a code
-              unique to it, so a response carrying another request&apos;s code reveals cross-talk. Other traffic counts
-              requests outside this test that reached the same node while a level ran.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-6">
-            {expectedTotal !== null && <RunProgress detail={detail} total={expectedTotal} />}
-            {detail !== undefined && comparesProviders(detail) ? (
-              <div className="flex flex-col gap-2">
-                <h3 className="text-base font-semibold">Provider comparison</h3>
-                <DataTable
-                  data={[...detail.deployment_levels]}
-                  columns={deploymentLevelColumns}
-                  getRowId={(level) => `${level.concurrency}-${level.model_id}`}
-                  noDataMessage="No requests recorded for this run yet"
-                />
-              </div>
-            ) : (
-              <DataTable
-                data={detail === undefined ? [] : [...detail.levels]}
-                columns={levelColumns}
-                getRowId={(level) => String(level.concurrency)}
-                isLoading={detailQuery.isLoading}
-                noDataMessage="No requests recorded for this run yet"
-              />
-            )}
-            <DataTable
-              data={detail === undefined ? [] : [...detail.deployments]}
-              columns={deploymentColumns}
-              getRowId={(deployment) => deployment.model_id}
-              size="compact"
-              noDataMessage="No node results yet"
-            />
-            <BenchmarkRequests key={selectedRunId} accessToken={accessToken} runId={selectedRunId} />
-          </CardContent>
-        </Card>
+        <BenchmarkRunDetail
+          accessToken={accessToken}
+          runId={selectedRunId}
+          query={detailQuery}
+          expectedTotal={expectedTotal}
+          onClose={() => onSelectRun(null)}
+        />
       )}
 
       <AlertDialog

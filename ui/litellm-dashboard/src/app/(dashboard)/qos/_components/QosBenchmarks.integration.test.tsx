@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import QosView from "./QosView";
 import { apiClient } from "@/components/networking";
 import { downloadBlob } from "@/components/EntityUsageExport/utils";
+import { ApiError } from "@/lib/http/client";
 import { renderWithProviders, testQueryClient } from "../../../../../tests/test-utils";
 
 vi.mock("@/components/networking", () => ({ apiClient: { get: vi.fn(), post: vi.fn(), delete: vi.fn() } }));
@@ -176,7 +177,7 @@ describe("QoS benchmarks", () => {
     renderWithProviders(<QosView accessToken="token" />, { searchParams: { benchmark: "qwen3-max" } });
 
     expect(await screen.findByRole("dialog")).toBeInTheDocument();
-    expect(screen.getByRole("tab", { name: "Benchmarks", hidden: true })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("tab", { name: "Text", hidden: true })).toHaveAttribute("aria-selected", "true");
     expect(screen.getByLabelText("Model")).toHaveTextContent("qwen3-max");
     expect(screen.getByRole("switch", { name: "Save questions and answers for this test" })).toBeChecked();
     await user.click(screen.getByRole("switch", { name: "Save questions and answers for this test" }));
@@ -254,6 +255,31 @@ describe("QoS benchmarks", () => {
     expect(screen.getByRole("status")).toHaveTextContent("Concurrency levels must be whole numbers from 1 to 256");
     expect(screen.getByRole("button", { name: "Start test" })).toBeDisabled();
     expect(apiClient.post).not.toHaveBeenCalled();
+  });
+
+  it("lets the user leave a stale video record link and open a text benchmark", async () => {
+    const user = userEvent.setup();
+    const obsoleteRun = "qos-video-judge";
+    vi.mocked(apiClient.get).mockImplementation(async (path: string) => {
+      if (path === `/qos/benchmarks/${obsoleteRun}`) throw new ApiError("Not a QoS benchmark run id", 400, null);
+      return respondWith({ ...singleProviderDetail, run_id: pastRun.run_id })(path);
+    });
+    renderWithProviders(<QosView accessToken="token" />, {
+      searchParams: { tab: "benchmarks", run: obsoleteRun },
+    });
+
+    expect(
+      await screen.findByText("This link uses an invalid text benchmark ID. Choose a run from the list."),
+    ).toBeVisible();
+    expect(vi.mocked(apiClient.get).mock.calls.map(([path]) => path)).not.toContain(
+      `/qos/benchmarks/${obsoleteRun}/requests`,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Back to benchmark list" }));
+    expect(screen.queryByText("Could not load benchmark results")).not.toBeInTheDocument();
+
+    await user.click(await screen.findByText(pastRun.model_group));
+    expect(await screen.findByText("https://node-a/v1")).toBeInTheDocument();
   });
 
   it("deletes a test record only after the admin confirms how many request logs it removes", async () => {

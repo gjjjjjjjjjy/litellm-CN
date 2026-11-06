@@ -130,6 +130,14 @@ describe("QosView", () => {
     renderWithProviders(<QosView accessToken="token" />);
 
     const details = within(await screen.findByRole("table"));
+    expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual([
+      "Overview",
+      "Health checks",
+      "Text",
+      "Images",
+      "Audio",
+      "Video",
+    ]);
     expect(await details.findByText("qwen3-max")).toBeInTheDocument();
     expect(screen.getByLabelText("Time range")).toHaveTextContent("Last hour");
     expect(screen.getByText("95.0%")).toBeInTheDocument();

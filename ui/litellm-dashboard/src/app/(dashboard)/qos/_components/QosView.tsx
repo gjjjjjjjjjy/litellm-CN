@@ -17,7 +17,7 @@ import QosVideoReviewPanel from "./QosVideoReviewPanel";
 import { QOS_BENCHMARK_MODEL_PARAM, type QosBenchmarkStarted } from "./qosData";
 import StartBenchmarkDialog from "./StartBenchmarkDialog";
 
-const QOS_TABS = ["overview", "benchmarks", "images", "health", "audio", "video"] as const;
+const QOS_TABS = ["overview", "health", "benchmarks", "images", "audio", "video"] as const;
 const VIDEO_TAB_ALIASES = ["media", "reviews"] as const;
 const URL_TABS = [...QOS_TABS, ...VIDEO_TAB_ALIASES] as const;
 type QosTab = (typeof QOS_TABS)[number];
@@ -73,9 +73,9 @@ export default function QosView({ accessToken }: { accessToken: string | null })
       >
         <PageTabsList>
           <PageTabsTrigger value="overview">Overview</PageTabsTrigger>
-          <PageTabsTrigger value="benchmarks">Benchmarks</PageTabsTrigger>
-          <PageTabsTrigger value="images">Images</PageTabsTrigger>
           <PageTabsTrigger value="health">Health checks</PageTabsTrigger>
+          <PageTabsTrigger value="benchmarks">Text</PageTabsTrigger>
+          <PageTabsTrigger value="images">Images</PageTabsTrigger>
           <PageTabsTrigger value="audio">Audio</PageTabsTrigger>
           <PageTabsTrigger value="video">Video</PageTabsTrigger>
         </PageTabsList>
@@ -84,6 +84,15 @@ export default function QosView({ accessToken }: { accessToken: string | null })
         </PageTabsContent>
         <PageTabsContent value="health">
           <QosHealthPanel accessToken={accessToken} />
+        </PageTabsContent>
+        <PageTabsContent value="benchmarks">
+          <BenchmarksPanel
+            accessToken={accessToken}
+            activeRun={activeRun}
+            selectedRunId={runId}
+            onSelectRun={(id) => void setRunId(id)}
+            onStartClick={() => setDialogModel("")}
+          />
         </PageTabsContent>
         <PageTabsContent value="images">
           <ImageQosPanel accessToken={accessToken} />
@@ -99,15 +108,6 @@ export default function QosView({ accessToken }: { accessToken: string | null })
           <CollapsibleSection id="video.review" level="h2" title="Video review" className="border-t pt-6">
             <QosVideoReviewPanel accessToken={accessToken} />
           </CollapsibleSection>
-        </PageTabsContent>
-        <PageTabsContent value="benchmarks">
-          <BenchmarksPanel
-            accessToken={accessToken}
-            activeRun={activeRun}
-            selectedRunId={runId}
-            onSelectRun={(id) => void setRunId(id)}
-            onStartClick={() => setDialogModel("")}
-          />
         </PageTabsContent>
       </PageTabs>
 
