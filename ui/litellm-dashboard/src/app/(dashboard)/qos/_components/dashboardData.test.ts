@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { compareBars, headlines, seriesLabel, trendChart, type QosOverall, type QosTrends } from "./dashboardData";
+import { headlines, seriesLabel, trendChart, type QosOverall, type QosTrends } from "./dashboardData";
 
 const percentiles = (p95: number | null) => ({ p50: p95, p95, p99: p95 });
 
@@ -117,41 +117,5 @@ describe("headlines", () => {
     expect(unavailable?.value).toBe("-");
     expect(unavailable?.change).toBeNull();
     expect(measured?.value).toBe("0.00");
-  });
-});
-
-describe("compareBars", () => {
-  const metrics = (model_group: string, ttft: number | null, tokensPerSecond: number) => ({
-    model_group,
-    requests: 10,
-    failed_requests: 0,
-    streamed_requests: 10,
-    output_tokens: 100,
-    peak_concurrency: 1,
-    first_request_at: "2026-10-26T10:00:00Z",
-    last_response_at: "2026-10-26T10:01:00Z",
-    requests_per_second: 1,
-    output_tokens_per_second: tokensPerSecond,
-    ttft_ms: percentiles(ttft),
-    tpot_ms: percentiles(20),
-    e2e_latency_ms: percentiles(1000),
-    response_checks: { checked: 0, crosstalk: 0, marker_missing: 0 },
-  });
-
-  it("ranks latency lowest first and throughput highest first, leaving out models without data", () => {
-    const rows = [metrics("slow", 900, 50), metrics("fast", 300, 10), metrics("silent", null, 0)];
-    expect(compareBars(rows, "ttft").map((bar) => bar.name)).toEqual(["fast", "slow"]);
-    expect(compareBars(rows, "throughput").map((bar) => bar.name)).toEqual(["slow", "fast", "silent"]);
-  });
-
-  it("labels each provider of a model with its vendor", () => {
-    const deployment = {
-      ...metrics("GLM-5.3", 300, 10),
-      model_id: "node-a",
-      model: "GLM-5.3",
-      api_base: "",
-      vendor: "ai.gitee.com",
-    };
-    expect(compareBars([deployment], "ttft")[0].name).toBe("GLM-5.3 · ai.gitee.com");
   });
 });

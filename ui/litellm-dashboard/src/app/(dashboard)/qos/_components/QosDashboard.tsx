@@ -1,37 +1,32 @@
 "use client";
 
 import React from "react";
-import { Activity, BarChart3, HeartPulse, TrendingDown, TrendingUp } from "lucide-react";
+import { Activity, HeartPulse, TrendingDown, TrendingUp } from "lucide-react";
 
 import { useQosHealth } from "@/app/(dashboard)/hooks/qos/useQosHealth";
 import { useQosTrends } from "@/app/(dashboard)/hooks/qos/useQosTrends";
 import { Panel, Segmented, Stat } from "@/app/(dashboard)/usage/_components/components/overview/Primitives";
-import { BarChart, LineChart } from "@/components/shared/charts";
+import { LineChart } from "@/components/shared/charts";
 import { Meter, MeterIndicator, MeterTrack } from "@/components/shared/Meter";
 import { StatusBadge } from "@/components/shared/table_cells";
 import { cn } from "@/lib/cva.config";
 import {
-  COMPARE_METRICS,
   TREND_GROUPINGS,
   TREND_METRICS,
-  compareBars,
-  compareValueFormatter,
   headlines,
   trendChart,
   trendValueFormatter,
   type Change,
-  type CompareMetric,
   type TrendGrouping,
   type TrendMetric,
 } from "./dashboardData";
-import { formatRatio, type QosHealthNode, type QosRange, type QosSummary } from "./qosData";
+import { formatRatio, type QosHealthNode, type QosRange } from "./qosData";
 import VendorName from "./VendorName";
 
 interface QosDashboardProps {
   readonly accessToken: string | null;
   readonly range: QosRange;
   readonly tag: string;
-  readonly summary: QosSummary | undefined;
   readonly refreshMs: number | false;
 }
 
@@ -55,11 +50,6 @@ const byAttention = (left: QosHealthNode, right: QosHealthNode): number => {
 
 const HEADLINE_COUNT = 5;
 
-const compareRowsFor = (summary: QosSummary | undefined, grouping: TrendGrouping) => {
-  if (summary === undefined) return [];
-  return grouping === "model" ? summary.model_groups : summary.deployments;
-};
-
 const NodeHealthRow = ({ node }: { node: QosHealthNode }) => (
   <li className="flex items-center gap-3 py-2">
     <div className="min-w-0 flex-1">
@@ -79,10 +69,9 @@ const NodeHealthRow = ({ node }: { node: QosHealthNode }) => (
   </li>
 );
 
-export default function QosDashboard({ accessToken, range, tag, summary, refreshMs }: QosDashboardProps) {
+export default function QosDashboard({ accessToken, range, tag, refreshMs }: QosDashboardProps) {
   const [grouping, setGrouping] = React.useState<TrendGrouping>("model");
   const [trendMetric, setTrendMetric] = React.useState<TrendMetric>("ttft");
-  const [compareMetric, setCompareMetric] = React.useState<CompareMetric>("ttft");
   const trendsQuery = { range, tag, groupBy: grouping, refreshMs };
   const trends = useQosTrends(accessToken, trendsQuery).data;
   const health = useQosHealth(accessToken, range, refreshMs).data;
@@ -90,7 +79,6 @@ export default function QosDashboard({ accessToken, range, tag, summary, refresh
   const nodes = health === undefined ? [] : [...health.nodes].sort(byAttention);
   const unhealthy = nodes.filter((node) => node.latest_status === "unhealthy").length;
   const chart = trends === undefined ? undefined : trendChart(trends, trendMetric);
-  const bars = compareBars(compareRowsFor(summary, grouping), compareMetric);
 
   return (
     <div className="flex flex-col gap-4">
@@ -139,50 +127,22 @@ export default function QosDashboard({ accessToken, range, tag, summary, refresh
         />
       </Panel>
 
-      <div className="grid gap-4 xl:grid-cols-2">
-        <Panel
-          icon={BarChart3}
-          title="Comparison"
-          subtitle={grouping === "model" ? "Each model over the selected period" : "Each provider of each model"}
-          action={
-            <Segmented
-              label="Comparison metric"
-              value={compareMetric}
-              options={COMPARE_METRICS}
-              onChange={setCompareMetric}
-            />
-          }
-        >
-          <BarChart
-            data={bars}
-            index="name"
-            categories={["value"]}
-            layout="vertical"
-            colorByDatum
-            showLegend={false}
-            valueFormatter={compareValueFormatter(compareMetric)}
-            yAxisWidth={180}
-            className="h-72"
-          />
-        </Panel>
-
-        <Panel
-          icon={HeartPulse}
-          title="Node health"
-          subtitle="Availability from health checks, nodes needing attention first"
-          bodyClassName="max-h-80 overflow-y-auto"
-        >
-          {nodes.length === 0 ? (
-            <p className="py-8 text-center text-sm text-muted-foreground">No health checks in this time range</p>
-          ) : (
-            <ul className="divide-y">
-              {nodes.map((node) => (
-                <NodeHealthRow key={node.model_id} node={node} />
-              ))}
-            </ul>
-          )}
-        </Panel>
-      </div>
+      <Panel
+        icon={HeartPulse}
+        title="Node health"
+        subtitle="Availability from health checks, nodes needing attention first"
+        bodyClassName="max-h-80 overflow-y-auto"
+      >
+        {nodes.length === 0 ? (
+          <p className="py-8 text-center text-sm text-muted-foreground">No health checks in this time range</p>
+        ) : (
+          <ul className="divide-y">
+            {nodes.map((node) => (
+              <NodeHealthRow key={node.model_id} node={node} />
+            ))}
+          </ul>
+        )}
+      </Panel>
     </div>
   );
 }

@@ -1,5 +1,5 @@
 import type { components } from "@/lib/http/schema";
-import { formatMs, formatRate, vendorName, type QosDeploymentMetrics, type QosModelGroupMetrics } from "./qosData";
+import { formatMs, formatRate, vendorName } from "./qosData";
 
 export type QosTrends = components["schemas"]["QosTrendsResponse"];
 export type QosOverall = components["schemas"]["QosOverall"];
@@ -7,7 +7,6 @@ export type QosTrendSeries = components["schemas"]["QosTrendSeries"];
 export type QosTrendPoint = components["schemas"]["QosTrendPoint"];
 export type TrendGrouping = QosTrends["group_by"];
 export type TrendMetric = "ttft" | "tpot" | "requests" | "success";
-export type CompareMetric = "ttft" | "tpot" | "throughput" | "success";
 
 export const TREND_GROUPINGS: readonly { readonly value: TrendGrouping; readonly label: string }[] = [
   { value: "model", label: "By model" },
@@ -18,13 +17,6 @@ export const TREND_METRICS: readonly { readonly value: TrendMetric; readonly lab
   { value: "ttft", label: "TTFT P95" },
   { value: "tpot", label: "TPOT P95" },
   { value: "requests", label: "Requests" },
-  { value: "success", label: "Success rate" },
-];
-
-export const COMPARE_METRICS: readonly { readonly value: CompareMetric; readonly label: string }[] = [
-  { value: "ttft", label: "TTFT P95" },
-  { value: "tpot", label: "TPOT P95" },
-  { value: "throughput", label: "Output tokens/s" },
   { value: "success", label: "Success rate" },
 ];
 
@@ -156,43 +148,4 @@ export const headlines = (current: QosOverall, previous: QosOverall): readonly H
       change: relativeChange(current.output_tokens_per_second, previous.output_tokens_per_second, true),
     },
   ];
-};
-
-const compareValue = (metrics: QosModelGroupMetrics, metric: CompareMetric): number | null => {
-  switch (metric) {
-    case "ttft":
-      return metrics.ttft_ms.p95;
-    case "tpot":
-      return metrics.tpot_ms.p95;
-    case "throughput":
-      return metrics.output_tokens_per_second;
-    case "success":
-      return successPercent(metrics.requests, metrics.failed_requests);
-  }
-};
-
-export const compareValueFormatter = (metric: CompareMetric): ((value: number) => string) => {
-  switch (metric) {
-    case "ttft":
-    case "tpot":
-      return formatMs;
-    case "throughput":
-      return formatRate;
-    case "success":
-      return (value) => `${value.toFixed(1)}%`;
-  }
-};
-
-/** Bars for each model, or each provider of a model, best first. */
-export const compareBars = (
-  rows: readonly (QosModelGroupMetrics | QosDeploymentMetrics)[],
-  metric: CompareMetric,
-): readonly { readonly name: string; readonly value: number }[] => {
-  const lowerIsBetter = metric === "ttft" || metric === "tpot";
-  const bars = rows.flatMap((row) => {
-    const value = compareValue(row, metric);
-    const name = "model_id" in row ? `${row.model_group} · ${vendorName(row.vendor)}` : row.model_group;
-    return value === null ? [] : [{ name, value }];
-  });
-  return [...bars].sort((left, right) => (lowerIsBetter ? left.value - right.value : right.value - left.value));
 };

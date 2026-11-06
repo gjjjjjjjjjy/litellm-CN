@@ -63,7 +63,7 @@ describe("QosDashboard", () => {
   });
 
   it("shows the headline figures against the previous period and counts unhealthy nodes", async () => {
-    renderWithProviders(<QosDashboard accessToken="token" range="1h" tag="" summary={undefined} refreshMs={false} />);
+    renderWithProviders(<QosDashboard accessToken="token" range="1h" tag="" refreshMs={false} />);
 
     expect(await screen.findByText("120")).toBeInTheDocument();
     expect(screen.getByText("20.0% vs previous period")).toBeInTheDocument();
@@ -72,16 +72,16 @@ describe("QosDashboard", () => {
   });
 
   it("lists nodes needing attention first", async () => {
-    renderWithProviders(<QosDashboard accessToken="token" range="1h" tag="" summary={undefined} refreshMs={false} />);
+    renderWithProviders(<QosDashboard accessToken="token" range="1h" tag="" refreshMs={false} />);
 
     const rows = await screen.findAllByRole("listitem");
     expect(rows.map((row) => within(row).queryByText("flaky") !== null)).toEqual([true, false]);
     expect(within(rows[0]).getByText("Unhealthy")).toBeInTheDocument();
   });
 
-  it("asks for one series per provider once the charts are grouped by provider", async () => {
+  it("asks for one series per provider once the trend is grouped by provider", async () => {
     const user = userEvent.setup();
-    renderWithProviders(<QosDashboard accessToken="token" range="1h" tag="" summary={undefined} refreshMs={false} />);
+    renderWithProviders(<QosDashboard accessToken="token" range="1h" tag="" refreshMs={false} />);
     await screen.findByText("120");
 
     await user.click(screen.getByRole("radio", { name: "By provider" }));

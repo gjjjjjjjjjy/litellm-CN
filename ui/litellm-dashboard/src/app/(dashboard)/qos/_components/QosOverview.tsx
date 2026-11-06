@@ -107,7 +107,7 @@ export default function QosOverview({ accessToken }: { accessToken: string | nul
         </Alert>
       )}
 
-      <QosDashboard accessToken={accessToken} range={range} tag={tag} summary={summary} refreshMs={refreshMs} />
+      <QosDashboard accessToken={accessToken} range={range} tag={tag} refreshMs={refreshMs} />
 
       <h2 className="text-base font-semibold">Details</h2>
       <DataTable
